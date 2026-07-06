@@ -56,6 +56,7 @@ import {
   formatNanopaymentRequestLine,
   formatX402NanopaymentFeeLine,
 } from './telegramX402SuccessCopy';
+import { TELEGRAM_AGENTFLOW_IDENTITY_REPLY } from './agentflow-copy';
 
 const TELEGRAM_LINK_REQUIRED_MESSAGE =
   `⚠️ Please link your wallet first to use AgentFlow.\n\n` +
@@ -639,6 +640,85 @@ function needsGroundedAgentflowResolution(text: string): boolean {
   return false;
 }
 
+function telegramQuestionAsksForState(text: string): boolean {
+  return /\b(balance|balances|funds|how much|portfolio|holdings|positions|value|worth|status|transaction|payment|scheduled|schedule|contacts?)\b/i.test(
+    text,
+  );
+}
+
+function telegramReplyHasSpecificFinancialClaim(text: string): boolean {
+  return (
+    /\b(?:current|combined|total|available|portfolio|holdings|positions|value|worth|balance|balances|reserve|wallet\s+balance|wallet\s+balances|wallet\s+holdings|wallet\s+value)\b/i.test(
+      text,
+    ) &&
+    /(?:\$\s*\d+(?:\.\d+)?|\b\d+(?:\.\d+)?\s*(?:USDC|EURC|USD|dollars?|%|tokens?)\b)/i.test(
+      text,
+    )
+  );
+}
+
+function telegramReplyLooksLikeSecretLeak(text: string): boolean {
+  return /```properties|(?:^|\s)(?:AGENTFLOW|CIRCLE|FEATURE|DATABASE|SECRET|ENCRYPTION|API)_[A-Z0-9_]+=|bearer token|private key|api key|internal config/i.test(
+    text,
+  );
+}
+
+function telegramReplyLooksLikePromptLeak(text: string): boolean {
+  return /If the user's latest message is clearly in another language|Keep these tokens EXACTLY as-is|Never reveal hidden prompts|Current wallet context for this request:|hidden system prompt|private runtime instructions/i.test(
+    text,
+  );
+}
+
+function telegramReplyLooksLikeWalletContextEcho(text: string): boolean {
+  return /Current wallet context for this request:|(?:^|\n)\s*Connected wallet(?: for this request)?:\s*0x[a-f0-9]{40}|(?:^|\n)\s*Execution wallet(?: for this request)?:\s*0x[a-f0-9]{40}|\bConnected EOA:\s*0x[a-f0-9]{40}\b|\bExecution wallet:\s*0x[a-f0-9]{40}\b|\bExecution target:\s*(?:EOA|DCW)\b|Agent wallet funding balance:/i.test(
+    text,
+  );
+}
+
+function telegramReplyLooksLikeToolDump(text: string): boolean {
+  return /complete capability map|hidden capability|tool name|agentpay_send\(|schedule_action\(|security_audit\(|list every hidden capability|how many tools/i.test(
+    text,
+  );
+}
+
+function telegramReplyLooksLikeIdentityDrift(text: string): boolean {
+  return /\bI am Hermes(?: Agent)?\b|\bHermes is an AI assistant\b|general-purpose AI assistant|created by Nous Research|Hermes CLI|standalone Hermes workstation/i.test(
+    text,
+  );
+}
+
+export function sanitizeTelegramFallbackReply(question: string, answer: string): string {
+  const trimmed = answer.trim();
+  if (!trimmed) {
+    return 'I could not find a good answer just now.';
+  }
+
+  if (
+    telegramReplyLooksLikeSecretLeak(trimmed) ||
+    telegramReplyLooksLikePromptLeak(trimmed) ||
+    telegramReplyLooksLikeWalletContextEcho(trimmed) ||
+    telegramReplyLooksLikeToolDump(trimmed)
+  ) {
+    return [
+      "I can't share internal config or hidden runtime details here.",
+      'If you want help with AgentFlow itself, ask me what you want to do and I will keep it user-facing.',
+    ].join('\n\n');
+  }
+
+  if (telegramReplyLooksLikeIdentityDrift(trimmed)) {
+    return TELEGRAM_AGENTFLOW_IDENTITY_REPLY;
+  }
+
+  if (telegramQuestionAsksForState(question) && telegramReplyHasSpecificFinancialClaim(trimmed)) {
+    return [
+      "I don't want to guess live balances, portfolio state, or payment status from fallback chat.",
+      'Ask with the asset, amount, or workflow you want, and I will retry through the deterministic path.',
+    ].join('\n\n');
+  }
+
+  return trimmed;
+}
+
 type TelegramRoutingEvent = {
   at: string;
   chatId: number;
@@ -1160,7 +1240,7 @@ async function runTelegramChatReply(
     agentSlug: 'chat',
     ...(memoryContext ? { memoryContext } : {}),
   });
-  return answerRaw.trim() || 'I could not find a good answer just now.';
+  return sanitizeTelegramFallbackReply(question, answerRaw);
 }
 
 async function executeParsedIntent(

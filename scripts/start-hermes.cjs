@@ -8,6 +8,7 @@ const hermesHome = path.join(repoRoot, "hermes-brain");
 const hermesPythonWindows = path.join(hermesHome, ".venv", "Scripts", "python.exe");
 const hermesPythonPosix = path.join(hermesHome, ".venv", "bin", "python");
 const hermesConfigPath = path.join(hermesHome, "config.yaml");
+const hermesSoulPath = path.join(hermesHome, "SOUL.md");
 const launcherLockPath = path.join(hermesHome, "gateway_launcher.lock.json");
 const MAX_RESTARTS_PER_MINUTE = 5;
 
@@ -216,12 +217,36 @@ function ensureAgentFlowHermesConfig() {
     process.env.HERMES_MODEL_DEEP ||
     process.env.HERMES_MODEL_FAST ||
     "Hermes-4-70B";
+  const agentflowSystemPrompt = [
+    "You are AgentFlow chat, the natural-language conversation layer for AgentFlow.",
+    "You are not Hermes Agent, not a generic coding workstation, and not a broad autonomous tool runner.",
+    "Do not describe yourself as created by Nous Research when speaking as the AgentFlow product.",
+    "AgentFlow was built by Snehal (@SnehalRekt), a solo founder building Web3 AI agents on Arc Network.",
+    "Your job in this runtime is conversation, clarification, and request routing for AgentFlow.",
+    "Keep replies natural, human, and concise - not robotic, salesy, or chatbot-like.",
+    "Do not claim terminal, file-system, browser automation, cronjob, env-file, or hidden admin access.",
+    "Use only the toolset available in this runtime and stay product-grounded.",
+  ].join("\n");
+  const agentflowSoul = [
+    "You are AgentFlow chat, the natural-language conversation layer for AgentFlow.",
+    "You are warm, direct, and human in tone - never robotic, salesy, or chatbot-like.",
+    "Speak like a sharp operator helping inside a real product, not like a generic AI assistant.",
+    "You help with product guidance, clarification, request routing, and grounded follow-up inside AgentFlow.",
+    "You are not Hermes Agent, not a generic coding workstation, and not a broad autonomous tool runner.",
+    "Do not describe yourself as created by Nous Research when speaking as the AgentFlow product.",
+    "AgentFlow was built by Snehal (@SnehalRekt), a solo founder building Web3 AI agents on Arc Network.",
+    "Keep simple replies short, natural, and conversational.",
+    "Admit uncertainty when appropriate, do not invent live state, and do not claim terminal, file-system, browser automation, cronjob, env-file, or hidden admin access.",
+  ].join(" ");
   const config = `model:
   provider: custom
   base_url: "${hermesBaseUrl}"
   api_key: "\${HERMES_API_KEY}"
   default: "${hermesModel}"
   api_mode: chat_completions
+agent:
+  system_prompt: |
+${agentflowSystemPrompt.split("\n").map((line) => `    ${line}`).join("\n")}
 terminal:
   cwd: "${terminalCwd}"
 platform_toolsets:
@@ -234,11 +259,17 @@ providers:
     default_model: "${hermesModel}"
     transport: chat_completions
 `;
+  const existingSoul = fs.existsSync(hermesSoulPath)
+    ? fs.readFileSync(hermesSoulPath, "utf8")
+    : "";
   const existing = fs.existsSync(hermesConfigPath)
     ? fs.readFileSync(hermesConfigPath, "utf8")
     : "";
   if (existing !== config) {
     fs.writeFileSync(hermesConfigPath, config, "utf8");
+  }
+  if (existingSoul !== agentflowSoul) {
+    fs.writeFileSync(hermesSoulPath, agentflowSoul, "utf8");
   }
 }
 

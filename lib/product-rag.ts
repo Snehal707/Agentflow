@@ -1,3 +1,5 @@
+import { AGENTFLOW_FOUNDER_BRIEF } from './agentflow-copy';
+
 export type ProductKnowledgeDoc = {
   id: string;
   title: string;
@@ -364,7 +366,7 @@ export const PRODUCT_KNOWLEDGE: ProductKnowledgeDoc[] = [
     title: 'About AgentFlow',
     summary: 'AgentFlow is an AI agent operating system for onchain work built on Arc Network.',
     facts: [
-      'AgentFlow was built by Snehal (@SnehalRekt on X), a solo founder.',
+      AGENTFLOW_FOUNDER_BRIEF,
       'AgentFlow uses Hermes Agent as its AI reasoning runtime.',
       'AgentFlow has 12 core system agents in the Agent Store plus support for published agents.',
       'Users pay per task using Circle x402 nanopayments in USDC.',

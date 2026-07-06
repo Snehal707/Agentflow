@@ -4,6 +4,7 @@ import { privateKeyToAccount } from 'viem/accounts';
 import { createGatewayMiddleware } from '@circle-fin/x402-batching/server';
 import { callHermesFast } from '../../lib/hermes';
 import { WRITER_SYSTEM_PROMPT } from '../../lib/agentPrompts';
+import { maybeImproveFastReport } from '../../lib/fast-report-supervisor';
 import { resolveAgentPrivateKey } from '../../lib/agentPrivateKey';
 import { resolveAgentSellerAddress } from '../../lib/agentSellerAddress';
 import { buildWriterModelInput } from '../../lib/reportInputs';
@@ -114,12 +115,35 @@ const runHandler = async (req: Request, res: Response) => {
     });
     console.log('[writer] using Hermes fast model');
 
-    const result = await withTimeout(
+    const draft = await withTimeout(
       callHermesFast(WRITER_SYSTEM_PROMPT, combinedInput),
       HERMES_TIMEOUT_MS,
       `Writer Hermes timed out after ${HERMES_TIMEOUT_MS / 1000}s`,
     );
-    res.json({ research, analysis, result });
+    const improved =
+      reasoningMode === 'fast'
+        ? await maybeImproveFastReport({
+            task,
+            writerPrompt: WRITER_SYSTEM_PROMPT,
+            writerInput: combinedInput,
+            draftReport: draft,
+            research: researchJson,
+            analysis: analysisJson,
+            liveData,
+          })
+        : {
+            report: draft,
+            reviewApplied: false,
+            rewriteApplied: false,
+          };
+
+    res.json({
+      research,
+      analysis,
+      result: improved.report,
+      reviewApplied: improved.reviewApplied,
+      rewriteApplied: improved.rewriteApplied,
+    });
   } catch (err) {
     console.error('Writer agent error:', err);
     const message = err instanceof Error ? err.message : String(err);

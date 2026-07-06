@@ -663,6 +663,7 @@ function buildLiveDataSourceGrounding(
   liveData: Obj | null,
   task: string,
   primaryTopicLabel?: string | null,
+  research?: Obj | null,
 ): LiveDataSourceGrounding {
   const grounding: LiveDataSourceGrounding = {
     byUrl: new Map(),
@@ -829,6 +830,59 @@ function buildLiveDataSourceGrounding(
       ...(snapshotAt ? { accessedAt: snapshotAt } : {}),
     });
   }
+
+  for (const entry of asArray(research?.sources)) {
+    const source = asObject(entry);
+    const url = normalizeUrl(asString(source?.url));
+    if (!url) continue;
+    pushGroundedSource(grounding, task, {
+      name: asString(source?.name) ?? asString(source?.title) ?? 'Research source',
+      url,
+      usedFor: asString(source?.used_for) ?? asString(source?.usedFor) ?? 'Structured research source',
+      ...(asString(source?.publishedAt) ? { publishedAt: asString(source?.publishedAt)! } : {}),
+      ...(asString(source?.accessedAt) ? { accessedAt: asString(source?.accessedAt)! } : {}),
+      ...(snapshotAt ? { accessedAt: snapshotAt } : {}),
+    });
+  }
+
+  const seedStructuredEvidence = (
+    entries: unknown[],
+    pickText: (item: Obj) => string | null,
+    pickUsedFor: (item: Obj) => string | null,
+  ) => {
+    for (const entry of entries) {
+      const item = asObject(entry);
+      if (!item) continue;
+      const url = normalizeUrl(asString(item?.source_url ?? item?.url));
+      if (!url) continue;
+      pushGroundedSource(grounding, task, {
+        name:
+          asString(item?.source_name ?? item?.name) ??
+          pickText(item) ??
+          'Structured research source',
+        url,
+        usedFor: pickUsedFor(item) ?? 'Structured research evidence',
+        ...(asString(item?.date_or_period) ? { publishedAt: asString(item?.date_or_period)! } : {}),
+        ...(snapshotAt ? { accessedAt: snapshotAt } : {}),
+      });
+    }
+  };
+
+  seedStructuredEvidence(
+    asArray(research?.facts),
+    (item) => asString(item?.claim),
+    (item) => asString(item?.support),
+  );
+  seedStructuredEvidence(
+    asArray(research?.recent_developments),
+    (item) => asString(item?.event),
+    (item) => asString(item?.importance) ?? asString(item?.support),
+  );
+  seedStructuredEvidence(
+    asArray(research?.metrics),
+    (item) => asString(item?.name),
+    (item) => asString(item?.support),
+  );
 
   return grounding;
 }
@@ -1352,6 +1406,7 @@ function buildRawClaims(params: FinalizeParams): RawClaimState {
     params.liveData,
     params.task,
     primaryTopicLabel,
+    params.research,
   );
   const framing = isGeopoliticalShippingReportTask(params.task)
     ? framingSignals(params.liveData)

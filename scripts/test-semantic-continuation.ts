@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { AGENTFLOW_FOUNDER_SHORT } from '../lib/agentflow-copy';
 import { buildSemanticContinuationContext } from '../lib/semantic-continuation';
 
 const founderLocationContext = buildSemanticContinuationContext('where he is from?', [
@@ -16,6 +17,7 @@ const founderLocationContext = buildSemanticContinuationContext('where he is fro
 assert(founderLocationContext, 'expected founder follow-up context');
 assert.match(founderLocationContext, /agentflow_founder/);
 assert.match(founderLocationContext, /Snehal \(@SnehalRekt\)/);
+assert.match(founderLocationContext, new RegExp(AGENTFLOW_FOUNDER_SHORT.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
 assert.match(founderLocationContext, /Requested field: origin\/location/);
 assert.match(founderLocationContext, /not verified/i);
 assert.match(founderLocationContext, /do not offer external research/i);
@@ -59,5 +61,21 @@ assert.match(portfolioContext, /before asking the user to run another portfolio 
 
 const unrelated = buildSemanticContinuationContext('tell me about agentflow', []);
 assert.equal(unrelated, null);
+
+const founderIdentityContext = buildSemanticContinuationContext('who is he exactly?', [
+  {
+    role: 'user',
+    content: 'who built agentflow?',
+  },
+  {
+    role: 'assistant',
+    content: AGENTFLOW_FOUNDER_SHORT,
+  },
+]);
+
+assert(founderIdentityContext, 'expected founder identity follow-up context');
+assert.match(founderIdentityContext, /Requested field: identity/);
+assert.match(founderIdentityContext, new RegExp(AGENTFLOW_FOUNDER_SHORT.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+assert.match(founderIdentityContext, /do not offer external research/i);
 
 console.log('semantic continuation tests passed');

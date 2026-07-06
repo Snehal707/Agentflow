@@ -106,6 +106,7 @@ import {
   buildWriterModelInput,
 } from './lib/reportInputs';
 import { finalizeReportMarkdown } from './lib/reportPipeline';
+import { maybeImproveFastReport } from './lib/fast-report-supervisor';
 import { setWalletForUser } from './lib/walletStore';
 import { payProtectedResourceServer } from './lib/x402ServerClient';
 import { insertAgentToAgentLedger } from './lib/a2a-ledger';
@@ -16217,21 +16218,41 @@ async function start(): Promise<void> {
       defaultMode: 'fast',
     });
     console.log('[writer] using Hermes fast model');
+    const writerInput = buildWriterModelInput({
+      task,
+      researchText: research,
+      analysisText: analysis,
+      research: researchJson,
+      analysis: analysisJson,
+      liveData,
+      portfolioImpact,
+    });
+    const draft = await callHermesFast(
+      WRITER_SYSTEM_PROMPT,
+      writerInput,
+    );
+    const improved =
+      reasoningMode === 'fast'
+        ? await maybeImproveFastReport({
+            task,
+            writerPrompt: WRITER_SYSTEM_PROMPT,
+            writerInput,
+            draftReport: draft,
+            research: researchJson,
+            analysis: analysisJson,
+            liveData,
+          })
+        : {
+            report: draft,
+            reviewApplied: false,
+            rewriteApplied: false,
+          };
     return {
       research,
       analysis,
-      result: await callHermesFast(
-        WRITER_SYSTEM_PROMPT,
-        buildWriterModelInput({
-          task,
-          researchText: research,
-          analysisText: analysis,
-          research: researchJson,
-          analysis: analysisJson,
-          liveData,
-          portfolioImpact,
-        }),
-      ),
+      result: improved.report,
+      reviewApplied: improved.reviewApplied,
+      rewriteApplied: improved.rewriteApplied,
     };
   },
   { internalOnly: true },

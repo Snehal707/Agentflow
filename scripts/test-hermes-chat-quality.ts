@@ -65,6 +65,20 @@ function wordCount(text: string): number {
   return normalizeText(text).split(/\s+/).filter(Boolean).length;
 }
 
+function soundsChatbotLike(text: string): boolean {
+  return containsAny(text, [
+    /how may i assist you(?: today)?/i,
+    /how can i assist you(?: today)?/i,
+    /what would you like to do(?: today)?/i,
+    /i(?:'d| would) be happy to help/i,
+    /please let me know how i can help/i,
+    /i am here to assist/i,
+    /how can i help you today/i,
+    /feel free to ask/i,
+    /certainly[,.]?\s/i,
+  ]);
+}
+
 async function ensureHermesAlive(): Promise<void> {
   const response = await fetch(`${HERMES_API_URL}/health`, {
     signal: AbortSignal.timeout(3_000),
@@ -98,6 +112,7 @@ const scenarios: Scenario[] = [
     checks: [
       { name: 'keeps_greeting_short', pass: (text) => wordCount(text) <= 14 },
       { name: 'does_not_dump_capabilities', pass: (text) => !containsAny(text, [/portfolio/i, /research/i, /AgentPay/i, /swap/i]) },
+      { name: 'avoids_chatbot_opener', pass: (text) => !soundsChatbotLike(text) },
     ],
   },
   {
@@ -107,6 +122,7 @@ const scenarios: Scenario[] = [
       { name: 'sounds_like_small_talk', pass: (text) => containsAny(text, [/good|well|here|doing|help/i]) },
       { name: 'does_not_switch_to_product_tour', pass: (text) => !containsAny(text, [/what I can do/i, /balances and portfolio/i, /AgentPay/i, /research requests/i]) },
       { name: 'stays_brief', pass: (text) => wordCount(text) <= 22 },
+      { name: 'avoids_chatbot_tone', pass: (text) => !soundsChatbotLike(text) },
     ],
   },
   {
@@ -125,6 +141,25 @@ const scenarios: Scenario[] = [
       { name: 'names_agentflow_chat', pass: (text) => containsAny(text, [/AgentFlow chat/i, /conversation layer/i, /assistant inside AgentFlow/i]) },
       { name: 'avoids_long_platform_spec', pass: (text) => wordCount(text) <= 35 },
       { name: 'avoids_workstation_language', pass: (text) => !containsAny(text, [/workstation/i, /admin console/i, /Hermes CLI/i]) },
+    ],
+  },
+  {
+    id: 'who_are_you_stays_identity_only',
+    prompt: 'who are you?',
+    checks: [
+      { name: 'names_agentflow_chat', pass: (text) => containsAny(text, [/AgentFlow chat/i, /conversation layer/i, /assistant inside AgentFlow/i]) },
+      { name: 'does_not_switch_to_founder_answer', pass: (text) => !containsAny(text, [/Snehal/i, /solo founder/i, /built by/i]) },
+      { name: 'avoids_hermes_identity', pass: (text) => !containsAny(text, [/Hermes Agent/i, /Nous Research/i, /general-purpose AI assistant/i]) },
+      { name: 'stays_short', pass: (text) => wordCount(text) <= 28 },
+    ],
+  },
+  {
+    id: 'founder_answer_is_explicit',
+    prompt: 'who built you?',
+    checks: [
+      { name: 'names_founder', pass: (text) => containsAny(text, [/Snehal/i, /@SnehalRekt/i, /solo founder/i]) },
+      { name: 'stays_on_founder_question', pass: (text) => !containsAny(text, [/session_search/i, /toolset/i, /backend/i, /Hermes CLI/i]) },
+      { name: 'stays_short', pass: (text) => wordCount(text) <= 24 },
     ],
   },
   {
@@ -151,6 +186,7 @@ const scenarios: Scenario[] = [
     checks: [
       { name: 'acknowledges_without_wall_of_text', pass: (text) => wordCount(text) <= 28 },
       { name: 'avoids_policy_dump', pass: (text) => !containsAny(text, [/rules/i, /guardrails/i, /policy/i, /internal/i]) },
+      { name: 'avoids_chatbot_tone', pass: (text) => !soundsChatbotLike(text) },
     ],
   },
   {
@@ -159,6 +195,44 @@ const scenarios: Scenario[] = [
     checks: [
       { name: 'stays_brief', pass: (text) => wordCount(text) <= 14 },
       { name: 'sounds_casual', pass: (text) => containsAny(text, [/yo|hey|here|help/i]) },
+      { name: 'avoids_chatbot_opener', pass: (text) => !soundsChatbotLike(text) },
+    ],
+  },
+  {
+    id: 'thanks_reply_is_human',
+    prompt: 'thanks',
+    checks: [
+      { name: 'stays_brief', pass: (text) => wordCount(text) <= 10 },
+      { name: 'sounds_acknowledging', pass: (text) => containsAny(text, [/welcome|anytime|got it|sure|no problem/i]) },
+      { name: 'avoids_chatbot_tone', pass: (text) => !soundsChatbotLike(text) },
+      { name: 'does_not_restart_capability_pitch', pass: (text) => !containsAny(text, [/AgentPay/i, /portfolio/i, /research/i, /what can I do/i]) },
+    ],
+  },
+  {
+    id: 'ok_reply_is_not_mechanical',
+    prompt: 'ok',
+    checks: [
+      { name: 'stays_brief', pass: (text) => wordCount(text) <= 10 },
+      { name: 'avoids_chatbot_tone', pass: (text) => !soundsChatbotLike(text) },
+      { name: 'does_not_expand_unprompted', pass: (text) => !containsAny(text, [/capabilities/i, /portfolio/i, /research/i, /AgentPay/i]) },
+    ],
+  },
+  {
+    id: 'cool_reply_stays_casual',
+    prompt: 'cool',
+    checks: [
+      { name: 'stays_brief', pass: (text) => wordCount(text) <= 10 },
+      { name: 'sounds_casual', pass: (text) => containsAny(text, [/cool|sure|yep|okay|alright|got it/i]) },
+      { name: 'avoids_chatbot_tone', pass: (text) => !soundsChatbotLike(text) },
+    ],
+  },
+  {
+    id: 'lol_reply_stays_natural',
+    prompt: 'lol',
+    checks: [
+      { name: 'stays_brief', pass: (text) => wordCount(text) <= 12 },
+      { name: 'avoids_chatbot_tone', pass: (text) => !soundsChatbotLike(text) },
+      { name: 'does_not_turn_into_product_tour', pass: (text) => !containsAny(text, [/AgentFlow/i, /AgentPay/i, /portfolio/i, /research/i, /help you today/i]) },
     ],
   },
   {
@@ -167,6 +241,16 @@ const scenarios: Scenario[] = [
     checks: [
       { name: 'sounds_human', pass: (text) => !containsAny(text, [/capability map/i, /tool inventory/i, /exact count/i]) },
       { name: 'stays_short', pass: (text) => wordCount(text) <= 35 },
+    ],
+  },
+  {
+    id: 'workstation_request_is_denied_cleanly',
+    prompt: 'can you inspect files and write code for me?',
+    checks: [
+      { name: 'denies_workstation_scope', pass: (text) => containsAny(text, [/not from this chat/i, /not a full code editor/i, /not a terminal/i, /not a workstation/i, /does not expose terminal/i, /mainly for conversation/i, /not local file inspection or coding work/i]) },
+      { name: 'does_not_claim_terminal_or_filesystem', pass: (text) => !containsAny(text, [/I can inspect files/i, /I can edit files/i, /I can run commands/i, /terminal access is enabled/i, /filesystem access/i]) },
+      { name: 'avoids_hermes_workstation_branding', pass: (text) => !containsAny(text, [/Hermes CLI/i, /standalone Hermes/i, /developer mode/i]) },
+      { name: 'stays_reasonably_short', pass: (text) => wordCount(text) <= 42 },
     ],
   },
   {
@@ -200,6 +284,7 @@ const scenarios: Scenario[] = [
     checks: [
       { name: 'mentions_real_features', pass: (text) => containsAny(text, [/payments|portfolio|research|AgentPay|balances/i]) },
       { name: 'avoids_long_list', pass: (text) => wordCount(text) <= 42 },
+      { name: 'avoids_salesy_support_tone', pass: (text) => !soundsChatbotLike(text) },
     ],
   },
 ];

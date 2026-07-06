@@ -1,3 +1,5 @@
+import { AGENTFLOW_FOUNDER_SHORT } from './agentflow-copy';
+
 export type SemanticContinuationMessage = {
   role: 'user' | 'assistant';
   content: string;
@@ -45,9 +47,7 @@ export function buildSemanticContinuationContext(
   if (/\bagentflow was built by snehal\b/i.test(recentText) || /\bSnehal\b.*\bAgentFlow\b/i.test(recentText)) {
     topics.push('agentflow_founder');
     entities.push('person: Snehal (@SnehalRekt), role: AgentFlow builder/founder');
-    knownFacts.push(
-      'AgentFlow was built by Snehal (@SnehalRekt), a solo founder building Web3 AI agents on Arc Network.',
-    );
+    knownFacts.push(AGENTFLOW_FOUNDER_SHORT);
     if (/\bwhere\b/i.test(normalized) || /\bfrom\b/i.test(normalized)) {
       unknownFields.push('Snehal personal location, hometown, or origin is not verified in the current context.');
     }

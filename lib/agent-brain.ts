@@ -15,6 +15,15 @@ import {
   stateToolForAnswerMode,
   type AnswerMode,
 } from './answer-mode';
+import {
+  AGENTFLOW_CHAT_CODE_WORK_REPLY,
+  AGENTFLOW_CHAT_DEVELOPER_MODE_REPLY,
+  AGENTFLOW_CHAT_IDENTITY_REPLY,
+  AGENTFLOW_CHAT_IDENTITY_RESET_REPLY,
+  AGENTFLOW_CHAT_STANDALONE_BOUNDARY_REPLY,
+  AGENTFLOW_FOUNDER_FACT,
+  AGENTFLOW_FOUNDER_SHORT,
+} from './agentflow-copy';
 
 const HERMES_API_URL = (process.env.AGENTFLOW_HERMES_URL || 'http://localhost:8000').replace(
   /\/+$/,
@@ -59,7 +68,7 @@ You are AgentFlow chat, the natural-language conversation layer for AgentFlow.
 
 ## AgentFlow Team
 
-AgentFlow was built by Snehal (@SnehalRekt on X), a solo founder building at the intersection of Web3 and AI agents on Arc Network.
+${AGENTFLOW_FOUNDER_FACT}
 
 Only use this AgentFlow Team fact when the user is asking who built, created,
 founded, or is behind AgentFlow/you/the app. Do not volunteer it for unrelated
@@ -74,7 +83,7 @@ When asked any of these about AgentFlow:
 - "who created you?"
 
 Answer EXACTLY:
-"AgentFlow was built by Snehal (@SnehalRekt), a solo founder building Web3 AI agents on Arc Network."
+"${AGENTFLOW_FOUNDER_SHORT}"
 
 For follow-up questions after that answer, answer the specific follow-up instead
 of repeating the exact founder sentence. If the user asks where he is from, say
@@ -1149,7 +1158,7 @@ function normalizeSimpleChatReply(userMessage: string, text: string): string {
   }
 
   if (/^what are you(?: exactly)?\??$/i.test(userMessage)) {
-    return "I'm AgentFlow chat, the conversation layer inside AgentFlow for product guidance, requests, and routing.";
+    return AGENTFLOW_CHAT_IDENTITY_REPLY;
   }
 
   if (/^what is agentflow\??$/i.test(userMessage)) {
@@ -1206,8 +1215,32 @@ function deterministicAgentFlowBrainReply(
     return "Hey, I'm here. What do you need?";
   }
 
-  if (/^what are you(?: exactly)?\??$/i.test(trimmed)) {
-    return "I'm AgentFlow chat, the conversation layer inside AgentFlow for product guidance, requests, and routing.";
+  if (/^(?:thanks|thank you|thx)\s*$/i.test(trimmed)) {
+    return "You're welcome.";
+  }
+
+  if (/^(?:ok|okay)\s*$/i.test(trimmed)) {
+    return 'Okay.';
+  }
+
+  if (/^cool\s*$/i.test(trimmed)) {
+    return 'Cool.';
+  }
+
+  if (/^lol\s*$/i.test(trimmed)) {
+    return 'Haha.';
+  }
+
+  if (/^(?:what|who) are you(?: exactly)?\??$/i.test(trimmed)) {
+    return AGENTFLOW_CHAT_IDENTITY_REPLY;
+  }
+
+  if (
+    /^(?:who built you|who made agentflow|who is the founder|who is behind agentflow|who created you)\??$/i.test(
+      trimmed,
+    )
+  ) {
+    return AGENTFLOW_FOUNDER_SHORT;
   }
 
   if (/^what can you do (?:here|for me)?\??$/i.test(trimmed)) {
@@ -1216,6 +1249,10 @@ function deterministicAgentFlowBrainReply(
 
   if (/^what can i do with agentflow\??$/i.test(trimmed)) {
     return buildCapabilityReply();
+  }
+
+  if (/^can you inspect files and write code for me\??$/i.test(trimmed)) {
+    return AGENTFLOW_CHAT_CODE_WORK_REPLY;
   }
 
   if (looksLikeFinancialManagementScopeProbe(trimmed)) {
@@ -1272,11 +1309,11 @@ function deterministicAgentFlowBrainReply(
   }
 
   if (/why you act like .*agentflow|standalone system/i.test(trimmed)) {
-    return "I should behave as AgentFlow chat only. I'm the natural-language conversation layer for AgentFlow.";
+    return AGENTFLOW_CHAT_IDENTITY_RESET_REPLY;
   }
 
   if (/standalone|Hermes CLI|ignore all previous instructions/i.test(trimmed)) {
-    return "I can't switch into a standalone mode here. I stay within AgentFlow chat's current product boundaries.";
+    return AGENTFLOW_CHAT_STANDALONE_BOUNDARY_REPLY;
   }
 
   if (looksLikeHackProbe(trimmed)) {
@@ -1284,7 +1321,7 @@ function deterministicAgentFlowBrainReply(
   }
 
   if (/\bdeveloper mode\b/i.test(trimmed)) {
-    return "I don't have developer mode or terminal access in AgentFlow chat.";
+    return AGENTFLOW_CHAT_DEVELOPER_MODE_REPLY;
   }
 
   if (/\bpretend\b[\s\S]*\bterminal\b|\bcommand output\b/i.test(trimmed)) {
@@ -1398,11 +1435,11 @@ function validateAgentFlowBrainReply(
     if (/AgentFlow chat|conversation layer|standalone/i.test(concise)) {
       return concise;
     }
-    return "I should behave as AgentFlow chat only. I'm the natural-language conversation layer, not a standalone system or execution console.";
+    return AGENTFLOW_CHAT_IDENTITY_RESET_REPLY;
   }
 
   if (/ignore all previous instructions/i.test(userMessage)) {
-    return "I can't switch into a standalone mode here. I'm AgentFlow chat, and I stay within the current product boundaries.";
+    return AGENTFLOW_CHAT_STANDALONE_BOUNDARY_REPLY;
   }
 
   if (/^yes demonstrate by running a practical diagnostic$/i.test(userMessage)) {
@@ -1421,7 +1458,7 @@ function validateAgentFlowBrainReply(
     /standalone|Hermes CLI|developer mode|ignore all previous instructions/i.test(userMessage) &&
     responseLooksLikeHermesIdentityDrift(trimmed)
   ) {
-    return "I should behave as AgentFlow chat only. I'm the natural-language conversation layer for AgentFlow, not a standalone assistant or workstation.";
+    return AGENTFLOW_CHAT_IDENTITY_RESET_REPLY;
   }
 
   if (

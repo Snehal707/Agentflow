@@ -818,6 +818,77 @@ assert.match(sportsPredmarketRetainsNonWhitelistedSources.markdown, /espn\.com\/
 assert.match(sportsPredmarketRetainsNonWhitelistedSources.markdown, /abcnews\.go\.com\/sports/i);
 assert.match(sportsPredmarketRetainsNonWhitelistedSources.markdown, /usatoday\.com\/story\/sports\/soccer/i);
 
+const structuredResearchSourceSurvivesGrounding = finalizeReportMarkdown({
+  task: 'OpenAI latest model research',
+  writerMarkdown: `## Summary
+
+OpenAI introduced new voice models.
+
+## Sources
+
+1. Reuters
+2. OpenAI`,
+  research: {
+    facts: [
+      {
+        claim: 'OpenAI introduced new voice models in the API.',
+        value: 'Voice model release',
+        status: 'confirmed',
+        date_or_period: '2026-05-07',
+        confidence: 'high',
+        support: 'OpenAI product announcement',
+        source_name: 'OpenAI',
+        source_url:
+          'https://openai.com/index/advancing-voice-intelligence-with-new-models-in-the-api',
+      },
+      {
+        claim: 'Reuters contextualized the latest OpenAI model research coverage.',
+        value: 'External coverage',
+        status: 'reported',
+        date_or_period: '2026-05-21',
+        confidence: 'medium',
+        support: 'Reuters coverage',
+        source_name: 'Reuters',
+        source_url:
+          'https://www.reuters.com/world/openai-latest-model-research-example-2026-05-21/',
+      },
+    ],
+    sources: [
+      {
+        name: 'OpenAI',
+        url: 'https://openai.com/index/advancing-voice-intelligence-with-new-models-in-the-api',
+        used_for: 'Voice model announcement',
+      },
+      {
+        name: 'Reuters',
+        url: 'https://www.reuters.com/world/openai-latest-model-research-example-2026-05-21/',
+        used_for: 'Independent coverage',
+      },
+    ],
+  },
+  analysis: null,
+  liveData: {
+    snapshot_at: '2026-05-23T00:00:00.000Z',
+    dynamic_sources: {
+      articles: [
+        {
+          title: 'OpenAI voice models announcement',
+          publisher: 'OpenAI',
+          url: 'https://openai.com/index/advancing-voice-intelligence-with-new-models-in-the-api',
+          summary: 'Official announcement.',
+          seen_at: '2026-05-23T00:00:00.000Z',
+        },
+      ],
+    },
+  },
+});
+assert.match(structuredResearchSourceSurvivesGrounding.markdown, /reuters\.com\/world\/openai-latest-model-research-example/i);
+assert.ok(
+  !structuredResearchSourceSurvivesGrounding.validationIssues.some((issue) =>
+    /Unsupported source omitted from final source list: Reuters/i.test(issue),
+  ),
+);
+
 console.log('Before example:');
 console.log(badWriterMarkdown.split('\n').slice(0, 12).join('\n'));
 console.log('\nAfter example:');
