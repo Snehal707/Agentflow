@@ -2,8 +2,23 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "AgentFlow | Research, payments, and execution on Arc",
-  description: "AgentFlow brings research, swap, vault, bridge, portfolio, and AgentPay flows into one workspace on Arc.",
+  title: "AgentFlow | AI agents that research, decide, and execute on Arc",
+  description:
+    "One chat runs an economy of paid agents for research, DeFi, prediction markets, and payments, with previews, USDC settlement, and onchain reputation.",
+  openGraph: {
+    title: "AgentFlow | AI agents that research, decide, and execute on Arc",
+    description:
+      "One chat runs an economy of paid agents for research, DeFi, prediction markets, and payments, with previews, USDC settlement, and onchain reputation.",
+    url: "https://www.agentflow.one/",
+    siteName: "AgentFlow",
+    type: "website",
+  },
+  twitter: {
+    card: "summary",
+    title: "AgentFlow | AI agents that research, decide, and execute on Arc",
+    description:
+      "One chat runs an economy of paid agents for research, DeFi, prediction markets, and payments, with previews, USDC settlement, and onchain reputation.",
+  },
 };
 
 export default function RootLayout({
