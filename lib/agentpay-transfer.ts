@@ -9,6 +9,9 @@ import { acquireExecutionGuard } from './execution-guard';
 import type { GuardLock } from './execution-guard';
 
 const ARC_USDC = '0x3600000000000000000000000000000000000000' as const;
+const ARC_EURC = '0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a' as const;
+
+export type AgentPayCurrency = 'USDC' | 'EURC';
 
 const EXPLORER_TX_BASE =
   process.env.ARC_EXPLORER_TX_URL?.trim() || 'https://testnet.arcscan.app/tx';
@@ -24,17 +27,22 @@ export function extractTxId(tx: unknown): string | null {
   return obj?.data?.transaction?.id ?? obj?.data?.id ?? null;
 }
 
-async function createUsdcTransferTransaction(params: {
+function resolveAgentPayTokenAddress(currency: AgentPayCurrency): `0x${string}` {
+  return currency === 'EURC' ? ARC_EURC : ARC_USDC;
+}
+
+async function createTokenTransferTransaction(params: {
   walletId: string;
   destinationAddress: string;
-  amountUsdc: number;
+  amount: number;
+  tokenAddress: `0x${string}`;
 }): Promise<unknown> {
   const dcw = getCircleClient();
   return dcw.createTransaction({
     walletId: params.walletId,
-    tokenAddress: ARC_USDC,
+    tokenAddress: params.tokenAddress,
     blockchain: 'ARC-TESTNET',
-    amount: [params.amountUsdc.toFixed(6)],
+    amount: [params.amount.toFixed(6)],
     destinationAddress: params.destinationAddress,
     fee: {
       type: 'level',
@@ -53,7 +61,9 @@ export async function executeUsdcTransfer(params: {
   actionType: string;
   idempotencyKey?: string;
   existingGuard?: GuardLock | null;
+  currency?: AgentPayCurrency;
 }): Promise<{ txHash: `0x${string}` }> {
+  const currency: AgentPayCurrency = params.currency === 'EURC' ? 'EURC' : 'USDC';
   const payer = getAddress(params.payerEoa);
   const payee = getAddress(params.toAddress);
   const guard =
@@ -76,10 +86,11 @@ export async function executeUsdcTransfer(params: {
       'Agent wallet not ready. Complete AgentFlow wallet setup (user agent wallet) before sending.',
     );
   }
-  const tx = await createUsdcTransferTransaction({
+  const tx = await createTokenTransferTransaction({
     walletId: userAgent.wallet_id,
     destinationAddress: payee,
-    amountUsdc: params.amountUsdc,
+    amount: params.amountUsdc,
+    tokenAddress: resolveAgentPayTokenAddress(currency),
   });
 
   const txId = extractTxId(tx);
@@ -105,7 +116,11 @@ export async function executeUsdcTransfer(params: {
     agent_slug: 'agentpay',
     action_type: params.actionType,
     status: 'complete',
-    remark: params.remark ? params.remark.slice(0, 500) : null,
+    remark: params.remark
+      ? `${currency !== 'USDC' ? `[${currency}] ` : ''}${params.remark}`.slice(0, 500)
+      : currency !== 'USDC'
+        ? `[${currency}]`
+        : null,
   });
 
   if (error) {
@@ -139,10 +154,11 @@ export async function executeOwnerWalletUsdcTransfer(params: {
     throw new Error('Transfer amount must be greater than zero');
   }
 
-  const tx = await createUsdcTransferTransaction({
+  const tx = await createTokenTransferTransaction({
     walletId: params.fromWalletId,
     destinationAddress: payee,
-    amountUsdc: params.amountUsdc,
+    amount: params.amountUsdc,
+    tokenAddress: ARC_USDC,
   });
 
   const txId = extractTxId(tx);

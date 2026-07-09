@@ -77,6 +77,7 @@ function isArcTxReceiptMessage(message: LiveChatMessage): boolean {
     /^Executed swap:/m.test(c) ||
     /^Executed (?:deposit|withdraw):/m.test(c) ||
     /^Swap complete on Arc\./m.test(c) ||
+    /^Send complete on Arc\./m.test(c) ||
     /^Vault (?:deposit|withdraw) complete on Arc\./m.test(c) ||
     /^Bridge complete on Arc\./m.test(c) ||
     /^- \*\*Amount:\*\* .+\n- \*\*Route:\*\* .+ -> Arc/m.test(c) ||
@@ -262,11 +263,36 @@ function normalizeReportMarkdown(content: string): string {
   );
 }
 
+function isPostSwapSendConfirmation(content: string): boolean {
+  // Only the second step (swap already settled) — not the initial swap preview
+  // that also mentions "After the swap, I'll send…".
+  return (
+    /\bswap\s+done\b/i.test(content) ||
+    (/\bswap\s+complete\b/i.test(content) &&
+      /\bsend\s+[\d.]+(?:\s+\w+)?\s+to\b/i.test(content))
+  );
+}
+
+function isCompoundSwapSendPreview(content: string): boolean {
+  return (
+    /\bafter\s+the\s+swap,?\s+i'?ll\s+send\b/i.test(content) &&
+    !/\bswap\s+(?:done|complete)\b/i.test(content)
+  );
+}
+
 function getConfirmationPrimaryLabel(
   action?: "swap" | "vault" | "bridge" | "execute" | "schedule" | "split" | "invoice" | "batch",
   content?: string,
 ): string {
   const normalized = stripDisplayMetadata(content || "");
+  // Post-swap AgentPay confirm still carries swap receipt text / action:"swap".
+  // Prefer send so the button matches the pending step.
+  if (isPostSwapSendConfirmation(normalized)) {
+    return "Yes, send";
+  }
+  if (isCompoundSwapSendPreview(normalized)) {
+    return "Yes, swap & send";
+  }
   if (action === "invoice") return "Create Invoice";
   if (action === "batch") return "Send batch";
   if (action === "split") {
@@ -295,6 +321,9 @@ function getConfirmationPrimaryLabel(
   }
   if (/\bswap\b/i.test(normalized)) {
     return "Yes, swap";
+  }
+  if (/\bsend\b/i.test(normalized) && /\b(?:to|recipient)\b/i.test(normalized)) {
+    return "Yes, send";
   }
   return "Yes, execute";
 }
@@ -1324,10 +1353,11 @@ export function ChatThread({
                           onClick={() => onSendMessage?.("YES")}
                           className="inline-flex items-center gap-2 rounded-full border border-[rgba(242,202,80,0.35)] bg-[rgba(242,202,80,0.12)] px-4 py-2 text-sm font-medium text-[#f2ca50] transition hover:bg-[rgba(242,202,80,0.20)]"
                         >
-                          {getConfirmationPrimaryLabel(
-                            message.confirmation?.action,
-                            renderedContent,
-                          )}
+                          {message.confirmation?.confirmLabel ||
+                            getConfirmationPrimaryLabel(
+                              message.confirmation?.action,
+                              renderedContent,
+                            )}
                         </button>
                         <button
                           type="button"

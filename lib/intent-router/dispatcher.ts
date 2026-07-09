@@ -154,6 +154,11 @@ export async function dispatchIntent(input: {
             tokenIn: slots.token_in?.symbol,
             tokenOut: slots.token_out?.symbol,
             confirmed: slots.confirmed ?? false,
+            ...(slots.recipient?.handle || slots.recipient?.address
+              ? {
+                  sendTo: slots.recipient.handle || slots.recipient.address,
+                }
+              : {}),
           },
           walletCtx,
           sessionId,

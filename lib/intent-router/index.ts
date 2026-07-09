@@ -201,6 +201,7 @@ For financial advisory scope questions like "can you be my fund manager", "can y
 Use topic_hint for general.chat when helpful: greeting, capabilities, thanks, unclear, offtopic, financial_advisory_scope.
 For payment messages, prefer agentpay.send when the user wants to send money now, agentpay.request when they want to collect money, and schedule.create when there is recurring cadence.
 For swap messages, always use swap.execute and encode preview intent via confirmed=false.
+If the user asks to swap and then send/pay the result to a recipient (e.g. "swap 1 USDC to EURC and send it to jack.arc"), keep swap.execute and include slots.recipient with the handle/address. Do not drop the send half.
 For bridge messages, always use bridge.execute and encode preview intent via confirmed=false.
 For treasury or operations messages about agent wallets, funding pools, top-ups, gas sponsorship, reserve health, or "how are the agent wallets funded", prefer treasury.status or treasury.topup instead of general.chat.
 When the user asks about their current holdings in prediction markets, prefer predmarket.position.
@@ -224,6 +225,9 @@ Output: {"domain":"predmarket","intent":"predmarket.list","slots":{"pagination":
 
 Input: "swap 10 USDC to EURC"
 Output: {"domain":"swap","intent":"swap.execute","slots":{"amount":{"value":10,"currency":"USDC"},"token_in":{"symbol":"USDC"},"token_out":{"symbol":"EURC"},"confirmed":false},"confidence":0.98}
+
+Input: "swap 1 USDC to EURC and send it to jack.arc"
+Output: {"domain":"swap","intent":"swap.execute","slots":{"amount":{"value":1,"currency":"USDC"},"token_in":{"symbol":"USDC"},"token_out":{"symbol":"EURC"},"recipient":{"handle":"jack.arc"},"confirmed":false},"confidence":0.97}
 
 Input: "send 5 USDC to jack.arc"
 Output: {"domain":"agentpay","intent":"agentpay.send","slots":{"recipient":{"handle":"jack.arc"},"amount":{"value":5,"currency":"USDC"}},"confidence":0.98}
@@ -1220,14 +1224,127 @@ function reconcileRouterResult(
     AgentFlowIntentName.SplitExecute,
   ]);
 
+  const isBareConfirmation = /^(?:yes|yeah|yep|confirm|ok|okay|sure)$/i.test(message.trim());
+  if (
+    isBareConfirmation &&
+    intent.intent === AgentFlowIntentName.AgentpaySend &&
+    conversationHistory?.length
+  ) {
+    const lastAssistant = [...conversationHistory]
+      .reverse()
+      .find((entry) => entry.role === 'assistant' && typeof entry.content === 'string')?.content;
+    const sendMatch = typeof lastAssistant === 'string'
+      ? lastAssistant.match(
+          /\bSend\s+(\d+(?:\.\d+)?)\s+(USDC|EURC)\s+to\s+([^\s(?]+(?:\s*\([^)]+\))?)\s*\?/i,
+        )
+      : null;
+    if (sendMatch) {
+      const amountValue = Number(sendMatch[1]);
+      const currency = sendMatch[2].toUpperCase() === 'EURC' ? 'EURC' : 'USDC';
+      const toRaw = sendMatch[3].trim();
+      const handleOrAddress =
+        toRaw.match(/\b(0x[a-fA-F0-9]{40}|[a-z0-9][a-z0-9-]*\.arc)\b/i)?.[1] ||
+        toRaw.replace(/\s*\([^)]*\)\s*$/g, '').trim();
+      const slots = getIntentSlots(intent);
+      const recoveredRecipient = handleOrAddress
+        ? /^0x[a-fA-F0-9]{40}$/i.test(handleOrAddress)
+          ? { address: handleOrAddress }
+          : { handle: handleOrAddress }
+        : slots.recipient;
+      if (Number.isFinite(amountValue) && amountValue > 0) {
+        console.warn('[INTENT_ROUTER_CONFIRM_SEND_FROM_HISTORY]', {
+          raw_message: truncateForLog(message),
+          amount: amountValue,
+          currency,
+          recipient: recoveredRecipient,
+        });
+        return {
+          ...intent,
+          intent: AgentFlowIntentName.AgentpaySend,
+          domain: AgentFlowDomain.AgentPay,
+          slots: {
+            ...slots,
+            amount: { value: amountValue, currency },
+            ...(recoveredRecipient ? { recipient: recoveredRecipient } : {}),
+            confirmed: true,
+          },
+        } as AgentFlowIntent;
+      }
+    }
+  }
+
   if (!hasExplicitNumericAmount(message) && amountSensitiveIntents.has(intent.intent)) {
-    const maybeAmount = (intent.slots as Record<string, unknown> | undefined)?.amount;
-    if (maybeAmount && typeof maybeAmount === 'object') {
-      console.warn('[INTENT_ROUTER_STRIP_HALLUCINATED_AMOUNT]', {
+    // Bare YES confirming a prior send preview is not a hallucinated amount — keep slots.
+    if (!(isBareConfirmation && intent.intent === AgentFlowIntentName.AgentpaySend)) {
+      const maybeAmount = (intent.slots as Record<string, unknown> | undefined)?.amount;
+      if (maybeAmount && typeof maybeAmount === 'object') {
+        console.warn('[INTENT_ROUTER_STRIP_HALLUCINATED_AMOUNT]', {
+          raw_message: truncateForLog(message),
+          intent: intent.intent,
+        });
+        return stripHallucinatedAmountSlot(intent);
+      }
+    }
+  }
+
+  // Compound "swap … and send to …" must keep the send half. Prefer the
+  // heuristic when it already extracted recipient; otherwise inject it.
+  const heuristicSlots = getIntentSlots(heuristic ?? ({} as AgentFlowIntent));
+  const heuristicRecipient =
+    heuristic?.intent === AgentFlowIntentName.SwapExecute &&
+    heuristicSlots.recipient &&
+    typeof heuristicSlots.recipient === 'object' &&
+    heuristicSlots.recipient !== null
+      ? heuristicSlots.recipient
+      : null;
+  const looksLikeSwapThenSend =
+    /\b(?:and\s+)?(?:then\s+)?(?:send|pay|transfer)\b/i.test(message) ||
+    /\bsend\s+it\s+to\b/i.test(message);
+
+  if (heuristicRecipient && looksLikeSwapThenSend) {
+    if (intent.intent !== AgentFlowIntentName.SwapExecute) {
+      console.warn('[INTENT_ROUTER_SWAP_SEND_OVERRIDE]', {
         raw_message: truncateForLog(message),
-        intent: intent.intent,
+        original_intent: intent.intent,
+        recovered_intent: heuristic!.intent,
       });
-      return stripHallucinatedAmountSlot(intent);
+      return heuristic!;
+    }
+    const slots = getIntentSlots(intent);
+    const hasRecipientSlot =
+      slots.recipient && typeof slots.recipient === 'object' && slots.recipient !== null;
+    if (!hasRecipientSlot) {
+      console.warn('[INTENT_ROUTER_SWAP_SEND_RECIPIENT]', {
+        raw_message: truncateForLog(message),
+        recipient: heuristicRecipient,
+      });
+      return {
+        ...intent,
+        slots: {
+          ...slots,
+          recipient: heuristicRecipient,
+        },
+      } as AgentFlowIntent;
+    }
+  } else if (intent.intent === AgentFlowIntentName.SwapExecute && looksLikeSwapThenSend) {
+    const slots = getIntentSlots(intent);
+    const hasRecipientSlot =
+      slots.recipient && typeof slots.recipient === 'object' && slots.recipient !== null;
+    if (!hasRecipientSlot) {
+      const sendRecipient = parseRecipient(message);
+      if (sendRecipient) {
+        console.warn('[INTENT_ROUTER_SWAP_SEND_RECIPIENT]', {
+          raw_message: truncateForLog(message),
+          recipient: sendRecipient,
+        });
+        return {
+          ...intent,
+          slots: {
+            ...slots,
+            recipient: sendRecipient,
+          },
+        } as AgentFlowIntent;
+      }
     }
   }
 
@@ -1544,6 +1661,15 @@ function classifyIntentHeuristically(
   }
 
   if (swapTokens && isSwapExecutionIntent(trimmed) && capabilityRouting.swap.routeToFeature) {
+    const sendRecipient =
+      /\b(?:and\s+)?(?:then\s+)?(?:send|pay|transfer)\b/i.test(trimmed) ||
+      /\bsend\s+it\s+to\b/i.test(trimmed)
+        ? parseRecipient(trimmed)
+        : undefined;
+    const amountCurrency =
+      (swapTokens.token_in === 'USDC' || swapTokens.token_in === 'EURC'
+        ? swapTokens.token_in
+        : undefined) ?? currency;
     return buildHeuristicIntent(
       AgentFlowDomain.Swap,
       AgentFlowIntentName.SwapExecute,
@@ -1551,9 +1677,12 @@ function classifyIntentHeuristically(
       amount ? 0.86 : 0.78,
       {
         confirmed: false,
-        ...(amount ? { amount: { value: amount, ...(currency ? { currency } : {}) } } : {}),
+        ...(amount
+          ? { amount: { value: amount, ...(amountCurrency ? { currency: amountCurrency } : {}) } }
+          : {}),
         ...(swapTokens.token_in ? { token_in: { symbol: swapTokens.token_in } } : {}),
         ...(swapTokens.token_out ? { token_out: { symbol: swapTokens.token_out } } : {}),
+        ...(sendRecipient ? { recipient: sendRecipient } : {}),
       },
     );
   }
@@ -1744,9 +1873,15 @@ export async function classifyIntent(
       ? (earlyHeuristic.slots as Record<string, unknown>)
       : null;
   const earlyTopicHint = typeof earlySlots?.topic_hint === 'string' ? earlySlots.topic_hint : null;
+  const earlyHasSwapSendRecipient =
+    earlyHeuristic?.intent === AgentFlowIntentName.SwapExecute &&
+    earlySlots?.recipient &&
+    typeof earlySlots.recipient === 'object' &&
+    earlySlots.recipient !== null;
   const TRIVIAL_CHAT_FASTPATH_HINTS = new Set(['greeting', 'thanks', 'unclear', 'profile_memory']);
   if (
     earlyHeuristic?.intent === AgentFlowIntentName.PredmarketDetail ||
+    earlyHasSwapSendRecipient ||
     (earlyHeuristic?.intent === AgentFlowIntentName.GeneralChat &&
       earlyTopicHint !== null &&
       TRIVIAL_CHAT_FASTPATH_HINTS.has(earlyTopicHint))
@@ -1756,6 +1891,7 @@ export async function classifyIntent(
       raw_message: truncateForLog(raw_message),
       intent: earlyHeuristic.intent,
       ...(earlyTopicHint ? { topic_hint: earlyTopicHint } : {}),
+      ...(earlyHasSwapSendRecipient ? { compound: 'swap_send' } : {}),
       latency_ms,
     });
     return earlyHeuristic;

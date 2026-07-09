@@ -80,6 +80,7 @@ type AgentPayPendingPayload = {
   amount: string;
   remark?: string;
   walletAddress: string;
+  currency?: 'USDC' | 'EURC';
 };
 
 type SchedulePendingPayload = {
@@ -461,6 +462,8 @@ router.post('/brain/preview', async (req, res) => {
   const resolvedAddressRaw = String(req.body?.resolvedAddress ?? '').trim();
   const amount = String(req.body?.amount ?? '').trim();
   const remark = String(req.body?.remark ?? '').trim();
+  const currencyRaw = String(req.body?.currency ?? 'USDC').trim().toUpperCase();
+  const currency = currencyRaw === 'EURC' ? 'EURC' : 'USDC';
 
   if (!sessionId || !walletAddress || !to || !amount) {
     return res.status(400).json({ error: 'Missing required fields' });
@@ -474,6 +477,7 @@ router.post('/brain/preview', async (req, res) => {
       amount,
       remark,
       walletAddress,
+      currency,
     };
     await getRedis().set(pendingPaymentKey(sessionId), JSON.stringify(payload), 'EX', 300);
     return res.json({ ok: true });
@@ -528,6 +532,7 @@ router.post('/brain/execute', authMiddleware, executionGuardMiddleware, async (r
       return res.status(guard.status).json({ error: guard.message, reason: guard.reason });
     }
 
+    const currency = pending.currency === 'EURC' ? 'EURC' : 'USDC';
     let txHash: string;
     try {
       ({ txHash } = await executeUsdcTransfer({
@@ -536,6 +541,7 @@ router.post('/brain/execute', authMiddleware, executionGuardMiddleware, async (r
         amountUsdc: amountNumber,
         remark: pending.remark ? String(pending.remark).slice(0, 100) : null,
         actionType: 'agentpay_send',
+        currency,
       }));
     } finally {
       await guard.release();
@@ -551,6 +557,7 @@ router.post('/brain/execute', authMiddleware, executionGuardMiddleware, async (r
       explorerLink: explorerLinkTx(txHash),
       to: pending.to,
       amount: pending.amount,
+      currency,
       remark: pending.remark || undefined,
     });
   } catch (e: any) {

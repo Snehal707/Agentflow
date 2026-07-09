@@ -3314,6 +3314,97 @@ function getMostRecentAssistantMessage(history: BrainConversationMessage[] = [])
   return '';
 }
 
+/** Parse a pending AgentPay send preview from the last assistant turn (post-swap send, etc.). */
+function parseAgentPaySendPreviewFromAssistant(content: string): {
+  amount: string;
+  currency: 'USDC' | 'EURC';
+  to: string;
+  remark?: string;
+} | null {
+  const normalized = String(content || '').replace(/\r\n/g, '\n');
+  if (!normalized.trim()) return null;
+
+  const sendMatch = normalized.match(
+    /\bSend\s+(\d+(?:\.\d+)?)\s+(USDC|EURC)\s+to\s+([^\s(?]+(?:\s*\([^)]+\))?)\s*\?/i,
+  );
+  if (!sendMatch) return null;
+
+  const amount = sendMatch[1];
+  const currency = sendMatch[2].toUpperCase() === 'EURC' ? 'EURC' : 'USDC';
+  const toRaw = sendMatch[3].trim();
+  const handleOrAddress =
+    toRaw.match(/\b(0x[a-fA-F0-9]{40}|[a-z0-9][a-z0-9-]*\.arc)\b/i)?.[1] ||
+    toRaw.replace(/\s*\([^)]*\)\s*$/g, '').trim();
+  if (!handleOrAddress) return null;
+
+  const remark =
+    normalized.match(/\bNote:\s*(.+?)(?:\n|$)/i)?.[1]?.trim() || undefined;
+
+  return {
+    amount,
+    currency,
+    to: handleOrAddress,
+    ...(remark ? { remark } : {}),
+  };
+}
+
+async function ensureAgentPayPendingFromAssistantPreview(input: {
+  actionSessionId: string;
+  walletAddress: string;
+  history: BrainConversationMessage[];
+}): Promise<boolean> {
+  const existing = await getFirstPendingRedisValue(
+    (key) => getRedis().get(key),
+    'agentpay:pending:',
+    input.actionSessionId,
+  );
+  if (existing) return true;
+
+  const preview = parseAgentPaySendPreviewFromAssistant(
+    getMostRecentAssistantMessage(input.history),
+  );
+  if (!preview) return false;
+
+  try {
+    let resolvedAddress: string | null = null;
+    if (/^0x[a-fA-F0-9]{40}$/i.test(preview.to)) {
+      resolvedAddress = getAddress(preview.to as `0x${string}`);
+    } else {
+      resolvedAddress = await resolvePayee(preview.to, getAddress(input.walletAddress as `0x${string}`));
+    }
+    const res = await fetch(`http://127.0.0.1:${PUBLIC_PORT}/api/pay/brain/preview`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sessionId: input.actionSessionId,
+        walletAddress: input.walletAddress,
+        to: preview.to,
+        resolvedAddress,
+        amount: preview.amount,
+        remark: preview.remark || '',
+        currency: preview.currency,
+      }),
+    });
+    const json = (await res.json().catch(() => null)) as { ok?: boolean } | null;
+    if (!res.ok || !json?.ok) {
+      console.warn('[chat/respond] failed to rehydrate agentpay pending from assistant preview');
+      return false;
+    }
+    console.info('[chat/respond] rehydrated agentpay pending from assistant preview', {
+      to: preview.to,
+      amount: preview.amount,
+      currency: preview.currency,
+    });
+    return true;
+  } catch (error) {
+    console.warn(
+      '[chat/respond] agentpay pending rehydrate failed:',
+      getErrorMessage(error),
+    );
+    return false;
+  }
+}
+
 function isTelegramProductQuestion(normalized: string): boolean {
   return (
     /\btelegram\b/i.test(normalized) &&
@@ -5019,8 +5110,13 @@ function formatPendingActionFollowup(
     const amount = String(pending.args?.amount ?? '').trim() || 'the quoted amount';
     const tokenIn = String(pending.args?.tokenIn ?? 'USDC').trim().toUpperCase();
     const tokenOut = String(pending.args?.tokenOut ?? 'EURC').trim().toUpperCase();
+    const sendTo =
+      typeof pending.args?.sendTo === 'string' && pending.args.sendTo.trim()
+        ? pending.args.sendTo.trim()
+        : null;
     return [
       `You have a pending swap quote: ${amount} ${tokenIn} to ${tokenOut}.`,
+      ...(sendTo ? [`After the swap, I'll send the ${tokenOut} to ${sendTo}.`] : []),
       '',
       'Reply YES to execute or NO to cancel.',
     ].join('\n');
@@ -8471,6 +8567,46 @@ function parseDirectAgentFlowRoute(
         confirmed: false,
       },
       postActionNote: portfolioA2aPostActionNote('swap agent'),
+    };
+  }
+
+  const compoundSwapSendMatch = normalized.match(
+    new RegExp(
+      `^${politePrefix}(?:swap|trade|exchange|convert)\\s*(\\d+(?:\\.\\d+)?)\\s*(USDC|EURC)\\s*(?:to|for)?\\s*(USDC|EURC)\\b[\\s\\S]*\\b(?:and\\s+)?(?:then\\s+)?(?:send|pay|transfer)(?:\\s+it)?\\s+to\\s+(\\S+)`,
+      'i',
+    ),
+  );
+  if (
+    compoundSwapSendMatch &&
+    isSwapExecutionIntent(normalized) &&
+    capabilityRouting.swap.routeToFeature
+  ) {
+    const [, amount, tokenIn, tokenOut, recipientRaw] = compoundSwapSendMatch;
+    const recipient = String(recipientRaw || '')
+      .replace(/[.,!?;:]+$/g, '')
+      .trim();
+    if (tokenIn.toUpperCase() === tokenOut.toUpperCase()) {
+      return {
+        type: 'reply',
+        text: 'Swap needs two different tokens. Try USDC to EURC or EURC to USDC.',
+      };
+    }
+    if (!recipient) {
+      return {
+        type: 'reply',
+        text: 'Who should I send the swapped tokens to? Include a .arc handle or wallet address.',
+      };
+    }
+    return {
+      type: 'tool',
+      tool: 'swap_tokens',
+      args: {
+        amount,
+        tokenIn: tokenIn.toUpperCase(),
+        tokenOut: tokenOut.toUpperCase(),
+        sendTo: recipient,
+        confirmed: false,
+      },
     };
   }
 
@@ -12635,6 +12771,13 @@ function createPublicApp(): express.Express {
             }
           }
 
+          if (walletCtx.walletAddress) {
+            await ensureAgentPayPendingFromAssistantPreview({
+              actionSessionId,
+              walletAddress: walletCtx.walletAddress,
+              history: historyForBrain,
+            });
+          }
           const agentPayPendingRaw = await getFirstPendingRedisValue(
             (key) => getRedis().get(key),
             'agentpay:pending:',
@@ -12671,6 +12814,7 @@ function createPublicApp(): express.Express {
               error?: string;
               to?: string;
               amount?: string;
+              currency?: string;
               remark?: string;
             };
             if (!executeResp.ok || !executeJson.ok || !executeJson.txHash) {
@@ -12707,6 +12851,12 @@ function createPublicApp(): express.Express {
                 : typeof executeJson.amount === 'string' && executeJson.amount.trim()
                   ? executeJson.amount.trim()
                   : null);
+            const currency =
+              (typeof pendingArgs?.currency === 'string' && pendingArgs.currency.trim()
+                ? pendingArgs.currency.trim().toUpperCase()
+                : typeof executeJson.currency === 'string' && executeJson.currency.trim()
+                  ? executeJson.currency.trim().toUpperCase()
+                  : 'USDC');
             const remark =
               (typeof pendingArgs?.remark === 'string' && pendingArgs.remark.trim()
                 ? pendingArgs.remark.trim()
@@ -12716,7 +12866,7 @@ function createPublicApp(): express.Express {
             const receiptLines = [
               'Sent payment successfully on Arc.',
               recipient ? `Recipient: ${recipient}` : null,
-              amount ? `Amount: ${amount} USDC` : null,
+              amount ? `Amount: ${amount} ${currency === 'EURC' ? 'EURC' : 'USDC'}` : null,
               remark ? `Note: ${remark}` : null,
               `Tx: \`${txShort}\``,
               `[View on Arc Explorer](${explorerUrl})`,
@@ -15203,7 +15353,9 @@ function createPublicApp(): express.Express {
         if (pending && pendingAfter !== pendingBefore) {
           if (typeof pending.tool === 'string' && pending.tool) {
             res.write(
-              `data: ${JSON.stringify({ meta: buildBrainConfirmationMeta(pending.tool) })}\n\n`,
+              `data: ${JSON.stringify({
+                meta: buildBrainConfirmationMeta(pending.tool, fullResponse),
+              })}\n\n`,
             );
           }
         }
@@ -15255,7 +15407,9 @@ function createPublicApp(): express.Express {
           (responseHasPayConfirm && !agentPayPendingBefore)
         ) {
           res.write(
-            `data: ${JSON.stringify({ meta: buildBrainConfirmationMeta('agentpay_send') })}\n\n`,
+            `data: ${JSON.stringify({
+              meta: buildBrainConfirmationMeta('agentpay_send', fullResponse),
+            })}\n\n`,
           );
         }
 

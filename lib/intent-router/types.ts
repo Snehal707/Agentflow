@@ -184,6 +184,8 @@ export interface SwapExecuteSlots
   amount: AmountSlot;
   token_in: TokenSlot;
   token_out: TokenSlot;
+  /** Optional post-swap AgentPay recipient for "swap X and send to Y" flows. */
+  recipient?: RecipientSlot;
 }
 
 export interface VaultListSlots extends ProviderSlot {

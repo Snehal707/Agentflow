@@ -271,6 +271,7 @@ async function fetchAgentPayPreview(
   resolvedAddress: string | null,
   amount: string,
   remark?: string,
+  currency: 'USDC' | 'EURC' = 'USDC',
 ): Promise<void> {
   const res = await fetch(`${PUBLIC_API_BASE_URL}/api/pay/brain/preview`, {
     method: 'POST',
@@ -282,6 +283,7 @@ async function fetchAgentPayPreview(
       resolvedAddress,
       amount,
       remark,
+      currency,
     }),
   });
   const json = await res.json().catch(() => null);
@@ -295,11 +297,12 @@ function formatAgentPayPreview(
   resolvedAddress: string | null,
   amount: string,
   remark?: string,
+  currency: 'USDC' | 'EURC' = 'USDC',
 ): string {
   const recipient = resolvedAddress
     ? `${to} (${resolvedAddress.slice(0, 8)}...${resolvedAddress.slice(-4)})`
     : to;
-  const lines = [`Send ${amount} USDC to ${recipient}?`];
+  const lines = [`Send ${amount} ${currency} to ${recipient}?`];
   if (remark) {
     lines.push(`Note: ${remark}`);
   }
@@ -313,12 +316,13 @@ function formatAgentPayResult(
   txHash: string,
   explorerLink: string,
   remark?: string,
+  currency: 'USDC' | 'EURC' = 'USDC',
 ): string {
   return [
     '- **Payment sent on Arc**',
     '',
     `Recipient: ${to}`,
-    `Amount: ${amount} USDC`,
+    `Amount: ${amount} ${currency}`,
     remark ? `Note: ${remark}` : null,
     `Tx: ${explorerLinkLine(txHash, explorerLink || txHash)}`,
     explorerLink ? `Explorer: ${explorerLinkLine(explorerLink, explorerLink)}` : null,
@@ -350,6 +354,24 @@ function formatSwapExecutionResult(input: {
     input.approvalTxHash ? 'Approval tx:' : null,
     input.approvalTxHash ?? null,
     input.executionTarget ? `Executed from: ${txOwnerLabel}` : txOwnerLabel,
+    input.txHash,
+    input.explorerLink ? `Explorer: ${input.explorerLink}` : null,
+  ]
+    .filter(Boolean)
+    .join('\n\n');
+}
+
+function formatSendExecutionResult(input: {
+  to: string;
+  amount: string;
+  currency: 'USDC' | 'EURC';
+  txHash: string;
+  explorerLink?: string | null;
+}): string {
+  return [
+    `Send: ${input.amount} ${input.currency} to ${input.to}`,
+    'Send complete on Arc.',
+    'Send Tx:',
     input.txHash,
     input.explorerLink ? `Explorer: ${input.explorerLink}` : null,
   ]
@@ -1373,6 +1395,7 @@ export async function executeTool(
                 error?: string;
                 to?: string;
                 amount?: string;
+                currency?: string;
                 remark?: string;
               }
             | null;
@@ -1390,6 +1413,7 @@ export async function executeTool(
             json.txHash,
             json.explorerLink || json.txHash,
             typeof remark === 'string' && remark.trim() ? remark.trim() : json.remark,
+            json.currency === 'EURC' ? 'EURC' : 'USDC',
           );
           console.log('[tool-executor] result:', result);
           return result;
@@ -1521,7 +1545,9 @@ export async function executeTool(
       }
 
       case 'swap_tokens': {
-        const { amount, tokenIn, tokenOut, confirmed } = args;
+        const { amount, tokenIn, tokenOut, confirmed, sendTo } = args;
+        const sendRecipient =
+          typeof sendTo === 'string' && sendTo.trim() ? sendTo.trim() : null;
         const userWalletAddress = walletCtx.walletAddress.trim();
         if (!userWalletAddress) {
           const result = 'No wallet connected.';
@@ -1596,7 +1622,10 @@ export async function executeTool(
 
           await storePending(sessionId, {
             tool: 'swap_tokens',
-            args,
+            args: {
+              ...args,
+              ...(sendRecipient ? { sendTo: sendRecipient } : {}),
+            },
             payload: simulation.payload,
           });
 
@@ -1627,10 +1656,16 @@ export async function executeTool(
                 .split('\n')
                 .map((line) => `- ${line.replace(/^\d+\.\s*/, '')}`)
                 .join('\n'),
-              '',
-              NATURAL_CONFIRMATION_PROMPT,
+              ...(sendRecipient
+                ? [
+                    '',
+                    `After the swap, I'll send the ~${amountOut} ${tokenOut} to ${sendRecipient}.`,
+                    '',
+                    'Reply YES to swap and send, or NO to cancel.',
+                  ]
+                : ['', NATURAL_CONFIRMATION_PROMPT]),
             ].join('\n'),
-            700,
+            800,
           );
           console.log('[tool-executor] result:', result);
           return result;
@@ -1642,6 +1677,11 @@ export async function executeTool(
           console.log('[tool-executor] result:', result);
           return result;
         }
+
+        const pendingSendTo =
+          typeof pending.args?.sendTo === 'string' && pending.args.sendTo.trim()
+            ? pending.args.sendTo.trim()
+            : sendRecipient;
 
         const paidResult = await executeUserPaidAgentViaX402<{
           success?: boolean;
@@ -1690,24 +1730,95 @@ export async function executeTool(
           entries: [paidResult.paymentEntry],
         });
 
-        const finalResult = truncateText(
-          formatSwapExecutionResult({
-            approvalTxHash: paidResult.data.receipt?.approvalTxHash ?? paidResult.data.approvalTxHash ?? null,
-            approvalExplorerLink: paidResult.data.receipt?.approvalExplorerLink || '',
-            txHash: paidResult.data.txHash,
-            explorerLink: paidResult.data.receipt?.explorerLink || '',
-            amountIn: pending.payload.amount,
-            tokenInSymbol: pending.payload.fromSym,
-            amountOut: formatTokenAmountSmart(
-              paidResult.data.receipt?.quoteOutRaw ?? pending.payload.quoteAmountOutRaw,
-              pending.payload.tokenOutDecimals,
-            ),
-            tokenOutSymbol: pending.payload.toSym,
-            executionTarget: 'DCW',
-            provider: paidResult.data.provider || pending.payload.provider || null,
-          }),
-          700,
+        const amountOutFormatted = formatTokenAmountSmart(
+          paidResult.data.receipt?.quoteOutRaw ?? pending.payload.quoteAmountOutRaw,
+          pending.payload.tokenOutDecimals,
         );
+        const swapResult = formatSwapExecutionResult({
+          approvalTxHash: paidResult.data.receipt?.approvalTxHash ?? paidResult.data.approvalTxHash ?? null,
+          approvalExplorerLink: paidResult.data.receipt?.approvalExplorerLink || '',
+          txHash: paidResult.data.txHash,
+          explorerLink: paidResult.data.receipt?.explorerLink || '',
+          amountIn: pending.payload.amount,
+          tokenInSymbol: pending.payload.fromSym,
+          amountOut: amountOutFormatted,
+          tokenOutSymbol: pending.payload.toSym,
+          executionTarget: 'DCW',
+          provider: paidResult.data.provider || pending.payload.provider || null,
+        });
+
+        if (!pendingSendTo) {
+          const finalResult = truncateText(swapResult, 700);
+          console.log('[tool-executor] result:', finalResult);
+          return finalResult;
+        }
+
+        // Compound swap+send: one YES already confirmed both halves. Send immediately
+        // and return a combined receipt — no second confirm step.
+        const sendCurrency =
+          String(pending.payload.toSym || tokenOut || 'USDC').toUpperCase() === 'EURC'
+            ? 'EURC'
+            : 'USDC';
+        const sendRemark = `after swap ${pending.payload.fromSym}->${pending.payload.toSym}`;
+        let sendSection: string;
+        try {
+          const resolvedAddress = await resolvePayee(pendingSendTo, userWalletAddress);
+          await fetchAgentPayPreview(
+            sessionId,
+            userWalletAddress,
+            pendingSendTo,
+            resolvedAddress,
+            amountOutFormatted,
+            sendRemark,
+            sendCurrency,
+          );
+          const sendRes = await fetch(`${PUBLIC_API_BASE_URL}/api/pay/brain/execute`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${generateJWT(normalizeAddress(userWalletAddress))}`,
+            },
+            body: JSON.stringify({ sessionId }),
+          });
+          const sendJson = (await sendRes.json().catch(() => null)) as
+            | {
+                ok?: boolean;
+                txHash?: string;
+                explorerLink?: string;
+                error?: string;
+                to?: string;
+                amount?: string;
+                currency?: string;
+                remark?: string;
+              }
+            | null;
+
+          if (!sendRes.ok || !sendJson?.ok || !sendJson.txHash) {
+            const reason = sendJson?.error || 'Failed to send after swap';
+            sendSection = [
+              '',
+              `Swap completed, but the send to ${pendingSendTo} failed: ${reason}`,
+              `You can retry with: send ${amountOutFormatted} ${sendCurrency} to ${pendingSendTo}`,
+            ].join('\n');
+          } else {
+            sendSection = formatSendExecutionResult({
+              to: sendJson.to || pendingSendTo,
+              amount: sendJson.amount || amountOutFormatted,
+              currency: sendJson.currency === 'EURC' ? 'EURC' : sendCurrency,
+              txHash: sendJson.txHash,
+              explorerLink: sendJson.explorerLink || sendJson.txHash,
+            });
+          }
+        } catch (error) {
+          const reason = error instanceof Error ? error.message : String(error);
+          sendSection = [
+            '',
+            `Swap completed, but I couldn't send to ${pendingSendTo}: ${reason}`,
+            `You can retry with: send ${amountOutFormatted} ${sendCurrency} to ${pendingSendTo}`,
+          ].join('\n');
+        }
+
+        const finalResult = truncateText(`${swapResult}\n\n${sendSection}`, 1200);
         console.log('[tool-executor] result:', finalResult);
         return finalResult;
       }

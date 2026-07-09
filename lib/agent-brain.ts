@@ -488,6 +488,16 @@ function isConfirmationResultText(result: string): boolean {
   );
 }
 
+function isPostSwapSendConfirmationText(result: string): boolean {
+  // Second-step confirm only: swap already settled and AgentPay send is pending.
+  // Do not match the initial swap preview ("After the swap, I'll send…").
+  return (
+    /\bswap\s+done\b/i.test(result) ||
+    (/\bswap\s+complete\b/i.test(result) &&
+      /\bsend\s+[\d.]+(?:\s+\w+)?\s+to\b/i.test(result))
+  );
+}
+
 function confirmationActionForTool(
   toolName: string,
 ): 'swap' | 'vault' | 'bridge' | 'execute' | 'schedule' | 'split' | 'batch' {
@@ -510,16 +520,25 @@ function confirmationActionForTool(
     case 'agentpay_batch':
     case 'batch_payment':
       return 'batch';
+    case 'agentpay_send':
+      return 'execute';
     default:
       return 'execute';
   }
 }
 
-export function buildBrainConfirmationMeta(toolName: string): BrainMessageMeta {
+export function buildBrainConfirmationMeta(
+  toolName: string,
+  resultText?: string,
+): BrainMessageMeta {
+  const isSendConfirm =
+    toolName === 'agentpay_send' ||
+    (typeof resultText === 'string' && isPostSwapSendConfirmationText(resultText));
   return {
     confirmation: {
       required: true,
-      action: confirmationActionForTool(toolName),
+      action: isSendConfirm ? 'execute' : confirmationActionForTool(toolName),
+      ...(isSendConfirm ? { confirmLabel: 'Yes, send' } : {}),
     },
   };
 }
@@ -717,14 +736,23 @@ export function buildBrainMetaFromToolResults(toolResults: BrainToolResult[]): B
     }
   }
 
+  const singleToolResult = toolResults.length === 1 ? toolResults[0] : undefined;
+  const singleResultText = singleToolResult?.result || '';
   const finalConfirmation =
     scheduleConfirmation ??
     splitConfirmation ??
-    (toolResults.length === 1 && isConfirmationResultText(toolResults[0]?.result || '')
-      ? {
-          required: true,
-          action: confirmationActionForTool(toolResults[0].name),
-        }
+    (singleToolResult && isConfirmationResultText(singleResultText)
+      ? isPostSwapSendConfirmationText(singleResultText) ||
+        singleToolResult.name === 'agentpay_send'
+        ? {
+            required: true,
+            action: 'execute' as const,
+            confirmLabel: 'Yes, send',
+          }
+        : {
+            required: true,
+            action: confirmationActionForTool(singleToolResult.name),
+          }
       : undefined);
 
   return {
