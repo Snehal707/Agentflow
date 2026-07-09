@@ -10,6 +10,7 @@ type Case = {
   intent: AgentFlowIntent;
   expectOk: boolean;
   expectSeverity: 'pass' | 'soft' | 'hard';
+  expectClarification?: RegExp;
 };
 
 function makeIntent(
@@ -147,6 +148,17 @@ const CASES: Case[] = [
     }),
     expectOk: true,
     expectSeverity: 'pass',
+  },
+  {
+    name: 'predmarket sell hard missing shares asks for amount',
+    intent: makeIntent(AgentFlowDomain.Predmarket, AgentFlowIntentName.PredmarketSell, {
+      market: { address: '0xe1F30dd444A8A85cD8C7882e06abA26dBA894B96' },
+      outcome: { index: 0, label: 'France' },
+      confirmed: false,
+    }),
+    expectOk: false,
+    expectSeverity: 'hard',
+    expectClarification: /How many shares do you want to sell for France\?/i,
   },
   {
     name: 'research hard empty task',
@@ -367,7 +379,11 @@ async function main(): Promise<void> {
   for (const testCase of CASES) {
     const result = validateIntent(testCase.intent);
     const ok =
-      result.ok === testCase.expectOk && result.severity === testCase.expectSeverity;
+      result.ok === testCase.expectOk &&
+      result.severity === testCase.expectSeverity &&
+      (!testCase.expectClarification ||
+        (typeof result.clarification === 'string' &&
+          testCase.expectClarification.test(result.clarification)));
 
     if (!ok) {
       console.error(
@@ -377,6 +393,7 @@ async function main(): Promise<void> {
             expected: {
               ok: testCase.expectOk,
               severity: testCase.expectSeverity,
+              clarification: testCase.expectClarification?.toString(),
             },
             actual: {
               ok: result.ok,

@@ -1438,7 +1438,7 @@ function classifyIntentHeuristically(
         provider: 'achmarket',
         confirmed: false,
         ...(outcome ? { outcome: { label: outcome } } : {}),
-        ...(amount ? { shares: { value: String(amount) } } : {}),
+        ...(amount ? { shares: { value: Number(amount) } } : {}),
       },
     );
   }

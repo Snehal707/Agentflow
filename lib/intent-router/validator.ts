@@ -419,9 +419,19 @@ function validatePredmarketSell(slots: PredmarketSellSlots): ValidatorDecision {
     missing.push('shares.value');
   }
   if (missing.length > 0) {
+    const outcomeLabel =
+      isPlainObject(slots.outcome) && hasNonEmptyString(slots.outcome.label)
+        ? slots.outcome.label
+        : null;
+    const clarification =
+      missing.length === 1 && missing[0] === 'shares.value'
+        ? `How many shares do you want to sell${outcomeLabel ? ` for ${outcomeLabel}` : ''}?`
+        : missing.includes('outcome') && !missing.includes('market.address')
+          ? 'Which outcome shares do you want to sell?'
+          : 'Tell me which market, which outcome, and how many shares you want to sell.';
     return hardDecision(
       'Prediction market sell is missing required fields',
-      'Tell me which market, which outcome, and how many shares you want to sell.',
+      clarification,
       [],
       missing,
     );

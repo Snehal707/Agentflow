@@ -287,7 +287,10 @@ export async function dispatchIntent(input: {
             action: 'sell',
             marketAddress: slots.market?.address,
             outcomeIdx: resolvePredmarketOutcomeIndex(slots.outcome),
-            sharesWad: slots.shares?.value,
+            sharesWad:
+              slots.shares?.value != null && Number.isFinite(Number(slots.shares.value))
+                ? String(slots.shares.value)
+                : undefined,
             confirmed: slots.confirmed ?? false,
             provider: slots.provider ?? 'achmarket',
           },

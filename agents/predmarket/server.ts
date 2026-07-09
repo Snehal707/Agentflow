@@ -538,7 +538,13 @@ app.post(
         const slippageBps = Number(
           req.body?.slippageBps ?? DEFAULT_PREDMARKET_SLIPPAGE_BPS,
         );
-        const sharesWad = typeof req.body?.sharesWad === 'string' ? req.body.sharesWad : null;
+        const sharesWadRawInput = req.body?.sharesWad;
+        const sharesWad =
+          typeof sharesWadRawInput === 'string'
+            ? sharesWadRawInput.trim()
+            : typeof sharesWadRawInput === 'number' && Number.isFinite(sharesWadRawInput)
+              ? String(sharesWadRawInput)
+              : null;
 
         if (!Number.isInteger(outcomeIdx) || outcomeIdx < 0) {
           return res.status(400).json({

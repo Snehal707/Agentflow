@@ -5635,7 +5635,10 @@ function findOutcomeChoiceByLabel(
 }
 
 function formatPredictionOutcomePrompt(outcome: PredictionOutcomeChoice): string {
-  return `outcome ${outcome.index} (${outcome.label})`;
+  if (Number.isInteger(outcome.index) && outcome.index >= 0) {
+    return `outcome ${outcome.index} (${outcome.label})`;
+  }
+  return outcome.label;
 }
 
 function extractPredictionOutcomeChoice(
@@ -6321,6 +6324,179 @@ function buildPredmarketDetailQuickActionGroups(
   ];
 }
 
+type HeldSellOutcome = PredictionOutcomeChoice & { shares: string };
+
+function parseHeldSellOutcomes(value: string): HeldSellOutcome[] {
+  const heldMatch = value.match(/\[\[AFMETA:held=([^\]]+)\]\]/i);
+  if (heldMatch?.[1]) {
+    return heldMatch[1]
+      .split(';')
+      .map((part) => {
+        const [indexRaw, sharesRaw, ...labelParts] = part.split(':');
+        const index = Number(indexRaw);
+        const shares = String(sharesRaw || '').trim();
+        const label = labelParts.join(':').trim();
+        if (!Number.isInteger(index) || index < 0) return null;
+        if (!shares || !Number.isFinite(Number(shares)) || Number(shares) <= 0) return null;
+        if (!label) return null;
+        return { index, label, shares };
+      })
+      .filter((value): value is HeldSellOutcome => Boolean(value));
+  }
+
+  // Fallback for older position cards that only marked the first outcome.
+  const indexMatch = value.match(/\[\[AFMETA:po=(\d+)\]\]/i);
+  const fallbackIndex = indexMatch ? Number(indexMatch[1]) : null;
+  const cleaned = value.replace(/\[\[AFMETA:[^\]]*\]\]/g, '');
+  const matches = Array.from(
+    cleaned.matchAll(/([0-9]+(?:\.[0-9]+)?)\s+(.+?)\s+shares?\b/gu),
+  );
+  return matches
+    .map((match, offset) => {
+      const rawShares = Number(match[1]);
+      if (!Number.isFinite(rawShares) || rawShares <= 0) return null;
+      const shares = (Math.floor(rawShares * 1e6) / 1e6).toString();
+      if (shares === '0') return null;
+      const label = (match[2] || '')
+        .replace(/[^\p{L}\p{N}\s-]/gu, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+      if (!label) return null;
+      // Only trust an explicit index for the first held outcome on legacy cards.
+      // Later outcomes keep a label-only prompt so the router can resolve them
+      // from market context instead of guessing sequential indexes.
+      const index =
+        offset === 0 && Number.isInteger(fallbackIndex) && fallbackIndex! >= 0
+          ? fallbackIndex!
+          : matches.length === 1
+            ? 0
+            : -1;
+      return { index, label, shares };
+    })
+    .filter((value): value is HeldSellOutcome => Boolean(value));
+}
+
+function buildPredictionSellAmountChoiceReply(
+  marketAddress: `0x${string}`,
+  outcome: PredictionOutcomeChoice,
+  availableShares?: string | null,
+): DirectAgentFlowRoute {
+  const outcomePrompt = formatPredictionOutcomePrompt(outcome);
+  const available =
+    typeof availableShares === 'string' && availableShares.trim() && Number(availableShares) > 0
+      ? availableShares.trim()
+      : null;
+  const text = available
+    ? `How many ${outcome.label} shares do you want to sell?\n\nYou currently hold ${available} shares. Choose an amount below, or type a custom amount like \`sell 5 shares ${outcomePrompt} for ${marketAddress}\`.`
+    : `How many ${outcome.label} shares do you want to sell?\n\nChoose an amount below, or type a custom amount like \`sell 5 shares ${outcomePrompt} for ${marketAddress}\`.`;
+
+  const actions: Array<{
+    label: string;
+    prompt: string;
+    actionId?: string;
+    tone?: 'primary' | 'secondary';
+  }> = [
+    {
+      label: '1 share',
+      prompt: `sell 1 shares ${outcomePrompt} for ${marketAddress}`,
+      actionId: AgentFlowIntentName.PredmarketSell,
+    },
+    {
+      label: '5 shares',
+      prompt: `sell 5 shares ${outcomePrompt} for ${marketAddress}`,
+      actionId: AgentFlowIntentName.PredmarketSell,
+    },
+    {
+      label: '10 shares',
+      prompt: `sell 10 shares ${outcomePrompt} for ${marketAddress}`,
+      actionId: AgentFlowIntentName.PredmarketSell,
+    },
+  ];
+  if (available) {
+    actions.push({
+      label: 'Sell all',
+      prompt: `sell ${available} shares ${outcomePrompt} for ${marketAddress}`,
+      actionId: AgentFlowIntentName.PredmarketSell,
+    });
+  }
+  actions.push({
+    label: 'Details',
+    prompt: `tell me about ${marketAddress}`,
+    actionId: AgentFlowIntentName.PredmarketDetail,
+    tone: 'secondary',
+  });
+
+  return {
+    type: 'reply',
+    text,
+    continuationState: {
+      intent: AgentFlowIntentName.PredmarketSell,
+      rawMessage: `sell shares ${outcomePrompt} for ${marketAddress}`,
+      slots: {
+        provider: 'achmarket',
+        market: { address: marketAddress },
+        outcome: {
+          index: outcome.index,
+          label: outcome.label,
+        },
+      },
+      slotsMissing: ['shares.value'],
+      clarification: text,
+      createdAt: new Date().toISOString(),
+    },
+    quickActionGroups: [
+      {
+        title: outcome.label,
+        actions,
+      },
+    ],
+  };
+}
+
+function buildPredictionSellOutcomeChoiceReply(
+  marketAddress: `0x${string}`,
+  heldOutcomes: HeldSellOutcome[],
+): DirectAgentFlowRoute {
+  const text =
+    'Which outcome shares do you want to sell?\n\nChoose one below, then pick how many shares to sell.';
+  return {
+    type: 'reply',
+    text,
+    continuationState: {
+      intent: AgentFlowIntentName.PredmarketSell,
+      rawMessage: `sell shares for ${marketAddress}`,
+      slots: {
+        provider: 'achmarket',
+        market: { address: marketAddress },
+      },
+      slotsMissing: ['outcome', 'shares.value'],
+      clarification: text,
+      createdAt: new Date().toISOString(),
+    },
+    quickActionGroups: [
+      {
+        title: 'Pick an outcome',
+        actions: [
+          ...heldOutcomes.map((outcome) => {
+            const outcomePrompt = formatPredictionOutcomePrompt(outcome);
+            return {
+              label: `${outcome.label} (${outcome.shares})`,
+              prompt: `sell shares ${outcomePrompt} for ${marketAddress} [[AFMETA:avail=${outcome.shares}]]`,
+              actionId: AgentFlowIntentName.PredmarketSell,
+            };
+          }),
+          {
+            label: 'Details',
+            prompt: `tell me about ${marketAddress}`,
+            actionId: AgentFlowIntentName.PredmarketDetail,
+            tone: 'secondary' as const,
+          },
+        ],
+      },
+    ],
+  };
+}
+
 function buildPredmarketSellAction(
   positionStr: string,
   address: `0x${string}`,
@@ -6330,32 +6506,28 @@ function buildPredmarketSellAction(
   actionId?: string;
   tone: 'primary';
 } | null {
-  // Parse the first "<shares> <label> shares" entry. The label may carry an emoji
-  // prefix and/or multiple words (e.g. "🌍 Others"), so capture everything up to
-  // " shares" and then strip non-word symbols to get a usable outcome token.
-  const match = positionStr.match(/([0-9]+(?:\.[0-9]+)?)\s+(.+?)\s+shares?\b/u);
-  if (!match) return null;
-  const rawShares = Number(match[1]);
-  if (!Number.isFinite(rawShares) || rawShares <= 0) return null;
-  // Floor to 6 decimals so the one-tap sell never exceeds the on-chain balance.
-  const shares = (Math.floor(rawShares * 1e6) / 1e6).toString();
-  if (shares === '0') return null;
-  const label = (match[2] || '')
-    .replace(/\[\[AFMETA:[^\]]*\]\]/g, '')
-    .replace(/[^\p{L}\p{N}\s-]/gu, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-  // Prefer the explicit outcome index (from the hidden AFMETA marker) so the sell
-  // resolves unambiguously for any market, incl. multi-outcome ones. Fall back to
-  // the cleaned label (works for Yes/No) when no marker is present.
-  const indexMatch = positionStr.match(/\[\[AFMETA:po=(\d+)\]\]/);
-  const outcomeRef = indexMatch
-    ? `outcome ${indexMatch[1]}${label ? ` (${label})` : ''}`
-    : label;
-  if (!outcomeRef) return null;
+  const heldOutcomes = parseHeldSellOutcomes(positionStr);
+  if (!heldOutcomes.length) return null;
+
+  // Single held outcome: skip straight to amount chips.
+  if (heldOutcomes.length === 1) {
+    const held = heldOutcomes[0];
+    const outcomeRef = formatPredictionOutcomePrompt(held);
+    return {
+      label: 'Sell',
+      prompt: `sell shares ${outcomeRef} for ${address} [[AFMETA:avail=${held.shares}]]`,
+      actionId: AgentFlowIntentName.PredmarketSell,
+      tone: 'primary',
+    };
+  }
+
+  // Multiple held outcomes: ask which team/outcome first, then amount.
+  const heldMeta = heldOutcomes
+    .map((held) => `${held.index}:${held.shares}:${held.label.replace(/;/g, ',')}`)
+    .join(';');
   return {
     label: 'Sell',
-    prompt: `sell ${shares} shares ${outcomeRef} for ${address}`,
+    prompt: `sell shares for ${address} [[AFMETA:held=${heldMeta}]]`,
     actionId: AgentFlowIntentName.PredmarketSell,
     tone: 'primary',
   };
@@ -8147,6 +8319,44 @@ function parseDirectAgentFlowRoute(
         confirmed: false,
       },
     };
+  }
+
+  const sellWithoutAmountMatch = normalized.match(
+    new RegExp(`^${politePrefix}sell\\s+shares?(?:\\s+of)?(?:[\\s\\S]*)$`, 'i'),
+  );
+  if (sellWithoutAmountMatch) {
+    if (!predictionMarketAddress) {
+      return {
+        type: 'reply',
+        text: 'Which market? Share the market address, or ask me to show prediction markets first.',
+      };
+    }
+
+    const heldOutcomes = parseHeldSellOutcomes(message);
+    if (!predictionOutcome) {
+      if (heldOutcomes.length > 1) {
+        return buildPredictionSellOutcomeChoiceReply(predictionMarketAddress, heldOutcomes);
+      }
+      if (heldOutcomes.length === 1) {
+        return buildPredictionSellAmountChoiceReply(
+          predictionMarketAddress,
+          heldOutcomes[0],
+          heldOutcomes[0].shares,
+        );
+      }
+      return {
+        type: 'reply',
+        text: 'Which outcome shares do you want to sell?',
+      };
+    }
+
+    const availableMatch = message.match(/\[\[AFMETA:avail=([0-9]+(?:\.[0-9]+)?)\]\]/i);
+    const heldMatch = heldOutcomes.find((held) => held.index === predictionOutcome.index);
+    return buildPredictionSellAmountChoiceReply(
+      predictionMarketAddress,
+      predictionOutcome,
+      availableMatch?.[1] ?? heldMatch?.shares ?? null,
+    );
   }
 
   if (/^redeem\b/i.test(normalized) && predictionMarketAddress) {

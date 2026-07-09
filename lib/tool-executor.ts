@@ -800,10 +800,27 @@ function formatPredictionPositions(positions: Array<Record<string, any>>): strin
           )
           .join(' | ')
       : 'No shares';
-    // Hidden marker (stripped from display via [[AFMETA:...]]) carrying the first held
-    // outcome's index, so the positions "Sell" quick-action can build an unambiguous
-    // `sell ... outcome N (...)` command that resolves without needing chat context.
-    const sellMarker = heldOutcomes.length ? ` [[AFMETA:po=${heldOutcomes[0].index}]]` : '';
+    // Hidden marker (stripped from display via [[AFMETA:...]]) listing every sellable
+    // held outcome as index:shares:label so Sell can ask which team first when there
+    // are multiple positions on the same market.
+    const heldMetaParts = heldOutcomes
+      .map(({ outcome, index }: { outcome: Record<string, any>; index: number }) => {
+        const rawShares = Number(outcome.sharesFormatted);
+        if (!Number.isFinite(rawShares) || rawShares <= 0) return null;
+        const shares = (Math.floor(rawShares * 1e6) / 1e6).toString();
+        if (shares === '0') return null;
+        const label = String(outcome.label || `Outcome ${index}`)
+          .replace(/[^\p{L}\p{N}\s-]/gu, ' ')
+          .replace(/\s+/g, ' ')
+          .trim()
+          .replace(/;/g, ',');
+        if (!label) return null;
+        return `${index}:${shares}:${label}`;
+      })
+      .filter((value: string | null): value is string => Boolean(value));
+    const sellMarker = heldMetaParts.length
+      ? ` [[AFMETA:held=${heldMetaParts.join(';')}]]`
+      : '';
     const claimLine = position.canRedeem
       ? 'Redeemable now'
       : position.canRefund
@@ -2136,6 +2153,13 @@ export async function executeTool(
           }
 
           if (action === 'sell') {
+            const sharesWadText =
+              sharesWad != null && String(sharesWad).trim() ? String(sharesWad).trim() : '';
+            if (!sharesWadText) {
+              const result = 'How many shares do you want to sell?';
+              console.log('[tool-executor] result:', result);
+              return result;
+            }
             const previewResult = await fetchPredmarketAgent<{
               success?: boolean;
               preview?: Record<string, any>;
@@ -2144,7 +2168,7 @@ export async function executeTool(
               provider,
               marketAddress: normalizedMarketAddress,
               outcomeIdx,
-              sharesWad,
+              sharesWad: sharesWadText,
               confirmed: false,
             });
             const preview = previewResult.preview || {};
@@ -2157,7 +2181,7 @@ export async function executeTool(
               tool: 'predict_action',
               args: {
                 action,
-                sharesWad,
+                sharesWad: sharesWadText,
                 provider,
                 marketAddress: normalizedMarketAddress,
                 outcomeIdx,
@@ -2173,7 +2197,7 @@ export async function executeTool(
                 notes: predictionNotes(detail.notes),
                 outcomeIdx: Number(outcomeIdx),
                 outcomeLabel: String(preview.outcomeLabel || ''),
-                sharesWad: String(sharesWad),
+                sharesWad: sharesWadText,
                 preview,
                 executionPayload: preview.executionPayload,
               },
