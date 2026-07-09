@@ -3169,6 +3169,9 @@ function parseQuickActionIntent(actionId: unknown, rawMessage: string): AgentFlo
   }
 
   const trimmedActionId = actionId.trim();
+  const predmarketCategoryMatch = rawMessage.match(
+    /^(?:show|browse|list)\s+(crypto|sports|politics|entertainment)\s+(?:prediction\s+)?markets$/i,
+  );
   const predictionMarketAddress = extractPredictionMarketAddress(rawMessage);
   const predictionOutcome = extractPredictionOutcomeChoice(rawMessage);
   const amountMatch = rawMessage.match(/\b(?:bet|buy)\s+(\d+(?:\.\d+)?)\s*(?:USDC|\$)\b/i);
@@ -3209,7 +3212,16 @@ function parseQuickActionIntent(actionId: unknown, rawMessage: string): AgentFlo
       return {
         domain: AgentFlowDomain.Predmarket,
         intent: AgentFlowIntentName.PredmarketList,
-        slots: { provider: 'achmarket' },
+        slots: {
+          provider: 'achmarket',
+          ...(predmarketCategoryMatch
+            ? {
+                filter: {
+                  category: predmarketCategoryMatch[1].toLowerCase(),
+                },
+              }
+            : {}),
+        },
         confidence: 1,
         source: 'fastpath',
         raw_message: rawMessage,
