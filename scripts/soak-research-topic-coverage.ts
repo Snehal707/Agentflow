@@ -66,6 +66,7 @@ function briefForTopic(topic: string): ResearchBrief {
     query: `research report on ${topic}`,
     intent: 'research',
     scope: 'broad',
+    query_strategy: 'standard',
     time_sensitivity: 'recent',
     required_freshness_days: 30,
     geography: [],
@@ -75,6 +76,8 @@ function briefForTopic(topic: string): ResearchBrief {
     must_answer: [`What are the most important current facts about ${topic}?`],
     avoid_drift: [`Do not drift away from ${topic}.`],
     minimum_source_diversity: 2,
+    max_query_variants: 10,
+    target_source_count: 10,
     sub_questions: [`latest developments in ${topic}`, `${topic} data and evidence`],
     evaluation_rubric: 'Use at least two relevant source domains where possible.',
   };

@@ -1840,8 +1840,10 @@ function isEntityRelevantPredictionMarketSource(
     haystack,
     understanding,
   );
+  const entityTokenCount = extractPredictionMarketEntityTokens(understanding).length;
   const authoritativeCategorySource = isPredictionMarketCategoryAuthorityHost(task, hostname);
   const underlyingMatch = hasMeaningfulUnderlyingMatch(haystack, understanding);
+  const categoryContentSignal = hasPredictionMarketCategoryContentSignal(haystack, task);
   const canonicalWords = understanding.entity.canonicalName
     .toLowerCase()
     .split(/\s+/)
@@ -1851,7 +1853,15 @@ function isEntityRelevantPredictionMarketSource(
   const sportsContext = hasPredictionMarketSportsContext(haystack);
   const sportsWinnerMarket = isSportsWinnerPredictionMarketTask(task, understanding);
 
-  if (!sportsTask && authoritativeCategorySource && (distinctTokenMatches >= 1 || underlyingMatch)) {
+  if (
+    !sportsTask &&
+    authoritativeCategorySource &&
+    (
+      distinctTokenMatches >= 2 ||
+      underlyingMatch ||
+      (distinctTokenMatches >= 1 && categoryContentSignal && entityTokenCount <= 1)
+    )
+  ) {
     return true;
   }
 
@@ -1882,7 +1892,7 @@ function isEntityRelevantPredictionMarketSource(
     const canonicalTokenMatch = canonicalToken
       ? new RegExp(`\\b${escapeRegExp(canonicalToken)}\\b`, 'i').test(haystack)
       : false;
-    if (canonicalTokenMatch && hasPredictionMarketCategoryContentSignal(haystack, task)) {
+    if (canonicalTokenMatch && categoryContentSignal) {
       return true;
     }
     if (understanding.entity.ambiguity === 'low') {
@@ -1896,6 +1906,9 @@ function isEntityRelevantPredictionMarketSource(
   }
   if (understanding.entity.ambiguity === 'medium') {
     return distinctTokenMatches >= 2;
+  }
+  if (entityTokenCount <= 1) {
+    return (distinctTokenMatches >= 1 && categoryContentSignal) || underlyingMatch;
   }
   return distinctTokenMatches >= 1 || underlyingMatch;
 }
@@ -2221,6 +2234,65 @@ function buildForecastingFirecrawlVariants(baseQuery: string, intent: Forecastin
   return variants;
 }
 
+function buildAiResearchFirecrawlVariants(baseQuery: string): string[] {
+  const variants: string[] = [];
+  const currentYear = new Date().getUTCFullYear();
+  const aiEntityLike =
+    /\b(openai|chatgpt|gpt(?:-[45o]|\s?4o|\s?5)?|anthropic|claude|deepmind|gemini|mistral)\b/i.test(
+      baseQuery,
+    );
+  const researchLike =
+    /\b(model|models|research|paper|papers|api|benchmark|benchmarks|reasoning|release|capabilities|training|safety|evaluation)\b/i.test(
+      baseQuery,
+    );
+
+  if (!aiEntityLike || !researchLike) return variants;
+
+  addUniqueQuery(variants, `${baseQuery} official blog`);
+  addUniqueQuery(variants, `${baseQuery} official release notes`);
+  addUniqueQuery(variants, `${baseQuery} API announcement`);
+  addUniqueQuery(variants, `${baseQuery} benchmark`);
+  addUniqueQuery(variants, `${baseQuery} research paper`);
+  addUniqueQuery(variants, `${baseQuery} ${currentYear}`);
+  addUniqueQuery(variants, `site:openai.com ${baseQuery}`);
+  addUniqueQuery(variants, `site:openai.com ${baseQuery} research`);
+  addUniqueQuery(variants, `site:openai.com ${baseQuery} API`);
+  addUniqueQuery(variants, `site:openai.com ${baseQuery} model`);
+  addUniqueQuery(variants, `site:arxiv.org ${baseQuery}`);
+  addUniqueQuery(variants, `site:openreview.net ${baseQuery}`);
+  addUniqueQuery(variants, `site:reuters.com ${baseQuery}`);
+
+  return variants;
+}
+
+function buildStablecoinPolicyFirecrawlVariants(baseQuery: string): string[] {
+  const variants: string[] = [];
+  const stablecoinLike = /\b(stablecoin|stablecoins|usdc|usdt|eurc|dai|circle)\b/i.test(baseQuery);
+  const policyLike =
+    /\b(regulation|regulatory|law|bill|legislation|policy|congress|senate|house|sec|cftc|treasury|framework|compliance|reserve requirements?)\b/i.test(
+      baseQuery,
+    );
+
+  if (!stablecoinLike || !policyLike) return variants;
+
+  addUniqueQuery(variants, `${baseQuery} congress`);
+  addUniqueQuery(variants, `${baseQuery} senate`);
+  addUniqueQuery(variants, `${baseQuery} house financial services`);
+  addUniqueQuery(variants, `${baseQuery} senate banking committee`);
+  addUniqueQuery(variants, `${baseQuery} treasury`);
+  addUniqueQuery(variants, `${baseQuery} federal reserve`);
+  addUniqueQuery(variants, `${baseQuery} Reuters`);
+  addUniqueQuery(variants, `${baseQuery} policy analysis`);
+  addUniqueQuery(variants, `site:congress.gov ${baseQuery}`);
+  addUniqueQuery(variants, `site:treasury.gov ${baseQuery}`);
+  addUniqueQuery(variants, `site:federalreserve.gov ${baseQuery}`);
+  addUniqueQuery(variants, `site:banking.senate.gov ${baseQuery}`);
+  addUniqueQuery(variants, `site:financialservices.house.gov ${baseQuery}`);
+  addUniqueQuery(variants, `site:reuters.com ${baseQuery}`);
+
+  return variants;
+}
+
 function buildCurrentStateFirecrawlVariants(baseQuery: string): string[] {
   const variants: string[] = [];
   const lower = baseQuery.toLowerCase();
@@ -2264,6 +2336,13 @@ function buildCurrentStateFirecrawlVariants(baseQuery: string): string[] {
     }
   } else if (/\blandscape\b|\becosystem\b/i.test(baseQuery)) {
     addUniqueQuery(variants, `${baseQuery} analysis`);
+  }
+
+  for (const query of buildAiResearchFirecrawlVariants(baseQuery)) {
+    addUniqueQuery(variants, query);
+  }
+  for (const query of buildStablecoinPolicyFirecrawlVariants(baseQuery)) {
+    addUniqueQuery(variants, query);
   }
 
   return variants;

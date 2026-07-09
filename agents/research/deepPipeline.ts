@@ -4,6 +4,11 @@ import { buildResearchQueries } from './queryGen';
 import { retrieveSources } from './retriever';
 import { buildLiveFacts } from './liveFacts';
 import { extractClaimsFromSources } from './claimExtractor';
+import {
+  buildResearchMemoryContext,
+  inferReportKind,
+  persistDeepResearchMemory,
+} from './memory';
 import { verifyClaims } from './verifier';
 import { synthesizeResearchReport } from './synthesizer';
 import { buildStructuredResearch } from './structuredResearch';
@@ -90,10 +95,17 @@ export async function prepareDeepResearchInputs(input: {
 export async function runDeepResearchCore(input: {
   task: string;
   walletContext?: object;
+  walletAddress?: string | null;
+  sessionId?: string | null;
   onStage?: DeepResearchStageHandler;
 }): Promise<DeepResearchCoreResult> {
   const { task, brief, queries, sources } = await prepareDeepResearchInputs(input);
   const sourceDiagnostics = buildSourceDiagnostics(brief, sources);
+  const memoryContext = await buildResearchMemoryContext({
+    task,
+    reportKind: inferReportKind(task),
+    resolvedEntity: brief.scope === 'narrow' ? brief.query : null,
+  });
 
   const liveFacts = buildLiveFacts(sources);
   const claimExtractionStartedAt = Date.now();
@@ -129,6 +141,7 @@ export async function runDeepResearchCore(input: {
     liveFacts,
     sources,
     sourceDiagnostics,
+    priorResearchMemory: memoryContext?.promptBlock,
   });
   console.log(
     `[research] synthesis completed latency_ms=${Date.now() - synthesisStartedAt} sources=${sources.length} claims=${verified.length}`,
@@ -139,6 +152,19 @@ export async function runDeepResearchCore(input: {
     sources,
     sourceDiagnostics,
     markdownReport,
+  });
+
+  void persistDeepResearchMemory({
+    task,
+    markdownReport,
+    brief,
+    sources,
+    claims: verified,
+    sourceDiagnostics,
+    walletAddress: input.walletAddress ?? null,
+    sessionId: input.sessionId ?? null,
+  }).catch((error) => {
+    console.warn('[research-memory] deep persist skipped:', error instanceof Error ? error.message : String(error));
   });
 
   return {
@@ -232,6 +258,10 @@ export async function runDeepResearch(req: express.Request, res: express.Respons
     const report = await runDeepResearchCore({
       task,
       walletContext: req.body?.walletContext,
+      walletAddress:
+        typeof req.body?.userAddress === 'string' ? req.body.userAddress.trim() : null,
+      sessionId:
+        typeof req.body?.sessionId === 'string' ? req.body.sessionId.trim() : null,
       onStage: (stage) => sendEvent('stage', stage),
     });
 

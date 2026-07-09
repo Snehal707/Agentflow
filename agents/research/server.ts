@@ -38,7 +38,14 @@ import {
   type CounterpartyRiskAssessment,
 } from '../../lib/counterparty-risk';
 import { detectProtocolQueryShape } from '../../lib/protocol-query-shape';
+import { searchResearchMemory } from '../../lib/research-memory';
 import { sourceHostname } from '../../lib/source-policy';
+import {
+  buildResearchMemoryContext,
+  extractRequestMemoryIdentity,
+  inferReportKind,
+  persistFastResearchMemory,
+} from './memory';
 import type { ResearchBrief, SourceDiagnostics } from './types';
 
 dotenv.config();
@@ -259,6 +266,7 @@ function buildFastPredictionMarketBrief(
     query: subject,
     intent: 'prediction_market_research',
     scope: 'narrow',
+    query_strategy: entity?.ambiguity === 'high' || category === 'sports' ? 'standard' : 'light',
     time_sensitivity:
       questionType === 'price_target' || questionType === 'launch_milestone' || questionType === 'release_date'
         ? 'live'
@@ -271,6 +279,8 @@ function buildFastPredictionMarketBrief(
     must_answer: [...mustAnswer].slice(0, 8),
     avoid_drift: [...avoidDrift].slice(0, 6),
     minimum_source_diversity: Math.max(category === 'sports' ? 3 : 2, entity?.ambiguity === 'high' ? 3 : 0),
+    max_query_variants: entity?.ambiguity === 'high' || category === 'sports' ? 10 : 7,
+    target_source_count: entity?.ambiguity === 'high' || category === 'sports' ? 10 : 7,
     sub_questions: [...subQuestions].slice(0, 6),
     evaluation_rubric:
       'Prefer current, directly relevant sources that match the market subject and category; do not let one ambiguous result redefine the topic.',
@@ -842,12 +852,16 @@ const runHandler = async (req: express.Request, res: express.Response) => {
       }
     }
     let expandedTask = expandQuery(task);
+    const memoryIdentity = extractRequestMemoryIdentity(
+      req.body && typeof req.body === 'object' ? (req.body as Record<string, unknown>) : undefined,
+    );
     // For prediction markets, understand the real-world subject first (LLM) so retrieval
     // targets the actual thing — gold for XAUT, the game for GTA 6, the tournament for a
     // World Cup market — instead of the literal "prediction market" wording. Falls back to
     // the deterministic expansion above if understanding fails.
     let subjectFraming = '';
     let marketUnderstanding: MarketUnderstanding | null = null;
+    const reportKind = inferReportKind(task, { portfolioImpact });
     if (/\bprediction market\b/i.test(task)) {
       marketUnderstanding = await understandMarketResearch(task).catch(() => null);
       if (marketUnderstanding) {
@@ -861,6 +875,11 @@ const runHandler = async (req: express.Request, res: express.Response) => {
         }
       }
     }
+    const memoryContext = await buildResearchMemoryContext({
+      task,
+      reportKind,
+      resolvedEntity: marketUnderstanding?.entity?.canonicalName ?? marketUnderstanding?.subject ?? null,
+    });
     const reasoningMode = inferResearchReasoningMode({
       task,
       explicitMode: req.body?.reasoningMode ?? req.query.reasoningMode,
@@ -895,6 +914,8 @@ const runHandler = async (req: express.Request, res: express.Response) => {
           runDeepResearchCore({
             task,
             walletContext: portfolioImpact ? (walletContext ?? undefined) : undefined,
+            walletAddress: memoryIdentity.walletAddress,
+            sessionId: memoryIdentity.sessionId,
           }),
           HERMES_TIMEOUT_MS,
           `Deep research timed out after ${HERMES_TIMEOUT_MS / 1000}s`,
@@ -1007,8 +1028,10 @@ const runHandler = async (req: express.Request, res: express.Response) => {
     }
 
     let liveDataPayload = parseLiveDataPayload(liveData);
+    let fastResearchBrief: ResearchBrief | null = null;
     if (liveDataPayload && /\bprediction market\b/i.test(task)) {
       const researchBrief = buildFastPredictionMarketBrief(task, marketUnderstanding);
+      fastResearchBrief = researchBrief;
       const sourceDiagnostics = buildFastSourceDiagnostics(task, liveDataPayload, researchBrief);
       liveDataPayload = {
         ...liveDataPayload,
@@ -1042,7 +1065,7 @@ const runHandler = async (req: express.Request, res: express.Response) => {
       : '';
     pushTimingTrace(timingTrace, traceStart, 'before_user_message_construction');
     const userMessage = liveData
-      ? `AS OF ${asOf}\nCURRENT DATE: ${asOf.slice(0, 10)}\n\nLIVE DATA JSON:\n${liveData}${contextBlock}${walletContextBlock}\n\n${subjectFraming ? `${subjectFraming}\n\n` : ''}USER TASK:\n${task}\n\nSEARCH QUERY VARIANTS:\n${expandedTask}\n\nUse the LIVE DATA JSON above for current figures and dated evidence. Do not cite or mention any date after CURRENT DATE as if it has happened. When present, cite concrete titles and URLs from current_events.articles, current_events.article_snapshots, dynamic_sources.articles, wikipedia.pages, coingecko, defillama, and bitcoin_onchain; do not invent outlets. Retrieval layers are not evidence and must not be cited as sources.${geopoliticalEvidenceInstruction} For prediction-market reports, do not infer event dates, launch dates, odds, or prices unless the value appears in LIVE DATA. For mainnet/testnet launch markets, do not treat DefiLlama TVL alone as evidence of mainnet readiness, ecosystem traction, or launch timing. When creator_audience_metrics is present, treat current_subscribers/current_subscribers_display and observed_at as direct evidence for the latest available audience count and mention that figure explicitly in the answer. When bitcoin_onchain is present, treat it as primary evidence for Bitcoin network transaction counts, block counts, fees, and on-chain activity windows; do not substitute market trading volume for on-chain transaction volume. When PORTFOLIO_CONTEXT is present, classify the user's exposure and explain impact through that exposure profile without revealing raw balances, full addresses, or PnL unless explicitly requested. Prefer official APIs, reputable publishers, Mempool.space for Bitcoin block/on-chain metrics, CoinGecko for token market data, DefiLlama for chain TVL and stablecoin liquidity only when directly relevant, current-event article snapshots for recent developments, and Wikipedia for factual background. Use the SEARCH QUERY VARIANTS as additional source-planning angles when the topic is broad or ecosystem-focused.`
+      ? `AS OF ${asOf}\nCURRENT DATE: ${asOf.slice(0, 10)}\n\nLIVE DATA JSON:\n${liveData}${contextBlock}${walletContextBlock}\n\n${subjectFraming ? `${subjectFraming}\n\n` : ''}${memoryContext?.promptBlock ? `${memoryContext.promptBlock}\n\n` : ''}USER TASK:\n${task}\n\nSEARCH QUERY VARIANTS:\n${expandedTask}\n\nUse the LIVE DATA JSON above for current figures and dated evidence. Do not cite or mention any date after CURRENT DATE as if it has happened. When present, cite concrete titles and URLs from current_events.articles, current_events.article_snapshots, dynamic_sources.articles, wikipedia.pages, coingecko, defillama, and bitcoin_onchain; do not invent outlets. Retrieval layers are not evidence and must not be cited as sources.${geopoliticalEvidenceInstruction} For prediction-market reports, do not infer event dates, launch dates, odds, or prices unless the value appears in LIVE DATA. For mainnet/testnet launch markets, do not treat DefiLlama TVL alone as evidence of mainnet readiness, ecosystem traction, or launch timing. When creator_audience_metrics is present, treat current_subscribers/current_subscribers_display and observed_at as direct evidence for the latest available audience count and mention that figure explicitly in the answer. When bitcoin_onchain is present, treat it as primary evidence for Bitcoin network transaction counts, block counts, fees, and on-chain activity windows; do not substitute market trading volume for on-chain transaction volume. When PORTFOLIO_CONTEXT is present, classify the user's exposure and explain impact through that exposure profile without revealing raw balances, full addresses, or PnL unless explicitly requested. Treat PRIOR RESEARCH MEMORY as historical hints only; never treat it as current evidence unless the LIVE DATA JSON independently supports it. Prefer official APIs, reputable publishers, Mempool.space for Bitcoin block/on-chain metrics, CoinGecko for token market data, DefiLlama for chain TVL and stablecoin liquidity only when directly relevant, current-event article snapshots for recent developments, and Wikipedia for factual background. Use the SEARCH QUERY VARIANTS as additional source-planning angles when the topic is broad or ecosystem-focused.`
       : `${task}${contextBlock}${walletContextBlock}`;
     pushTimingTrace(timingTrace, traceStart, 'after_user_message_construction', {
       userMessageChars: userMessage.length,
@@ -1107,6 +1130,18 @@ const runHandler = async (req: express.Request, res: express.Response) => {
             ...(walletContext && portfolioImpact ? { wallet_context: walletContext } : {}),
           },
     });
+    void persistFastResearchMemory({
+      task,
+      markdownReport: result,
+      liveDataPayload,
+      brief: fastResearchBrief,
+      marketUnderstanding,
+      portfolioImpact,
+      walletAddress: memoryIdentity.walletAddress,
+      sessionId: memoryIdentity.sessionId,
+    }).catch((error) => {
+      console.warn('[research-memory] fast persist skipped:', getErrorMessage(error));
+    });
   } catch (err) {
     const message = getErrorMessage(err);
     const statusCode = message.includes('timed out') ? 504 : 500;
@@ -1121,6 +1156,34 @@ const runHandler = async (req: express.Request, res: express.Response) => {
 
 app.get('/run', internalKeyMiddleware, guardPayment, runHandler);
 app.post('/run', internalKeyMiddleware, guardPayment, runHandler);
+
+app.get('/memory/search', internalKeyMiddleware, async (req: Request, res: Response) => {
+  try {
+    const query = typeof req.query.query === 'string' ? req.query.query.trim() : '';
+    if (!query) {
+      return res.status(400).json({ error: 'query is required' });
+    }
+    const results = await searchResearchMemory(query, {
+      threshold: typeof req.query.threshold === 'string' ? Number(req.query.threshold) : undefined,
+      limit: typeof req.query.limit === 'string' ? Number(req.query.limit) : undefined,
+      entity: typeof req.query.entity === 'string' ? req.query.entity.trim() : undefined,
+      reportKind:
+        typeof req.query.reportKind === 'string'
+          ? (req.query.reportKind as 'general' | 'prediction_market' | 'portfolio_impact' | 'protocol' | 'macro')
+          : undefined,
+      chunkType:
+        typeof req.query.chunkType === 'string'
+          ? (req.query.chunkType as 'summary' | 'claim' | 'source_snippet')
+          : undefined,
+    });
+    return res.json({ query, count: results.length, results });
+  } catch (error) {
+    return res.status(500).json({
+      error: 'memory search failed',
+      details: getErrorMessage(error),
+    });
+  }
+});
 
 async function start(): Promise<void> {
   const sellerAddress = await resolveAgentSellerAddress({

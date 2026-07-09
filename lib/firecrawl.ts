@@ -73,6 +73,16 @@ function explicitSearxngConfigPresent(): boolean {
   );
 }
 
+function configuredSearxngBaseUrl(): string | null {
+  const configured =
+    process.env.SEARXNG_API_URL ||
+    process.env.SEARXNG_SEARCH_URL ||
+    process.env.SEARXNG_ENDPOINT ||
+    '';
+  const normalized = configured.trim().replace(/\/+$/, '');
+  return normalized || null;
+}
+
 function formatBackendError(error: unknown, provider: 'firecrawl' | 'searxng'): string {
   if (error instanceof Error) {
     const cause = (error as Error & { cause?: unknown }).cause;
@@ -141,13 +151,17 @@ async function fetchJsonWithTimeout(
 
 export function getSearchBackendDiagnostics(): SearchBackendDiagnostic[] {
   const firecrawlBase = (process.env.FIRECRAWL_API_URL || 'https://api.firecrawl.dev').replace(/\/+$/, '');
-  const searxngBase = deriveSearxngBaseUrl();
+  const searxngBase = configuredSearxngBaseUrl();
   const diagnostics: SearchBackendDiagnostic[] = [];
 
-  for (const [provider, base, explicitConfig] of [
+  const backends: Array<readonly ['firecrawl' | 'searxng', string, boolean]> = [
     ['firecrawl', firecrawlBase, Boolean((process.env.FIRECRAWL_API_URL || '').trim())],
-    ['searxng', searxngBase, explicitSearxngConfigPresent()],
-  ] as const) {
+  ];
+  if (searxngBase) {
+    backends.push(['searxng', searxngBase, true]);
+  }
+
+  for (const [provider, base, explicitConfig] of backends) {
     const state = searchBackendState.get(searchBackendKey(provider, base));
     diagnostics.push({
       provider,
@@ -173,32 +187,7 @@ export function getSearchBackendDiagnostics(): SearchBackendDiagnostic[] {
 }
 
 function deriveSearxngBaseUrl(): string {
-  const configured =
-    process.env.SEARXNG_API_URL ||
-    process.env.SEARXNG_SEARCH_URL ||
-    process.env.SEARXNG_ENDPOINT ||
-    '';
-  if (configured.trim()) {
-    return configured.replace(/\/+$/, '');
-  }
-
-  const firecrawlBase = (process.env.FIRECRAWL_API_URL || 'https://api.firecrawl.dev').replace(
-    /\/+$/,
-    '',
-  );
-
-  try {
-    const url = new URL(firecrawlBase);
-    if (!url.port || url.port === '3002') {
-      url.port = '8080';
-    }
-    url.pathname = '';
-    url.search = '';
-    url.hash = '';
-    return url.toString().replace(/\/+$/, '');
-  } catch {
-    return firecrawlBase.replace(/:3002(?=\/?$)/, ':8080');
-  }
+  return configuredSearxngBaseUrl() || '';
 }
 
 export async function searchSearxng(
@@ -207,6 +196,9 @@ export async function searchSearxng(
   options?: { timeoutMs?: number; categories?: string[] },
 ): Promise<FirecrawlSearchResult[]> {
   const base = deriveSearxngBaseUrl();
+  if (!base) {
+    return [];
+  }
   const timeoutMs = options?.timeoutMs ?? 15_000;
   const backoffError = getBackendBackoffError('searxng', base);
   if (backoffError) {

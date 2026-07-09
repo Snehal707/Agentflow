@@ -11036,10 +11036,12 @@ function createPublicApp(): express.Express {
 
   app.post('/api/chat/respond', async (req: Request, res: Response) => {
     const message = typeof req.body?.message === 'string' ? req.body.message.trim() : '';
+    const rawUserBodyField =
+      typeof req.body?.rawUserMessage === 'string' ? req.body.rawUserMessage : undefined;
     const requestAuth = resolveOptionalAuth(req);
     const quickActionIntent = parseQuickActionIntent(
       req.body?.quickActionContext?.actionId,
-      message,
+      rawUserBodyField?.trim() || message,
     );
     console.log('[route] message:', message);
     if (quickActionIntent) {
@@ -11248,8 +11250,6 @@ function createPublicApp(): express.Express {
       }
     }
 
-    const rawUserBodyField =
-      typeof req.body?.rawUserMessage === 'string' ? req.body.rawUserMessage : undefined;
     const capabilityProbe = resolveCapabilityRoutingProbe(rawUserBodyField, message);
 
     /*
@@ -15605,6 +15605,8 @@ function createPublicApp(): express.Express {
         },
         {
           task: string;
+          userAddress?: string;
+          sessionId?: string;
           reasoningMode: 'fast' | 'deep';
           deepResearch?: boolean;
           portfolioImpact?: boolean;
@@ -15615,6 +15617,10 @@ function createPublicApp(): express.Express {
         method: 'POST',
         body: {
           task,
+          userAddress: normalizedUserAddress,
+          sessionId:
+            (typeof req.body?.sessionId === 'string' && req.body.sessionId.trim()) ||
+            `wallet-${normalizedUserAddress.toLowerCase()}`,
           reasoningMode,
           deepResearch: reasoningMode === 'deep',
           portfolioImpact,

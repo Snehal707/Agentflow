@@ -7,6 +7,7 @@ export async function synthesizeResearchReport(input: {
   liveFacts: LiveFacts;
   sources: Source[];
   sourceDiagnostics: SourceDiagnostics;
+  priorResearchMemory?: string;
 }): Promise<string> {
   const systemPrompt = `Write a markdown research report using only the provided verified claims and live facts.
 
@@ -57,6 +58,7 @@ Rules:
   ## Catalysts and Constraints
   ## Sources
 - For broad topics, prefer sections that cover the user's required dimensions rather than the most common subtopic in retrieved articles.
+- If priorResearchMemory is present, use it only as historical context or query-shaping memory. Never treat it as current evidence unless the current claims or live facts independently support it.
 - Before finalizing, ask: "Would this answer still be on-topic if the user saw only the title and section headings?" If not, rewrite around the brief.
 - Keep the report specific and evidence-led, but do not over-compress deep mode into a short memo.`;
 

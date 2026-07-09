@@ -20,6 +20,8 @@ This repository is the deploy source of truth for the full stack. Backend and fr
    This starts the **public API** (default **:4000**), **Hermes** (**:8000**), **facilitator** (see `FACILITATOR_PORT`, often **:3010**), **dedicated agents** (swap, vault, bridge, schedule, split, research, …), and the **Next.js** app on **:3005** when a production build exists (otherwise `next dev` on **:3005**).  
    **Health checks:** `http://localhost:4000/health`, `http://localhost:3005/api/health`, `http://localhost:8000/health`.  
    **Windows:** from the repo root, `npm run stack:detach` opens a new PowerShell window that runs `npm run dev:stack` and stays open (handy when an IDE-integrated terminal closes the orchestrator).
+   
+   **Search backends:** if you want direct SearXNG in addition to Firecrawl, set `SEARXNG_API_URL` explicitly in `.env`. The app no longer infers SearXNG from `FIRECRAWL_API_URL`.
 
 5. **Frontend only (hot reload):** `npm run dev:frontend:hot` from root, or `cd agentflow-frontend && npm run dev`.
 

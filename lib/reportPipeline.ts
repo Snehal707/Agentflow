@@ -2100,6 +2100,25 @@ function buildExecutiveSummary(
   if (hormuz) sentences.push(sentence(hormuz.summary));
   if (redSea) sentences.push(sentence(redSea.summary));
 
+  if (sentences.length === 0) {
+    const genericClaims = claims
+      .filter((claim) =>
+        claim.section === 'current_status' ||
+        claim.section === 'reported_developments' ||
+        claim.section === 'data_and_statistics',
+      )
+      .slice(0, 3);
+
+    for (const claim of genericClaims) {
+      const note = sourceNote(sourceMap, claim.evidence_source_ids, claim.time_ref);
+      sentences.push(
+        sentence(
+          `${claim.summary.replace(/\.$/, '')}${note ? ` (${note})` : ''}`,
+        ),
+      );
+    }
+  }
+
   return sentences.length
     ? sentences.join(' ')
     : 'The latest retrieved source set is too thin to support a confident executive summary.';

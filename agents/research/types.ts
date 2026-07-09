@@ -2,6 +2,7 @@ export type ResearchBrief = {
   query: string;
   intent: string;
   scope: 'broad' | 'narrow';
+  query_strategy: 'direct' | 'light' | 'standard';
   time_sensitivity: 'live' | 'recent' | 'historical';
   required_freshness_days: number;
   geography: string[];
@@ -11,6 +12,8 @@ export type ResearchBrief = {
   must_answer: string[];
   avoid_drift: string[];
   minimum_source_diversity: number;
+  max_query_variants: number;
+  target_source_count: number;
   sub_questions: string[];
   evaluation_rubric: string;
 };
