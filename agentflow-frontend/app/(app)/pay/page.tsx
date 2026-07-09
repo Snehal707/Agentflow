@@ -229,11 +229,15 @@ export default function AgentPayPage() {
   const [arcRegBusy, setArcRegBusy] = useState(false);
   const [arcRegSuccess, setArcRegSuccess] = useState<string | null>(null);
   const [arcLinkCopied, setArcLinkCopied] = useState(false);
+  const [directAddressCopied, setDirectAddressCopied] = useState(false);
+  const [publicPayLinkCopied, setPublicPayLinkCopied] = useState(false);
   const [arcNameError, setArcNameError] = useState<string | null>(null);
   const [renewBusy, setRenewBusy] = useState(false);
   const [newDcwInput, setNewDcwInput] = useState("");
   const [dcwBusy, setDcwBusy] = useState(false);
   const arcDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const copyTimeoutsRef = useRef<Record<string, ReturnType<typeof setTimeout> | null>>({});
 
   const previewRecipient = toAddress.trim() || "recipient";
   const previewAmount = Number(amount);
@@ -977,12 +981,69 @@ export default function AgentPayPage() {
       if (navigator.share) {
         await navigator.share({ title: "AgentPay", url });
       } else {
-        await navigator.clipboard.writeText(url);
+        await copyText(url);
       }
     } catch {
       /* ignore */
     }
   };
+
+  const writeWithFallback = async (value: string) => {
+    if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(value);
+      return;
+    }
+
+    if (typeof document === "undefined") {
+      throw new Error("Clipboard unavailable");
+    }
+
+    const textArea = document.createElement("textarea");
+    textArea.value = value;
+    textArea.setAttribute("readonly", "");
+    textArea.style.position = "fixed";
+    textArea.style.opacity = "0";
+    textArea.style.pointerEvents = "none";
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+
+    try {
+      const copied = document.execCommand("copy");
+      if (!copied) {
+        throw new Error("Copy command was rejected");
+      }
+    } finally {
+      document.body.removeChild(textArea);
+    }
+  };
+
+  const markCopied = useCallback((key: string, setter: (value: boolean) => void) => {
+    setter(true);
+    const existing = copyTimeoutsRef.current[key];
+    if (existing) {
+      clearTimeout(existing);
+    }
+    copyTimeoutsRef.current[key] = setTimeout(() => {
+      setter(false);
+      copyTimeoutsRef.current[key] = null;
+    }, 2000);
+  }, []);
+
+  const copyText = useCallback(async (value: string) => {
+    await writeWithFallback(value);
+  }, []);
+
+  useEffect(() => {
+    const timeouts = copyTimeoutsRef.current;
+    return () => {
+      for (const timeout of Object.values(timeouts)) {
+        if (timeout) {
+          clearTimeout(timeout);
+        }
+      }
+    };
+  }, []);
 
   const runArcRegister = async () => {
     const headers = getAuthHeaders();
@@ -1451,12 +1512,17 @@ export default function AgentPayPage() {
                         <button
                           type="button"
                           onClick={() => {
-                            if (dcwExecutionAddress) void navigator.clipboard.writeText(dcwExecutionAddress);
+                            if (!dcwExecutionAddress) {
+                              return;
+                            }
+                            void copyText(dcwExecutionAddress)
+                              .then(() => markCopied("direct-address", setDirectAddressCopied))
+                              .catch(() => setDirectAddressCopied(false));
                           }}
                           disabled={!dcwExecutionAddress}
                           className="burnished-gold rounded-xl px-4 py-2 text-sm font-bold disabled:opacity-50"
                         >
-                          Copy address
+                          {directAddressCopied ? "Copied!" : "Copy address"}
                         </button>
                       </div>
 
@@ -1516,9 +1582,9 @@ export default function AgentPayPage() {
                                   <button
                                     type="button"
                                     onClick={() => {
-                                      void navigator.clipboard.writeText(chainArcPayLink);
-                                      setArcLinkCopied(true);
-                                      setTimeout(() => setArcLinkCopied(false), 2000);
+                                      void copyText(chainArcPayLink)
+                                        .then(() => markCopied("arc-link", setArcLinkCopied))
+                                        .catch(() => setArcLinkCopied(false));
                                     }}
                                     className="shrink-0 text-xs text-white/40 hover:text-white"
                                   >
@@ -1641,10 +1707,14 @@ export default function AgentPayPage() {
                             <div className="break-all font-mono text-xs text-white/40">{publicPayUrl}</div>
                             <button
                               type="button"
-                              onClick={() => void navigator.clipboard.writeText(publicPayUrl)}
+                              onClick={() => {
+                                void copyText(publicPayUrl)
+                                  .then(() => markCopied("public-pay-link", setPublicPayLinkCopied))
+                                  .catch(() => setPublicPayLinkCopied(false));
+                              }}
                               className="rounded-lg border border-[rgba(242,202,80,0.35)] px-3 py-1 text-xs font-semibold text-[#f2ca50]"
                             >
-                              Copy link
+                              {publicPayLinkCopied ? "Copied!" : "Copy link"}
                             </button>
                             <button
                               type="button"
