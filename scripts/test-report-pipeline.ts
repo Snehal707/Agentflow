@@ -772,6 +772,65 @@ assert.match(
   /odds or probability evidence/i,
 );
 
+const worldCupPredmarketDoesNotTreatSourceUrlSlugAsFutureDate = finalizeReportMarkdown({
+  task: 'research the prediction market topic: Who Will Win the FIFA World Cup 2026?',
+  writerMarkdown: `## Overview
+
+France, Argentina, and Brazil remain the leading contenders based on current form and odds coverage.
+
+## Sources
+
+- [The New York Times](https://www.nytimes.com/athletic/7329359/2026/07/08/world-cup-2026-48-teams-ranked/) - team rankings
+- [foxsports.com](https://www.foxsports.com/stories/soccer/world-cup-2026-champion-odds) - odds`,
+  research: null,
+  analysis: null,
+  liveData: {
+    snapshot_at: '2026-07-09T00:00:00.000Z',
+    dynamic_sources: {
+      articles: [
+        {
+          title: 'Re-ranking the World Cup teams before the quarter-finals',
+          publisher: 'The New York Times',
+          url: 'https://www.nytimes.com/athletic/7329359/2026/07/08/world-cup-2026-48-teams-ranked/',
+          summary: 'Team rankings and contender context.',
+          seen_at: '2026-07-08T00:00:00.000Z',
+        },
+        {
+          title: 'FIFA World Cup 2026 odds and predictions',
+          publisher: 'foxsports.com',
+          url: 'https://www.foxsports.com/stories/soccer/world-cup-2026-champion-odds',
+          summary: 'Outright odds and favorites.',
+          seen_at: '2026-07-08T00:00:00.000Z',
+        },
+      ],
+    },
+    source_diagnostics: {
+      source_diversity: 'sufficient',
+      unique_source_domains: 2,
+      has_official_match: false,
+      authoritative_category_matches: 2,
+      relevant_entity_matches: 2,
+      unresolved_entity: false,
+      drift_risk: 'low',
+      entity_ambiguity: 'low',
+      search_backend_unhealthy: true,
+      search_backend_failures: ['firecrawl: firecrawl search failed: This operation was aborted'],
+      search_backends: [
+        {
+          provider: 'firecrawl',
+          status: 'unavailable',
+        },
+      ],
+    },
+  },
+});
+assert.ok(
+  !worldCupPredmarketDoesNotTreatSourceUrlSlugAsFutureDate.validationIssues.some((issue) =>
+    /future date/i.test(issue),
+  ),
+  `Expected source URL slugs not to trigger future-date validation, got: ${worldCupPredmarketDoesNotTreatSourceUrlSlugAsFutureDate.validationIssues.join('; ')}`,
+);
+
 const sportsPredmarketRetainsNonWhitelistedSources = finalizeReportMarkdown({
   task: 'research the prediction market topic: Who Will Win the FIFA World Cup 2026?',
   writerMarkdown: `## Summary

@@ -237,6 +237,10 @@ function normalizeNarrativeText(value: string): string {
   return stripHtmlTags(value).replace(/\s+/g, ' ').trim();
 }
 
+function stripUrlsForValidation(value: string): string {
+  return value.replace(/\bhttps?:\/\/\S+/gi, ' ');
+}
+
 function cleanPredictionMarketTopicLabel(task: string): string {
   return task
     .replace(/\r?\n+/g, ' ')
@@ -3293,6 +3297,7 @@ export function validateReportMarkdown(
   markdown: string,
   liveData: Obj | null,
 ): string[] {
+  const validationText = stripUrlsForValidation(markdown);
   const framing = framingSignals(liveData);
   const issues: string[] = [];
   const allowedPredictionMarketFutureDates = extractAllowedPredictionMarketFutureDates(
@@ -3327,11 +3332,11 @@ export function validateReportMarkdown(
     issues.push('Report leaked malformed source-reference text into final markdown.');
   }
   const futureMatches = [
-    ...markdown.matchAll(/\b20\d{2}-\d{2}(?:-\d{2})?\b/g),
-    ...markdown.matchAll(
+    ...validationText.matchAll(/\b20\d{2}-\d{2}(?:-\d{2})?\b/g),
+    ...validationText.matchAll(
       /\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2}(?:st|nd|rd|th)?(?:,\s*|\s+)20\d{2}\b/gi,
     ),
-    ...markdown.matchAll(
+    ...validationText.matchAll(
       /\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+20\d{2}\b/gi,
     ),
   ]
