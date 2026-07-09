@@ -300,27 +300,48 @@ export default function PortfolioPage() {
     setSnapshotLoading(true);
     setSnapshotError(null);
 
-    try {
-      const wallet = await fetchPortfolioSnapshot(address);
-      setWalletSnapshot(wallet);
+    const errors: string[] = [];
 
-      const executionAddressCandidate = executionSummary?.userAgentWalletAddress;
-      if (
-        executionAddressCandidate &&
-        executionAddressCandidate.toLowerCase() !== address.toLowerCase()
-      ) {
-        const execution = await fetchPortfolioSnapshot(executionAddressCandidate);
-        setExecutionSnapshot(execution);
+    const walletResult = await fetchPortfolioSnapshot(address)
+      .then((snapshot) => ({ ok: true as const, snapshot }))
+      .catch((cause) => ({ ok: false as const, cause }));
+
+    if (walletResult.ok) {
+      setWalletSnapshot(walletResult.snapshot);
+    } else {
+      setWalletSnapshot(null);
+      errors.push(
+        walletResult.cause instanceof Error
+          ? `Wallet portfolio unavailable: ${walletResult.cause.message}`
+          : "Wallet portfolio unavailable.",
+      );
+    }
+
+    const executionAddressCandidate = executionSummary?.userAgentWalletAddress;
+    if (
+      executionAddressCandidate &&
+      executionAddressCandidate.toLowerCase() !== address.toLowerCase()
+    ) {
+      const executionResult = await fetchPortfolioSnapshot(executionAddressCandidate)
+        .then((snapshot) => ({ ok: true as const, snapshot }))
+        .catch((cause) => ({ ok: false as const, cause }));
+
+      if (executionResult.ok) {
+        setExecutionSnapshot(executionResult.snapshot);
       } else {
         setExecutionSnapshot(null);
+        errors.push(
+          executionResult.cause instanceof Error
+            ? `Execution wallet portfolio unavailable: ${executionResult.cause.message}`
+            : "Execution wallet portfolio unavailable.",
+        );
       }
-    } catch (cause) {
-      setSnapshotError(
-        cause instanceof Error ? cause.message : "Could not load portfolio holdings.",
-      );
-    } finally {
-      setSnapshotLoading(false);
+    } else {
+      setExecutionSnapshot(null);
     }
+
+    setSnapshotError(errors.length > 0 ? errors.join(" ") : null);
+    setSnapshotLoading(false);
   }, [address, executionSummary?.userAgentWalletAddress]);
 
   useEffect(() => {

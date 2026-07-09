@@ -102,12 +102,14 @@ type ExplorerTokenTransferItem = {
   timestamp: string;
   method?: string | null;
   type?: string | null;
+  token_type?: string | null;
   from: ExplorerAddressRef;
   to: ExplorerAddressRef;
   token: ExplorerToken;
   total: {
-    decimals: string;
-    value: string;
+    decimals?: string | null;
+    value?: string | null;
+    token_id?: string | null;
   };
 };
 
@@ -1136,7 +1138,10 @@ function calculatePositionCostBasis(
       continue;
     }
 
-    const amountUsd = Number(formatUnits(BigInt(item.total.value), Number(item.total.decimals)));
+    const amountUsd = getExplorerTransferAmount(item);
+    if (amountUsd === null) {
+      continue;
+    }
     const fromAddress = normalizeExplorerAddress(item.from.hash);
     const toAddress = normalizeExplorerAddress(item.to.hash);
 
@@ -1268,7 +1273,7 @@ async function resolveGatewayBalance(
 
 function mapTransaction(item: ExplorerTransactionItem): PortfolioRecentTransaction {
   const decoded = item.decoded_input?.method_call || item.method || 'transaction';
-  const feeValue = item.fee?.value ? Number(formatUnits(BigInt(item.fee.value), 18)) : null;
+  const feeValue = parseExplorerUnits(item.fee?.value, 18);
   const summaryParts = [
     decoded,
     item.to?.name || item.to?.hash || null,
@@ -1293,6 +1298,7 @@ function mapTransfer(walletAddress: Address, item: ExplorerTokenTransferItem): P
   const direction = fromAddress === walletAddress ? 'out' : 'in';
   const counterparty = direction === 'out' ? item.to.hash : item.from.hash;
   const counterpartyName = direction === 'out' ? item.to.name || null : item.from.name || null;
+  const amount = formatExplorerTransferAmount(item);
 
   return {
     hash: item.transaction_hash,
@@ -1300,7 +1306,7 @@ function mapTransfer(walletAddress: Address, item: ExplorerTokenTransferItem): P
     token: item.token.symbol || abbreviateAddress(item.token.address_hash),
     tokenAddress: item.token.address_hash,
     direction,
-    amount: formatUnits(BigInt(item.total.value), Number(item.total.decimals)),
+    amount,
     counterparty,
     counterpartyName,
     type: item.type || null,
@@ -1319,7 +1325,10 @@ function estimateGatewayNetUsd(
     }
     const toAddress = normalizeExplorerAddress(item.to.hash);
     const fromAddress = normalizeExplorerAddress(item.from.hash);
-    const amount = Number(formatUnits(BigInt(item.total.value), Number(item.total.decimals)));
+    const amount = getExplorerTransferAmount(item);
+    if (amount === null) {
+      continue;
+    }
     if (toAddress && KNOWN_GATEWAY_WALLETS.has(toAddress) && fromAddress === walletAddress) {
       gatewayNetUsd += amount;
     }
@@ -1335,6 +1344,55 @@ function normalizeExplorerAddress(value: string | undefined | null): Address | n
     return null;
   }
   return getAddress(value);
+}
+
+function parseExplorerUnits(
+  rawValue: string | null | undefined,
+  decimalsValue: string | number | null | undefined,
+): number | null {
+  if (!rawValue) {
+    return null;
+  }
+
+  const decimals =
+    typeof decimalsValue === 'number'
+      ? decimalsValue
+      : Number.parseInt(String(decimalsValue ?? ''), 10);
+  if (!Number.isFinite(decimals) || decimals < 0) {
+    return null;
+  }
+
+  try {
+    return Number(formatUnits(BigInt(rawValue), decimals));
+  } catch {
+    return null;
+  }
+}
+
+function getExplorerTransferAmount(item: ExplorerTokenTransferItem): number | null {
+  return parseExplorerUnits(item.total?.value, item.total?.decimals ?? item.token.decimals);
+}
+
+function formatExplorerTransferAmount(item: ExplorerTokenTransferItem): string {
+  const parsed = getExplorerTransferAmount(item);
+  if (parsed !== null) {
+    return formatAmountString(parsed);
+  }
+
+  if (item.total?.token_id) {
+    return `token #${item.total.token_id}`;
+  }
+
+  return 'N/A';
+}
+
+function formatAmountString(value: number): string {
+  if (!Number.isFinite(value)) {
+    return '0';
+  }
+
+  const text = value.toString();
+  return text.includes('e') ? value.toFixed(6).replace(/\.?0+$/, '') : text;
 }
 
 function abbreviateAddress(value: string): string {
