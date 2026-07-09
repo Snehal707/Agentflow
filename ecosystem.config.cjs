@@ -194,6 +194,19 @@ module.exports = {
       time: true,
     },
     {
+      // Telegram bot poller. This must run as its own long-lived worker so
+      // deep-link onboarding (/start AF-...) and Telegram chat updates are
+      // actually consumed in production.
+      name: "agentflow-telegram-bot",
+      cwd: root,
+      script: tsx,
+      args: "lib/telegram-bot.ts",
+      interpreter: "none",
+      env: { NODE_ENV: "production" },
+      autorestart: true,
+      time: true,
+    },
+    {
       // Next.js frontend on port 3005. Requires `npm run build` (in
       // agentflow-frontend) BEFORE starting. Delete this block if you host the
       // frontend elsewhere (e.g. Vercel).
