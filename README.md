@@ -25,7 +25,7 @@ App shell (`app/(app)/layout.tsx`) wraps those with **`AccessCodeGate`** plus wa
 | `/pay/[handle]` | Public pay page |
 | `/funding` | Move Arc USDC **EOA ↔ DCW** (execution wallet) + faucet link — `funding/page.tsx` (UI copy: not a Gateway/bridge surface; `/vault` re-exports this page) |
 | `/portfolio` | Holdings UI |
-| `/agents` | Agent Store — prices + reputation (`lib/coreAgentSpecs.ts`) |
+| `/agents` | Agent Store — catalog `lib/coreAgentSpecs.ts`; live prices `api/agent-store.ts` `resolveSystemAgentPrice()` (research = R+A+W sum; transcribe hardcoded `$0`) + reputation |
 | `/telegram` | Link wallet to Telegram bot |
 | `/docs` | Marketing docs (`GET /api/docs`) — marketing nav, not app sidebar |
 | `/` | Marketing landing (`(marketing)/page.tsx`) — not an auto-redirect to `/chat` |
@@ -203,7 +203,7 @@ Two different consumers — do not collapse them:
 2. On each start it **copies** every `hermes-skills/*/SKILL.md` pack into `hermes-brain/skills/` (real files, not a junction — junctions warn as “outside trusted skills dir”)
 3. Hermes config `platform_toolsets.api_server` includes **`agentflow_brain` + `skills`**
 4. Chat brain (`lib/agent-brain.ts`) enables the same: `enabled_toolsets: ['agentflow_brain', 'skills']`
-5. System prompt tells the Agent to `skill_view` **`agentflow-report-research`** when planning research-report retrieval
+5. `start-hermes.cjs` writes Hermes `config.yaml` `system_prompt` telling the Agent to `skill_view` **`agentflow-report-research`** when planning research-report retrieval (not in `lib/agent-brain.ts` prompts)
 
 **Smoke (local Hermes up):**
 
@@ -219,11 +219,11 @@ Verified: Hermes `/v1/runs` + `skills_list` returned `agentflow-report-research`
 
 ## 6. Agent Store & DeFi providers
 
-**Catalog** — `lib/coreAgentSpecs.ts` (prices via `*_AGENT_PRICE`):
+**Catalog** — metadata in `lib/coreAgentSpecs.ts`. **Store/UI prices** from `api/agent-store.ts` `resolveSystemAgentPrice()` (not raw `*_AGENT_PRICE` alone):
 
 | Slug | Notes |
 |------|--------|
-| `research` | Research → Analyst → Writer |
+| `research` | Research → Analyst → Writer; store price = sum of `RESEARCH` + `ANALYST` + `WRITER` agent prices |
 | `swap` | Arc swaps (multi-DEX router) |
 | `vault` | Lunex (`luneUSDC` / `luneEURC`) |
 | `predmarket` | AchMarket |
@@ -232,7 +232,7 @@ Verified: Hermes `/v1/runs` + `skills_list` returned `agentflow-report-research`
 | `invoice` | Business invoices |
 | `schedule` / `split` / `batch` | Recurring / split / CSV USDC |
 | `vision` | x402-paid; Hermes + OpenAI fallback |
-| `transcribe` | OpenAI voice→text; free ($0); JWT + daily caps; no x402 middleware |
+| `transcribe` | OpenAI voice→text; free (`resolveSystemAgentPrice` hardcodes `0`); JWT + daily caps; no x402 middleware |
 
 **Providers (code):**
 
@@ -339,7 +339,7 @@ Apps: hermes, backend (API + embedded facilitator/R/A/W), swap, vault, portfolio
 | Frontend | 3005 |
 | API | 4000 |
 | Hermes Agent | 8000 (`AGENTFLOW_HERMES_PORT`) |
-| Facilitator | Prefer **3010** (`FACILITATOR_PORT`; unset → **3000**) |
+| Facilitator | Prefer **3010** (`FACILITATOR_PORT`; code unset → **3000**). `dev:stack` health-checks **3010** — set that in `.env` or the supervisor will miss it |
 | Research / Analyst / Writer | 3001 / 3002 / 3003 |
 | Swap / Vault / Predmarket / Portfolio | 3011 / 3012 / 3013 / 3014 |
 | Invoice / Vision / Transcribe | 3015 / 3016 / 3017 |
