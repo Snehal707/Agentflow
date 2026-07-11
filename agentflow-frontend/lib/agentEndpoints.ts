@@ -74,7 +74,7 @@ export const defaultPriceBySlug: Record<string, string> = {
   portfolio: "0.015",
   invoice: "0.025",
   vision: process.env.NEXT_PUBLIC_VISION_AGENT_PRICE || "0.004",
-  transcribe: process.env.NEXT_PUBLIC_TRANSCRIBE_AGENT_PRICE || "0.002",
+  transcribe: process.env.NEXT_PUBLIC_TRANSCRIBE_AGENT_PRICE || "0",
 };
 
 export { BACKEND };
