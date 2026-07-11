@@ -232,7 +232,7 @@ Verified: Hermes `/v1/runs` + `skills_list` returned `agentflow-report-research`
 | `invoice` | Business invoices |
 | `schedule` / `split` / `batch` | Recurring / split / CSV USDC |
 | `vision` | x402-paid; Hermes + OpenAI fallback |
-| `transcribe` | OpenAI voice→text; **free for MVP** (`fallbackPrice` 0 / `TRANSCRIBE_AGENT_PRICE=0`); JWT + daily caps; no x402 middleware |
+| `transcribe` | OpenAI voice→text; free ($0); JWT + daily caps; no x402 middleware |
 
 **Providers (code):**
 
