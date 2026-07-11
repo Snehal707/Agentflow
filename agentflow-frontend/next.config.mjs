@@ -25,6 +25,7 @@ const useNextDevDist =
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   distDir: useNextDevDist ? ".next-dev" : ".next",
+  outputFileTracingRoot: monorepoRoot,
   experimental: {
     optimizePackageImports: [
       "@rainbow-me/rainbowkit",

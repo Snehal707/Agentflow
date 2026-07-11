@@ -7,11 +7,12 @@ export const runtime = "nodejs";
 
 export async function PATCH(
   request: Request,
-  context: { params: { caseId: string } },
+  context: { params: Promise<{ caseId: string }> },
 ) {
   if (!isInternalMemoryMonitorEnabled()) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
-  const caseId = encodeURIComponent(context.params.caseId);
+  const { caseId: rawCaseId } = await context.params;
+  const caseId = encodeURIComponent(rawCaseId);
   return proxyBackendRequest(request, `/api/internal/memory/review-cases/${caseId}`);
 }

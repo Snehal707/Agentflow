@@ -5,14 +5,16 @@ export const runtime = "nodejs";
 
 export async function GET(
   request: Request,
-  { params }: { params: { handle: string } },
+  { params }: { params: Promise<{ handle: string }> },
 ) {
-  return proxyBackendRequest(request, `/api/pay/${params.handle}`);
+  const { handle } = await params;
+  return proxyBackendRequest(request, `/api/pay/${handle}`);
 }
 
 export async function POST(
   request: Request,
-  { params }: { params: { handle: string } },
+  { params }: { params: Promise<{ handle: string }> },
 ) {
-  return proxyBackendRequest(request, `/api/pay/${params.handle}/execute`);
+  const { handle } = await params;
+  return proxyBackendRequest(request, `/api/pay/${handle}/execute`);
 }

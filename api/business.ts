@@ -535,6 +535,9 @@ router.post('/invoices/:invoiceId/approve', authMiddleware, async (req, res) => 
   try {
     const walletAddress = normalizeWallet(req);
     const invoiceId = String(req.params.invoiceId ?? '').trim();
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(invoiceId)) {
+      return res.status(400).json({ error: 'Valid invoiceId is required' });
+    }
 
     const { data: invoice, error } = await adminDb
       .from('invoices')
@@ -611,6 +614,9 @@ router.post('/invoices/:invoiceId/reject', authMiddleware, async (req, res) => {
   try {
     const walletAddress = normalizeWallet(req);
     const invoiceId = String(req.params.invoiceId ?? '').trim();
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(invoiceId)) {
+      return res.status(400).json({ error: 'Valid invoiceId is required' });
+    }
 
     const { data: invoice, error } = await adminDb
       .from('invoices')

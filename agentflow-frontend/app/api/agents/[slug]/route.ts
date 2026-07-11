@@ -64,11 +64,12 @@ function getAgentUpstreamRunUrl(slug: string): string {
 
 async function proxyAgentRequest(
   request: NextRequest,
-  { params }: { params: { slug: string } },
+  { params }: { params: Promise<{ slug: string }> },
 ) {
+  const { slug } = await params;
   let upstreamUrl: string;
   try {
-    upstreamUrl = getAgentUpstreamRunUrl(params.slug);
+    upstreamUrl = getAgentUpstreamRunUrl(slug);
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Unknown agent slug" },
@@ -114,10 +115,10 @@ async function proxyAgentRequest(
       cache: "no-store",
     });
   } catch (error) {
-    console.error(`[agent proxy] ${params.slug} upstream fetch failed`, error);
+    console.error(`[agent proxy] ${slug} upstream fetch failed`, error);
     return NextResponse.json(
       {
-        error: `Agent upstream unavailable for ${params.slug}`,
+        error: `Agent upstream unavailable for ${slug}`,
       },
       { status: 502 },
     );
@@ -140,14 +141,14 @@ async function proxyAgentRequest(
 
 export async function GET(
   request: NextRequest,
-  context: { params: { slug: string } },
+  context: { params: Promise<{ slug: string }> },
 ) {
   return proxyAgentRequest(request, context);
 }
 
 export async function POST(
   request: NextRequest,
-  context: { params: { slug: string } },
+  context: { params: Promise<{ slug: string }> },
 ) {
   return proxyAgentRequest(request, context);
 }

@@ -19,9 +19,10 @@ export function buildGatewayLowMessage(currentBalance: number, required: number)
     `Required: ${required.toFixed(4)} USDC`,
     `Current: ${currentBalance.toFixed(4)} USDC`,
     '',
-    'Fund your Gateway at:',
-    `${APP_URLS.funds} → Gateway tab`,
+    'Top up your execution wallet first:',
+    APP_URLS.funding,
     '',
+    'Then move USDC into Gateway from the app wallet / portfolio flows if needed.',
     'Execution will continue via your Agent Wallet instead.',
   ].join('\n');
 }

@@ -30,11 +30,12 @@ function getDcwAgentUpstreamRunUrl(slug: string): string {
 
 async function proxyDcwAgentRequest(
   request: NextRequest,
-  { params }: { params: { slug: string } },
+  { params }: { params: Promise<{ slug: string }> },
 ) {
+  const { slug } = await params;
   let upstreamUrl: string;
   try {
-    upstreamUrl = getDcwAgentUpstreamRunUrl(params.slug);
+    upstreamUrl = getDcwAgentUpstreamRunUrl(slug);
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Unknown DCW agent slug" },
@@ -71,10 +72,10 @@ async function proxyDcwAgentRequest(
       cache: "no-store",
     });
   } catch (error) {
-    console.error(`[dcw agent proxy] ${params.slug} upstream fetch failed`, error);
+    console.error(`[dcw agent proxy] ${slug} upstream fetch failed`, error);
     return NextResponse.json(
       {
-        error: `DCW agent upstream unavailable for ${params.slug}`,
+        error: `DCW agent upstream unavailable for ${slug}`,
       },
       { status: 502 },
     );
@@ -95,7 +96,7 @@ async function proxyDcwAgentRequest(
 
 export async function POST(
   request: NextRequest,
-  context: { params: { slug: string } },
+  context: { params: Promise<{ slug: string }> },
 ) {
   return proxyDcwAgentRequest(request, context);
 }

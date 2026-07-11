@@ -5,8 +5,9 @@ export const runtime = "nodejs";
 
 export async function GET(
   request: Request,
-  { params }: { params: { name: string } },
+  { params }: { params: Promise<{ name: string }> },
 ) {
-  const name = encodeURIComponent(params.name ?? "");
+  const { name: rawName } = await params;
+  const name = encodeURIComponent(rawName ?? "");
   return proxyBackendRequest(request, `/api/pay/name/resolve/${name}`);
 }

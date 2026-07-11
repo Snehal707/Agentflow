@@ -60,7 +60,7 @@ import { TELEGRAM_AGENTFLOW_IDENTITY_REPLY } from './agentflow-copy';
 
 const TELEGRAM_LINK_REQUIRED_MESSAGE =
   `⚠️ Please link your wallet first to use AgentFlow.\n\n` +
-  `Go to ${APP_URLS.settings} → Connect Telegram\n` +
+  `Go to ${APP_URLS.telegram} to Connect Telegram\n` +
   `Then open Telegram from the app to finish linking automatically.`;
 
 const TELEGRAM_LINK_SUCCESS_MESSAGE =
@@ -875,7 +875,7 @@ async function sendLinkCodeForceReply(
   chatId: number,
 ): Promise<void> {
   const text = [
-    `${LINK_FORCE_REPLY_MARKER} (from ${APP_URLS.settings} → Connect Telegram).`,
+    `${LINK_FORCE_REPLY_MARKER} (from ${APP_URLS.telegram}).`,
     '',
     'Auto-link usually happens from the app or web button first.',
     'If that did not open correctly, send: /link AF-WZ3ZEU',
@@ -924,7 +924,7 @@ async function applyTelegramLinkCode(
     await send(
       bot,
       chatId,
-      `Code invalid or expired. Generate a new one at ${APP_URLS.settings}`,
+      `Code invalid or expired. Generate a new one at ${APP_URLS.telegram}`,
     );
     return;
   }
@@ -2879,7 +2879,7 @@ export async function startTelegramBot(): Promise<void> {
           'AgentFlow — account not linked.',
           '',
           'To link:',
-          '1) Open ' + APP_URLS.settings + ' → Connect Telegram',
+          '1) Open ' + APP_URLS.telegram,
           '2) Tap Open app or Open web to launch Telegram and link automatically',
           '3) Wait for the bot to confirm your wallet is linked',
           '',
@@ -2937,7 +2937,7 @@ export async function startTelegramBot(): Promise<void> {
         '/portfolio - snapshot',
         '/unlink — disconnect Telegram',
         '',
-        'Primary linking flow: app settings → Connect Telegram → Open app/Open web.',
+        'Primary linking flow: open ' + APP_URLS.telegram + ' in the app, then use Open Telegram / link code.',
         'Use /link only if the automatic deep link does not open correctly.',
         'After a preview, reply YES to confirm or NO to cancel (5 min window).',
       ].join('\n'),

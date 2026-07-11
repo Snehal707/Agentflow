@@ -1,7 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { getAddress, isAddress, parseUnits } from "viem";
 import {
   useAccount,
@@ -56,10 +57,12 @@ function stripArcSuffix(name: string): string {
   return String(name ?? "").trim().replace(/\.arc$/i, "");
 }
 
-export default function PayHandlePage({ params }: { params: { handle: string } }) {
+export default function PayHandlePage() {
+  const params = useParams<{ handle: string }>();
   const searchParams = useSearchParams();
-  const bareHandle = useMemo(() => stripArcSuffix(params.handle).toLowerCase(), [params.handle]);
-  const displayHandle = bareHandle ? `${bareHandle}.arc` : params.handle;
+  const routeHandle = typeof params.handle === "string" ? params.handle : "";
+  const bareHandle = useMemo(() => stripArcSuffix(routeHandle).toLowerCase(), [routeHandle]);
+  const displayHandle = bareHandle ? `${bareHandle}.arc` : routeHandle;
 
   const initialAmount = searchParams.get("amount")?.trim() ?? "";
   const initialPurpose =
@@ -297,12 +300,12 @@ export default function PayHandlePage({ params }: { params: { handle: string } }
               <p className="mt-3 text-sm text-white/60">
                 This .arc name is not registered on the AgentPay registry on Arc Testnet.
               </p>
-              <a
+              <Link
                 href="/pay"
                 className="mt-6 inline-block text-sm text-cyan-300 hover:underline"
               >
                 Get your own .arc name →
-              </a>
+              </Link>
             </div>
           </main>
         </div>
@@ -639,12 +642,12 @@ export default function PayHandlePage({ params }: { params: { handle: string } }
                 </li>
                 <li>
                   Receipt stored in both histories — open{" "}
-                  <a
+                  <Link
                     href="/pay"
                     className="text-[#f2ca50] underline-offset-2 hover:underline"
                   >
                     AgentPay
-                  </a>{" "}
+                  </Link>{" "}
                   any time.
                 </li>
               </ul>

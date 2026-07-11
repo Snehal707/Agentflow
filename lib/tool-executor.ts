@@ -1567,7 +1567,7 @@ export async function executeTool(
         if (!confirmed) {
           if (!walletCtx.executionWalletAddress?.trim()) {
             const result =
-              `Your execution wallet is not set up yet.\nFund it at ${APP_URLS.funds} to start swapping.`;
+              `Your execution wallet is not set up yet.\nFund it at ${APP_URLS.funding} to start swapping.`;
             console.log('[tool-executor] result:', result);
             return result;
           }

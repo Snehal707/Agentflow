@@ -5,12 +5,14 @@ import React from "react";
 interface BorderBeamProps {
   className?: string;
   duration?: number;
+  radius?: number;
   size?: number;
 }
 
 export function BorderBeam({
   className = "",
   duration = 6,
+  radius = 12,
   size = 80,
 }: BorderBeamProps) {
   return (
@@ -21,8 +23,8 @@ export function BorderBeam({
           y="0.5"
           width="calc(100% - 1px)"
           height="calc(100% - 1px)"
-          rx="inherit"
-          ry="inherit"
+          rx={radius}
+          ry={radius}
           className="stroke-[2.5px] [stroke-linecap:round]"
           stroke="url(#border-beam-grad)"
           strokeDasharray={`${size} 320`}

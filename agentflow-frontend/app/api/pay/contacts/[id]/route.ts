@@ -5,16 +5,18 @@ export const runtime = "nodejs";
 
 export async function PUT(
   request: Request,
-  { params }: { params: { id: string } },
+  { params }: { params: Promise<{ id: string }> },
 ) {
-  const id = encodeURIComponent(params.id);
+  const { id: rawId } = await params;
+  const id = encodeURIComponent(rawId);
   return proxyBackendRequest(request, `/api/pay/contacts/${id}`);
 }
 
 export async function DELETE(
   request: Request,
-  { params }: { params: { id: string } },
+  { params }: { params: Promise<{ id: string }> },
 ) {
-  const id = encodeURIComponent(params.id);
+  const { id: rawId } = await params;
+  const id = encodeURIComponent(rawId);
   return proxyBackendRequest(request, `/api/pay/contacts/${id}`);
 }

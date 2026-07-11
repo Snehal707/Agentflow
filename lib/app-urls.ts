@@ -12,11 +12,17 @@ export function appUrl(path = '/'): string {
   return `${APP_BASE_URL}${normalizedPath}`;
 }
 
+/** Live product surfaces (match agentflow-frontend/lib/appData.ts nav). */
 export const APP_URLS = {
   home: APP_BASE_URL,
   chat: appUrl('/chat'),
-  funds: appUrl('/funds'),
   pay: appUrl('/pay'),
+  funding: appUrl('/funding'),
   portfolio: appUrl('/portfolio'),
-  settings: appUrl('/settings'),
+  agents: appUrl('/agents'),
+  telegram: appUrl('/telegram'),
+  /** @deprecated Use `funding` — old `/funds` path; kept as alias for callers. */
+  funds: appUrl('/funding'),
+  /** @deprecated Use `telegram` — there is no `/settings` app page. */
+  settings: appUrl('/telegram'),
 } as const;

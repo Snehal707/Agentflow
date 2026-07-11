@@ -1,7 +1,9 @@
-import { initiateDeveloperControlledWalletsClient } from '@circle-fin/developer-controlled-wallets';
+import { createRequire } from 'node:module';
 import { createPublicClient, getAddress, http, parseAbi } from 'viem';
 import { adminDb } from '../db/client';
 import { resolveArcRpcUrl } from './arc-config';
+
+const require = createRequire(import.meta.url);
 
 const ARC_BLOCKCHAIN = 'ARC-TESTNET';
 const ARC_RPC_URL = resolveArcRpcUrl();
@@ -51,6 +53,11 @@ export function getCircleClient(): any {
     if (!apiKey || !entitySecret) {
       throw new Error('[dcw] CIRCLE_API_KEY and CIRCLE_ENTITY_SECRET are required');
     }
+    const { initiateDeveloperControlledWalletsClient } = require(
+      '@circle-fin/developer-controlled-wallets',
+    ) as {
+      initiateDeveloperControlledWalletsClient: (config: unknown) => unknown;
+    };
     dcwClientSingleton = initiateDeveloperControlledWalletsClient({
       apiKey,
       entitySecret,

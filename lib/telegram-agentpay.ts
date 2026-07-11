@@ -604,14 +604,27 @@ async function routeDirectAgentpayMessage(
     /\b(?:send|pay|transfer)\s+(\d+(?:\.\d+)?)\s*(?:usdc|usd|\$)?\s+(?:to\s+)?((?:0x[a-fA-F0-9]{40})|(?:[a-z0-9][a-z0-9-]*\.arc))\b/i,
   );
   if (sendMatch) {
+    const confirmId = telegramSessionId(message.chat.id);
     const result = await executeTool(
       'agentpay_send',
       { to: sendMatch[2], amount: sendMatch[1], remark: extractAgentpayRemark(text) || undefined },
       wallet,
-      telegramSessionId(message.chat.id),
+      confirmId,
       { rawUserMessage: text },
     );
-    return { responseText: result };
+    const previewReady = /Reply YES to confirm/i.test(result);
+    return {
+      responseText: result,
+      ...(previewReady
+        ? {
+            confirmation: {
+              action: 'agentpay_send' as const,
+              confirmId,
+              label: 'Send payment',
+            },
+          }
+        : {}),
+    };
   }
 
   const requestMatch = text.match(
@@ -712,7 +725,7 @@ async function findTelegramFallbackConfirmation(
   chatId: number,
 ): Promise<TelegramAgentpayConfirmation | null> {
   const sessionId = telegramSessionId(chatId);
-  if (!(await redisPendingExists((key) => getRedis().get(key), 'agentpay:pending', sessionId))) return null;
+  if (!(await redisPendingExists((key) => getRedis().get(key), 'agentpay:pending:', sessionId))) return null;
   return { action: 'agentpay_send', confirmId: sessionId, label: 'Send payment' };
 }
 

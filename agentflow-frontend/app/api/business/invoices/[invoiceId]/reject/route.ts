@@ -5,8 +5,9 @@ export const runtime = "nodejs";
 
 export async function POST(
   request: Request,
-  context: { params: { invoiceId: string } },
+  context: { params: Promise<{ invoiceId: string }> },
 ) {
-  const invoiceId = encodeURIComponent(context.params.invoiceId);
+  const { invoiceId: rawInvoiceId } = await context.params;
+  const invoiceId = encodeURIComponent(rawInvoiceId);
   return proxyBackendRequest(request, `/api/business/invoices/${invoiceId}/reject`);
 }

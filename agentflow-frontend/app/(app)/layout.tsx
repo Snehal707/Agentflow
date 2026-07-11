@@ -1,10 +1,5 @@
-import dynamic from "next/dynamic";
+import { ClientProviders } from "./ClientProviders";
 import { AccessCodeGate } from "@/components/app/AccessCodeGate";
-
-const Providers = dynamic(
-  () => import("../providers").then((m) => m.Providers),
-  { ssr: false },
-);
 
 export default function AppShellLayout({
   children,
@@ -12,9 +7,9 @@ export default function AppShellLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <Providers>
+    <ClientProviders>
       {children}
       <AccessCodeGate />
-    </Providers>
+    </ClientProviders>
   );
 }

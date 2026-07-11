@@ -5,8 +5,9 @@ export const runtime = "nodejs";
 
 export async function POST(
   request: Request,
-  { params }: { params: { requestId: string } },
+  { params }: { params: Promise<{ requestId: string }> },
 ) {
-  const id = encodeURIComponent(params.requestId);
+  const { requestId } = await params;
+  const id = encodeURIComponent(requestId);
   return proxyBackendRequest(request, `/api/pay/decline/${id}`);
 }

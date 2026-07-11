@@ -1,15 +1,11 @@
-import { AppKit, type GetBalancesResult } from '@circle-fin/app-kit';
-import {
-  createCircleWalletsAdapter,
-  type CircleWalletsAdapter,
-} from '@circle-fin/adapter-circle-wallets';
+import type { GetBalancesResult } from '@circle-fin/app-kit';
 import { getAddress, isAddress } from 'viem';
 
 export type ArcAppKitContext =
   | {
       configured: true;
-      kit: AppKit;
-      circleWalletsAdapter: CircleWalletsAdapter;
+      kit: any;
+      circleWalletsAdapter: any;
     }
   | {
       configured: false;
@@ -71,9 +67,12 @@ function getCircleWalletsConfig():
   };
 }
 
-let cachedAppKit: ArcAppKitContext | null = null;
+let cachedAppKitPromise: Promise<ArcAppKitContext> | null = null;
+const nativeImport = new Function('specifier', 'return import(specifier)') as (
+  specifier: string,
+) => Promise<any>;
 
-export function getArcAppKit(): ArcAppKitContext {
+export async function getArcAppKit(): Promise<ArcAppKitContext> {
   const config = getCircleWalletsConfig();
   if (!config) {
     return {
@@ -82,17 +81,24 @@ export function getArcAppKit(): ArcAppKitContext {
     };
   }
 
-  if (cachedAppKit?.configured) {
-    return cachedAppKit;
+  if (cachedAppKitPromise) {
+    return cachedAppKitPromise;
   }
 
-  cachedAppKit = {
-    configured: true,
-    kit: new AppKit(),
-    circleWalletsAdapter: createCircleWalletsAdapter(config),
-  };
+  cachedAppKitPromise = (async () => {
+    const [{ AppKit }, { createCircleWalletsAdapter }] = await Promise.all([
+      nativeImport('@circle-fin/app-kit'),
+      nativeImport('@circle-fin/adapter-circle-wallets'),
+    ]);
 
-  return cachedAppKit;
+    return {
+      configured: true,
+      kit: new AppKit(),
+      circleWalletsAdapter: createCircleWalletsAdapter(config),
+    };
+  })();
+
+  return cachedAppKitPromise;
 }
 
 function normalizeDepositors(addresses: string[]): `0x${string}`[] {
@@ -142,7 +148,7 @@ function normalizeUnifiedBalance(result: GetBalancesResult): ArcUnifiedBalanceRe
 export async function getUnifiedBalanceForWallets(
   walletAddresses: string[],
 ): Promise<ArcUnifiedBalanceRead> {
-  const appKit = getArcAppKit();
+  const appKit = await getArcAppKit();
   if (!appKit.configured) {
     return {
       ...emptyUnifiedBalance,

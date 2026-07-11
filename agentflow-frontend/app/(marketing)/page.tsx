@@ -368,10 +368,10 @@ export default function LandingPage() {
               reputation you can verify on-chain.
             </p>
 
-            <div className="flex flex-col items-center gap-4 sm:flex-row lg:items-start justify-center lg:justify-start">
+            <div className="mx-auto flex w-[calc(100vw-3rem)] max-w-sm flex-col items-center gap-4 sm:w-full sm:max-w-none sm:flex-row lg:mx-0 lg:items-start justify-center lg:justify-start">
               <Link
                 href="/chat"
-                className="group relative overflow-hidden w-full text-center rounded-xl bg-gradient-to-r from-amber-400 to-[#f2ca50] px-8 py-4 text-xs font-bold uppercase tracking-wider text-black shadow-[inset_0_1px_0_rgba(255,255,255,0.35),0_4px_24px_rgba(242,202,80,0.25)] transition-all duration-300 hover:scale-[1.02] hover:shadow-[0_4px_30px_rgba(242,202,80,0.45)] sm:w-auto"
+                className="group relative w-full overflow-hidden rounded-xl bg-gradient-to-r from-amber-400 to-[#f2ca50] px-8 py-4 text-center text-xs font-bold uppercase tracking-wider text-black shadow-[inset_0_1px_0_rgba(255,255,255,0.35),0_4px_24px_rgba(242,202,80,0.25)] transition-all duration-300 hover:scale-[1.02] hover:shadow-[0_4px_30px_rgba(242,202,80,0.45)] sm:w-auto"
               >
                 {/* Diagonal glass reflection sweep */}
                 <div className="absolute inset-y-0 left-0 w-1/2 -skew-x-12 -translate-x-full bg-gradient-to-r from-transparent via-white/30 to-transparent group-hover:animate-[btn-shine_0.75s_ease-out-in_both]" />
@@ -379,7 +379,7 @@ export default function LandingPage() {
               </Link>
               <a
                 href="#how"
-                className="relative overflow-hidden w-full text-center rounded-xl border border-white/[0.08] bg-black/40 px-8 py-4 text-xs font-bold uppercase tracking-wider text-white/90 transition-all duration-300 hover:border-amber-400/30 hover:bg-white/[0.03] hover:scale-[1.02] sm:w-auto"
+                className="relative w-full overflow-hidden rounded-xl border border-white/[0.08] bg-black/40 px-8 py-4 text-center text-xs font-bold uppercase tracking-wider text-white/90 transition-all duration-300 hover:border-amber-400/30 hover:bg-white/[0.03] hover:scale-[1.02] sm:w-auto"
               >
                 <BorderBeam size={40} duration={6} />
                 <span className="relative z-10">See how it works</span>

@@ -5,8 +5,9 @@ export const runtime = "nodejs";
 
 export async function GET(
   request: Request,
-  { params }: { params: { requestId: string } },
+  { params }: { params: Promise<{ requestId: string }> },
 ) {
-  const requestId = encodeURIComponent(params.requestId);
+  const { requestId: rawRequestId } = await params;
+  const requestId = encodeURIComponent(rawRequestId);
   return proxyBackendRequest(request, `/api/x402/attempts/${requestId}`);
 }
