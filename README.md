@@ -1,6 +1,6 @@
 # AgentFlow
 
-Private monorepo for the live **AgentFlow** product on **Arc Testnet**: Circle **x402** micropayments, chat-driven agents, AgentPay, and a Next.js UI.
+Private monorepo for the live **AgentFlow** product on **Arc Testnet**: Circle **x402** micropayments, chat-driven agents, AgentPay, and a **Next.js 15** UI (`agentflow-frontend/`, currently `15.5.20`).
 
 Backend (`server.ts`, `agents/`, `facilitator/`) and frontend (`agentflow-frontend/`) ship together.
 
@@ -61,17 +61,17 @@ Helpers: `npm run dev:stack:clean`, `npm run stack:detach`, `node scripts/stack-
 
 App nav (`agentflow-frontend/lib/appData.ts`): `/chat`, `/pay`, `/funding`, `/portfolio`, `/agents`, `/telegram`.
 
-App shell (`app/(app)/layout.tsx`) wraps those with **`AccessCodeGate`** plus wallet JWT.
+App shell (`app/(app)/layout.tsx`) wraps those in **`ClientProviders`** (dynamic `Providers`, `ssr: false`) plus **`AccessCodeGate`** and wallet JWT.
 
 | Route | Role |
 |-------|------|
 | `/chat` | Main UX — JWT chat; money confirms with YES (`Yes, swap & send` when swap has a recipient — `ChatThread.tsx`) |
 | `/pay` | AgentPay — `.arc` handles, send/request, contacts, schedule/split/batch, invoices, history |
 | `/pay/[handle]` | Public pay page |
-| `/funding` | Move Arc USDC **EOA ↔ DCW** (execution wallet) + faucet link — `funding/page.tsx` (UI copy: not a Gateway/bridge surface; `/vault` re-exports this page) |
+| `/funding` | Move Arc USDC **EOA ↔ DCW** (execution wallet) + faucet link — `funding/page.tsx` (UI copy: not a Gateway/bridge surface; `/vault` re-exports this page; `/funds` redirects here) |
 | `/portfolio` | Holdings UI |
 | `/agents` | Agent Store — catalog `lib/coreAgentSpecs.ts`; live prices `api/agent-store.ts` `resolveSystemAgentPrice()` (research = R+A+W sum; transcribe hardcoded `$0`) + reputation |
-| `/telegram` | Link wallet to Telegram bot |
+| `/telegram` | Link wallet to Telegram bot (bot deep links use `lib/app-urls.ts` → `/telegram`, not a `/settings` page) |
 | `/docs` | Marketing docs (`GET /api/docs`) — marketing nav, not app sidebar |
 | `/` | Marketing landing (`(marketing)/page.tsx`) — not an auto-redirect to `/chat` |
 | `/internal/*` | Ops only (`memory`, `review`, `feedback`) — `INTERNAL_PANEL_KEY` + `INTERNAL_ADMIN_WALLETS` |
@@ -429,7 +429,7 @@ More: [docs/db-access-security.md](docs/db-access-security.md) · [docs/known-is
 | Mount | Role |
 |-------|------|
 | `/api/auth`, `/api/access` | JWT + access code |
-| `/api/wallet`, `/api/telegram`, `/api/settings` | Wallet / Telegram / settings |
+| `/api/wallet`, `/api/telegram`, `/api/settings` | Wallet / Telegram link APIs (`/api/settings/telegram/*` is a legacy alias; **no** `/settings` UI page — use `/telegram`) |
 | `/api/agentpay`, `/api/business`, `/api/pay` | AgentPay / business / pay + `.arc` |
 | `/api/agent-store`, `/api/agent-ratings`, `/api/agent-economy-ledger` | Store / ratings / A2A ledger |
 | `/api/portfolio`, `/api/docs`, `/api/stats` | Portfolio / docs / stats |
