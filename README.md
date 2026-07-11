@@ -92,7 +92,6 @@ Chat path does **not** call `lib/hermes.ts` for the main turn — the Agent proc
 | **Market understanding** | `lib/market-understanding.ts` |
 | **Daily report cron** | `lib/daily-report.ts` ← `crons/index.ts` |
 | **Intent router** (when `INTENT_ROUTER_ENABLED=true`; default **false** in `.env.example`) | `lib/intent-router/index.ts` → `hermes.chat.completions.create` |
-| **Browser extension stream** | `api/extension.ts` → `streamHermes` |
 | Fast-report **rewrite** after Agent review | `lib/fast-report-supervisor.ts` → `callHermesFast` |
 
 #### Both in one flow (example)
@@ -432,4 +431,4 @@ Chain ID `5042002` · RPC `https://rpc.testnet.arc.network` · Explorer https://
 
 ## Out of scope
 
-Not the live product path: `/dashboard`, `orchestrator/` / `npm run dev:orchestrator`, Railway writeups, one-off probe scripts. Prefer this README + the cited source files + `ecosystem.config.cjs`.
+Not the live product path: `/dashboard`, `orchestrator/` / `npm run dev:orchestrator`, Railway writeups, one-off probe scripts, and retired surfaces such as the browser **extension** API and **email inbound** webhook (code may still exist under `api/extension.ts` / `api/webhooks/email.ts` — not documented as product). Prefer this README + the cited source files + `ecosystem.config.cjs`.
