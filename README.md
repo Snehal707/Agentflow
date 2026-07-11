@@ -107,21 +107,22 @@ Money paths: preview (`confirmed=false` / pending) → user **YES** → execute.
 
 ### Research reports
 
-`POST /run` on the API runs **research → analyst → writer** (`RESEARCH_URL` / `ANALYST_URL` / `WRITER_URL`). Mode: `lib/researchMode.ts` (`fast` default; `deep` when explicit / phrase-matched).
+Chat (and the `research` tool) hit **`POST /run` on the API (`:4000`)**, which orchestrates **research → analyst → writer** via `RESEARCH_URL` / `ANALYST_URL` / `WRITER_URL` (defaults `:3001` / `:3002` / `:3003` `/run`). Mode: `lib/researchMode.ts` (`fast` default; `deep` when explicit / phrase-matched). Chat consumer: `fetch(.../:4000/run)` in `server.ts`.
 
 ```mermaid
 flowchart LR
-  Chat --> Run["POST /run"]
-  Run --> R["research :3001"]
-  R --> A["analyst :3002"]
-  A --> W["writer :3003"]
-  W --> Out["SSE report"]
+  Chat["Chat / research tool"] --> ApiRun["API POST :4000/run\norchestrator"]
+  ApiRun --> R["research :3001/run"]
+  R --> A["analyst :3002/run"]
+  A --> W["writer :3003/run"]
+  W --> ApiRun
+  ApiRun --> Out["SSE report to chat"]
 ```
 
-- **fast:** Firecrawl + SearXNG live retrieval, then analyst/writer  
-- **deep:** `deepPipeline` + source-registry / Firecrawl verification  
+- **fast:** research agent does Firecrawl + SearXNG live retrieval (+ `callHermesFast`), then analyst/writer  
+- **deep:** research agent uses `deepPipeline` / source-registry + Firecrawl verification, then analyst/writer  
 
-Queue: `lib/research-queue.ts`. Persist/search: `lib/research-memory.ts`.
+Both modes still run the full R→A→W chain on `/run`. Overflow can queue first (`lib/research-queue.ts`). Persist/search: `lib/research-memory.ts`.
 
 ---
 
