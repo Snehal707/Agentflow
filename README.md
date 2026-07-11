@@ -107,22 +107,38 @@ Money paths: preview (`confirmed=false` / pending) → user **YES** → execute.
 
 ### Research reports
 
-Chat (and the `research` tool) hit **`POST /run` on the API (`:4000`)**, which orchestrates **research → analyst → writer** via `RESEARCH_URL` / `ANALYST_URL` / `WRITER_URL` (defaults `:3001` / `:3002` / `:3003` `/run`). Mode: `lib/researchMode.ts` (`fast` default; `deep` when explicit / phrase-matched). Chat consumer: `fetch(.../:4000/run)` in `server.ts`.
+Verified in `server.ts` (chat research consumer ~L7252; `POST /run` orchestrator ~L15839+):
+
+1. Chat research path (or `research` tool / queue worker) calls **`POST http://127.0.0.1:${PORT||4000}/run`**.
+2. That handler calls agents in order via `RESEARCH_URL` → `ANALYST_URL` → `WRITER_URL` (defaults `127.0.0.1:3001|3002|3003/run`).
+3. The **same** `/run` response streams SSE (`step_*`, `delta`, `receipt`, `report`). The chat handler reads that stream and forwards status/report to the browser.
+
+Mode: `inferResearchReasoningMode` in `lib/researchMode.ts` (`fast` default; `deep` when explicit / phrase-matched). If the sync slot is full, chat **enqueues** first (`lib/research-queue.ts`) instead of calling `/run` immediately; the worker later calls the same `/run`.
 
 ```mermaid
-flowchart LR
-  Chat["Chat / research tool"] --> ApiRun["API POST :4000/run\norchestrator"]
-  ApiRun --> R["research :3001/run"]
-  R --> A["analyst :3002/run"]
-  A --> W["writer :3003/run"]
-  W --> ApiRun
-  ApiRun --> Out["SSE report to chat"]
+sequenceDiagram
+  participant Entry as Chat consumer / research tool / queue
+  participant Orch as API POST :4000/run
+  participant R as research :3001/run
+  participant A as analyst :3002/run
+  participant W as writer :3003/run
+
+  Entry->>Orch: POST /run (task, userAddress, reasoningMode)
+  Orch->>R: RESEARCH_URL
+  R-->>Orch: research text + liveData
+  Orch->>A: ANALYST_URL
+  A-->>Orch: analysis
+  Orch->>W: WRITER_URL
+  W-->>Orch: writer markdown
+  Orch-->>Entry: SSE report (+ receipt / step events)
 ```
 
-- **fast:** research agent does Firecrawl + SearXNG live retrieval (+ `callHermesFast`), then analyst/writer  
-- **deep:** research agent uses `deepPipeline` / source-registry + Firecrawl verification, then analyst/writer  
+Inside the research agent only (still before analyst/writer):
 
-Both modes still run the full R→A→W chain on `/run`. Overflow can queue first (`lib/research-queue.ts`). Persist/search: `lib/research-memory.ts`.
+- **fast:** Firecrawl + SearXNG retrieval + `callHermesFast` (`agents/research/server.ts`)
+- **deep:** `deepPipeline` / source-registry + Firecrawl verification
+
+Persist/search helpers: `lib/research-memory.ts`.
 
 ---
 
