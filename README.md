@@ -133,10 +133,11 @@ sequenceDiagram
   Orch-->>Entry: SSE report (+ receipt / step events)
 ```
 
-Inside the research agent only (still before analyst/writer):
+Inside the research agent (before analyst/writer):
 
-- **fast:** Firecrawl + SearXNG retrieval + `callHermesFast` (`agents/research/server.ts`)
-- **deep:** `deepPipeline` / source-registry + Firecrawl verification
+- **fast / deep modes** still apply at the research agent (`agents/research/server.ts` / `deepPipeline`) after `/run` passes `reasoningMode`.
+- Retrieval planning is **Node code**, not a Hermes Agent skill load: `agents/research/orchestrator.ts` — `buildResearchBrief` via `callHermesFast` with `query_strategy`: `direct` | `light` | `standard`.
+- Repo file `hermes-skills/agentflow-report-research/SKILL.md` describes the same plan vocabulary, but **is not imported by `agents/research/`** and **is not installed into `hermes-brain/skills/`** by `start-hermes.cjs` (checked: no `agentflow*` under local `hermes-brain/skills/`).
 
 Persist/search helpers: `lib/research-memory.ts`.
 
@@ -161,7 +162,7 @@ Same brand, **different layers** — not two peer “clients.”
 | Fast-report **review** (`lib/fast-report-supervisor.ts`, if Agent URL set) | Fast-report **rewrite**; report follow-ups; profile extract; translate |
 | Chat QA scripts | Telegram chat + intent (no Agent); schedule NL; portfolio narrative; invoice PDF; vision/PDF helpers; market understanding; daily-report cron; intent router if enabled |
 
-Config/soul: `start-hermes.cjs` writes `hermes-brain/config.yaml` + `SOUL.md`. Skills pack: §5.
+Config/soul: `start-hermes.cjs` writes `hermes-brain/config.yaml` + `SOUL.md`. Skills: see §5 (chat/Hermes Agent optional install — **not** wired into the research `/run` pipeline).
 
 ---
 
@@ -188,10 +189,14 @@ UI may show aliases (`agentflow_swap`, …) in `lib/agent-brain.ts` — not a se
 
 ## 5. Skills
 
-| Path | Role |
-|------|------|
-| [`hermes-skills/agentflow-report-research/SKILL.md`](hermes-skills/agentflow-report-research/SKILL.md) | Report retrieval plans `direct` / `light` / `standard` |
-| [`agentflow-frontend/SKILL.md`](agentflow-frontend/SKILL.md) | Payment/balance intent rules (live state only) |
+These are **skill documents** in the repo. They are **not** loaded by `agents/research/*` and are **not** auto-installed by `scripts/start-hermes.cjs`.
+
+| Path | What it is | Wired into research `/run`? |
+|------|------------|------------------------------|
+| [`hermes-skills/agentflow-report-research/SKILL.md`](hermes-skills/agentflow-report-research/SKILL.md) | Written guidance for `direct` / `light` / `standard` report retrieval | **No.** Same ideas live in code as `agents/research/orchestrator.ts` (`buildResearchBrief` → `callHermesFast`). This file is not under `hermes-brain/skills/` in a normal local checkout. |
+| [`agentflow-frontend/SKILL.md`](agentflow-frontend/SKILL.md) | Intent / anti-hallucination rules for payments & balances | **No.** File itself says drop/symlink into `~/.hermes/skills/agentflow/` for Hermes Agent chat use. |
+
+Research uses the **Hermes LLM** (`lib/hermes.ts`) from Node agents. It does **not** go through Hermes Agent skill tools (`skill_view` / `skills_list`) for report generation.
 
 ---
 
@@ -382,7 +387,7 @@ agents/                   Microservices
 facilitator/              x402 facilitator
 api/                      Express routers
 lib/                      Shared backend
-hermes-skills/            Hermes Agent skills
+hermes-skills/            Skill markdown pack (not auto-loaded by research pipeline)
 crons/                    PM2 cron
 scripts/                  Stack / Hermes launchers
 ecosystem.config.cjs      PM2
