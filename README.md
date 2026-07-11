@@ -250,7 +250,27 @@ Hermes Agent config + soul: gitignored `hermes-brain/` (`scripts/start-hermes.cj
 
 ---
 
-## DeFi providers (code)
+## Reputation, ratings & agent economy
+
+Not in the nav as their own page; wired into Agent Store + paid-task flows.
+
+| Piece | Where |
+|-------|--------|
+| **On-chain reputation** (ERC-8004 Reputation Registry) | `lib/reputation.ts` · registry address `ARC.reputationRegistry` in `lib/arc-config.ts` |
+| **User star ratings** (web chat, post paid task) | `POST /api/agent-ratings` → `api/agent-ratings.ts` → `submitReputationFeedback` (stars × 20 = score); FE proxy `agentflow-frontend/app/api/agent-ratings/route.ts` |
+| **Ratings DB** | `db/migrations/20260515_create_agent_ratings.sql` (`agent_ratings`) |
+| **Agent Store UI** | `/agents` — `agentflow-frontend/app/(app)/agents/page.tsx` shows `reputationScore` / rating stats |
+| **Product copy** | `agentflow-frontend/lib/docsContent.ts` + `lib/product-rag.ts` (`reputation` topic) |
+| **A2A payment ledger** (agent→agent x402 settlements) | `lib/a2a-ledger.ts` → `lib/agent-economy-ledger.ts` · `GET /api/agent-economy-ledger` · migration `db/migrations/20260504_create_agent_economy_ledger.sql` |
+| **A2A follow-ups** (e.g. invoice→research, portfolio after tool) | `lib/a2a-chat-scheduler.ts`, `lib/a2a-followups.ts` (used from `server.ts`) |
+| **Identity / validation registries** | `ARC.identityRegistry`, `ARC.validationRegistry` in `lib/arc-config.ts` |
+| **x402 attempt ledger** | `lib/x402AttemptLedger.ts` (payment attempts, not reputation) |
+
+Some agents also call `recordReputationSafe` after runs (e.g. `agents/vision/server.ts`, `agents/transcribe/server.ts`).
+
+**Counterparty / handle “reputation” in chat** is separate: research can use an internal reputation **cache** + payment history for `.arc` risk questions (`server.ts` / capability routing) — not the same as ERC-8004 agent ratings.
+
+---
 
 | Area | Implementation |
 |------|----------------|
