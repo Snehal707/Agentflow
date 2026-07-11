@@ -2,130 +2,61 @@
 
 Private monorepo for the live **AgentFlow** product on **Arc Testnet**: Circle **x402** micropayments, chat-driven agents, AgentPay, and a Next.js UI.
 
+Backend (`server.ts`, `agents/`, `facilitator/`) and frontend (`agentflow-frontend/`) ship together.
+
 | | |
 |--|--|
 | **Private remote** | `pvt` → https://github.com/Snehal707/agentflow-pvt |
-| **Production** | PM2 via [`ecosystem.config.cjs`](ecosystem.config.cjs) |
-| **Local full stack** | `npm run dev:stack` (`scripts/start-dev-stack.cjs`) |
-
-Backend (`server.ts`, `agents/`, `facilitator/`) and frontend (`agentflow-frontend/`) ship together.
+| **Production** | PM2 — [`ecosystem.config.cjs`](ecosystem.config.cjs) |
+| **Local** | `npm run dev:stack` — `scripts/start-dev-stack.cjs` |
 
 ---
 
-## Product surfaces
+## 1. Product surfaces
 
 App nav (`agentflow-frontend/lib/appData.ts`): `/chat`, `/pay`, `/funding`, `/portfolio`, `/agents`, `/telegram`.
 
-App shell (`app/(app)/layout.tsx`) wraps those routes with **`AccessCodeGate`** (access code) in addition to wallet JWT auth.
+App shell (`app/(app)/layout.tsx`) wraps those with **`AccessCodeGate`** plus wallet JWT.
 
 | Route | Role |
 |-------|------|
-| `/chat` | Primary UX — wallet JWT chat; money actions confirm with YES (UI label `Yes, swap & send` when a swap includes a recipient — `ChatThread.tsx`) |
-| `/pay` | AgentPay hub (`.arc` handles, send/request, contacts, schedule/split/batch, invoices, history) |
+| `/chat` | Main UX — JWT chat; money confirms with YES (`Yes, swap & send` when swap has a recipient — `ChatThread.tsx`) |
+| `/pay` | AgentPay — `.arc` handles, send/request, contacts, schedule/split/batch, invoices, history |
 | `/pay/[handle]` | Public pay page |
-| `/funding` | Circle Gateway funding + move to **execution (DCW)** wallet (`/vault` re-exports this page; UI in `funding/page.tsx`) |
-| `/portfolio` | Holdings / portfolio UI |
-| `/agents` | Agent Store (`lib/coreAgentSpecs.ts`) — prices + reputation |
+| `/funding` | Gateway funding → **execution (DCW)** wallet (`/vault` re-exports; UI in `funding/page.tsx`) |
+| `/portfolio` | Holdings UI |
+| `/agents` | Agent Store — prices + reputation (`lib/coreAgentSpecs.ts`) |
 | `/telegram` | Link wallet to Telegram bot |
-| `/docs` | Marketing docs (+ `GET /api/docs`) — marketing nav, not app sidebar |
-| `/` | Marketing landing → `/chat` |
-| `/internal/*` | Ops-only (`memory`, `review`, `feedback`) — `INTERNAL_PANEL_KEY` + `INTERNAL_ADMIN_WALLETS` |
+| `/docs` | Marketing docs (`GET /api/docs`) — marketing nav, not app sidebar |
+| `/` | Landing → `/chat` |
+| `/internal/*` | Ops only (`memory`, `review`, `feedback`) — `INTERNAL_PANEL_KEY` + `INTERNAL_ADMIN_WALLETS` |
 
-**Auth (product path):** WalletConnect → nonce/sign JWT (`api/auth.ts`) → access-code claim (`api/access.ts`). Sign domain / TTL: `AUTH_SIGN_DOMAIN`, `AUTH_NONCE_TTL_SECONDS`.
+**Auth:** WalletConnect → nonce/sign JWT (`api/auth.ts`) → access-code claim (`api/access.ts`). Env: `AUTH_SIGN_DOMAIN`, `AUTH_NONCE_TTL_SECONDS`.
 
-**Wallets:** connected EOA for auth; Circle **Gateway** for USDC funding; per-user **execution wallet (DCW, `user_agent`)** for agent spend (`api/wallet.ts`, `lib/dcw.ts`). Spend policies / kill switch: `lib/execution-guard.ts` (`MAINNET_KILL_SWITCH` blocks money paths when set).
-
----
-
-## Hermes Agent vs Hermes LLM (same brand, different layers)
-
-Easy to conflate — both say “Hermes.” In this repo they are **not** two peer clients:
-
-| | **Hermes Agent** | **Hermes LLM** |
-|--|------------------|----------------|
-| **What** | Agent **runtime** ([NousResearch/hermes-agent](https://github.com/nousresearch/hermes-agent)): sessions, tool loop, API server | **Model / inference API** (e.g. Hermes-4-70B / 405B) |
-| **Where here** | `hermes-brain/` · `python -m gateway.run` via `scripts/start-hermes.cjs` · PM2 `agentflow-hermes` · port `AGENTFLOW_HERMES_PORT` (default 8000) | `HERMES_BASE_URL` (default `https://inference-api.nousresearch.com/v1`) |
-| **AgentFlow entry** | `lib/agent-brain.ts` → `AGENTFLOW_HERMES_URL` (`/v1/runs`, `/events`, `/health`) | (1) Agent `config.yaml` model provider; (2) Node `lib/hermes.ts` (`callHermesFast` / `callHermesDeep`) |
-| **Env** | `AGENTFLOW_HERMES_PORT` / `AGENTFLOW_HERMES_URL`, API server key | `HERMES_API_KEY`, `HERMES_BASE_URL`, `HERMES_MODEL*` |
-
-**Relationship:** Hermes Agent **uses** the Hermes LLM (configured in `hermes-brain/config.yaml` by `start-hermes.cjs`). Chat goes Agent → LLM. Many other paths call the **same LLM API directly** via `lib/hermes.ts` and never open an Agent `/v1/runs` session.
-
-```mermaid
-flowchart LR
-  Chat["/chat default"] --> Brain["lib/agent-brain.ts"]
-  Brain --> Agent["Hermes Agent\ngateway :8000"]
-  Agent --> LLM["Hermes LLM API\nHERMES_BASE_URL"]
-  Agent --> Tools["AgentFlow tools\n/api/brain/* · tool-executor"]
-  Other["research · telegram · intent · cron · …"] --> Direct["lib/hermes.ts"]
-  Direct --> LLM
-```
-
-### When each is used (from call sites)
-
-#### Hermes Agent (`AGENTFLOW_HERMES_URL` → `/v1/runs`)
-
-| When | Code |
-|------|------|
-| **Default web `/chat` conversation** (tool-using brain turn) | `server.ts` → `runAgentBrain()` in `lib/agent-brain.ts` |
-| **Fast-report quality review** (optional gate on writer draft; needs `AGENTFLOW_HERMES_URL` set) | `lib/fast-report-supervisor.ts` → local `/v1/runs` with toolset `clarify`; rewrite step then uses plain LLM |
-| QA scripts that exercise chat brain | `scripts/test-hermes-chat-*.ts`, etc. |
-
-Chat path does **not** call `lib/hermes.ts` for the main turn — the Agent process calls the LLM using its own `config.yaml`.
-
-#### Plain Hermes LLM (`lib/hermes.ts` → `HERMES_BASE_URL`)
-
-| When | Code |
-|------|------|
-| **Research agent** (fast path synthesis) | `agents/research/server.ts` → `callHermesFast` |
-| **Research helpers** (orchestrate / claims / verify / synthesize) | `agents/research/{orchestrator,claimExtractor,verifier,synthesizer}.ts` |
-| **Analyst / Writer agents** | `agents/analyst/server.ts`, `agents/writer/server.ts` → `callHermesFast` |
-| **Embedded R/A/W inside `server.ts`** (same prompts when those apps are in-process) | `server.ts` → `callHermesFast` for research/analyst/writer handlers |
-| **Post-report chat follow-up** (after a report exists; not a full brain tool turn) | `server.ts` → `callHermesFast(REPORT_FOLLOWUP_…)` |
-| **Profile-fact extraction** from chat messages | `server.ts` → `callHermesFast` |
-| **Report language translate** | `lib/reportTranslate.ts` |
-| **Telegram free-form chat answers** | `lib/telegram-bot.ts` → `callHermesFast` (Telegram does **not** use `runAgentBrain`) |
-| **Telegram intent parsing** | `lib/telegram-intent-parser.ts` |
-| **Schedule agent NL intent** | `agents/schedule/schedule-agent.ts` |
-| **Portfolio narrative** | `agents/portfolio/portfolio.ts` → `callHermesDeep` |
-| **Invoice PDF parse** | `agents/invoice/subagents/pdf-parser.ts` → `callHermesDeep` |
-| **Vision/text/PDF assist** (Hermes-first; OpenAI fallback for some attachments; audio uses OpenAI) | `lib/mediaAgentUtils.ts` |
-| **Market understanding** | `lib/market-understanding.ts` |
-| **Daily report cron** | `lib/daily-report.ts` ← `crons/index.ts` |
-| **Intent router** (when `INTENT_ROUTER_ENABLED=true`; default **false** in `.env.example`) | `lib/intent-router/index.ts` → `hermes.chat.completions.create` |
-| Fast-report **rewrite** after Agent review | `lib/fast-report-supervisor.ts` → `callHermesFast` |
-
-#### Both in one flow (example)
-
-Fast report supervisor (`lib/fast-report-supervisor.ts`, used from writer / `server.ts`):
-
-1. **Review** → Hermes Agent `/v1/runs` (if `AGENTFLOW_HERMES_URL` is set and supervisor enabled)  
-2. **Rewrite** (if needed) → plain `callHermesFast`
-
-If Agent URL is unset, supervisor skips and keeps the draft (no Agent call).
+**Wallets:** EOA (auth) · Circle **Gateway** (fund USDC) · per-user **execution wallet** DCW `user_agent` (agent spend) — `api/wallet.ts`, `lib/dcw.ts`. Limits / `MAINNET_KILL_SWITCH`: `lib/execution-guard.ts`.
 
 ---
 
-
-## Architecture
+## 2. Architecture
 
 ```mermaid
 flowchart TB
   subgraph Clients
     Web["Next.js :3005"]
-    Tg["Telegram bot\nlib/telegram-bot.ts"]
+    Tg["Telegram bot"]
   end
 
-  subgraph Core["Core (API host :4000)"]
-    API["server.ts\nauth · chat · AgentPay · /run pipeline · proxies"]
+  subgraph Core["API :4000 · server.ts"]
+    API["auth · chat · AgentPay · /run · proxies"]
     Fac["x402 facilitator"]
   end
 
-  HermesAgent["Hermes Agent runtime\nhermes-brain/ · gateway.run"]
+  HermesAgent["Hermes Agent\nhermes-brain / gateway"]
   HermesLLM["Hermes LLM API\nHERMES_BASE_URL"]
 
-  subgraph Agents["Agent processes"]
-    RAW["research :3001\nanalyst :3002\nwriter :3003"]
-    DeFi["swap · vault · predmarket\nportfolio · bridge"]
+  subgraph Agents
+    RAW["research · analyst · writer"]
+    DeFi["swap · vault · predmarket · portfolio · bridge"]
     Pay["schedule · split · batch · invoice"]
     Media["vision · transcribe"]
   end
@@ -135,10 +66,10 @@ flowchart TB
   Web --> API
   Tg --> API
   API <-->|"chat brain"| HermesAgent
-  HermesAgent -->|"model completions"| HermesLLM
-  HermesAgent -->|"agentflow_brain tools"| API
-  API -->|"direct completions\nlib/hermes.ts"| HermesLLM
-  RAW -->|"pipeline LLM calls"| HermesLLM
+  HermesAgent -->|"completions"| HermesLLM
+  HermesAgent -->|"brain tools"| API
+  API -->|"lib/hermes.ts"| HermesLLM
+  RAW --> HermesLLM
   API --> Fac
   API --> RAW
   API --> DeFi
@@ -149,11 +80,9 @@ flowchart TB
   Pay --> Arc
 ```
 
-**Local vs prod:** `dev:stack` runs facilitator + research/analyst/writer as **separate** processes (`EMBEDDED_AGENT_SERVERS=false`). PM2 `agentflow-backend` runs `server.ts` and **embeds** facilitator + research/analyst/writer. Cron (`crons/index.ts`) is **PM2-only**.
+**Local vs prod:** `dev:stack` sets `EMBEDDED_AGENT_SERVERS=false` (facilitator + R/A/W are separate processes). PM2 `agentflow-backend` embeds facilitator + research/analyst/writer. Cron is **PM2-only**.
 
----
-
-## Chat → tools flow
+### Chat → tools
 
 ```mermaid
 sequenceDiagram
@@ -161,184 +90,172 @@ sequenceDiagram
   participant FE as Next.js
   participant API as server.ts
   participant HA as Hermes Agent
-  participant LLM as Hermes LLM API
-  participant TE as tool-executor / agents
+  participant LLM as Hermes LLM
+  participant TE as tools / agents
 
-  U->>FE: message (+ YES confirmations)
-  FE->>API: chat / respond (SSE)
-  API->>HA: /v1/runs (toolset agentflow_brain)
-  HA->>LLM: completions via agent config.yaml
-  HA->>API: brain / tool HTTP calls
-  API->>TE: executeTool or agent /run
+  U->>FE: message / YES
+  FE->>API: /api/chat/respond SSE
+  API->>HA: /v1/runs agentflow_brain
+  HA->>LLM: via agent config.yaml
+  HA->>API: /api/brain/* or tools
+  API->>TE: executeTool / agent /run
   TE-->>API: preview / receipt / report
-  API-->>FE: SSE deltas + meta
-  FE-->>U: UI (confirm / receipt / report)
+  API-->>FE: SSE
 ```
 
-Money paths typically preview first (`confirmed=false` / pending action), then execute after user **YES**.
+Money paths: preview (`confirmed=false` / pending) → user **YES** → execute.
 
----
+### Research reports
 
-## Research reports pipeline
-
-Chat research is driven through `POST /run` on the public API (`server.ts`), which runs **research → analyst → writer** over x402-protected agent `/run` endpoints (`RESEARCH_URL` / `ANALYST_URL` / `WRITER_URL`). Mode selection: `lib/researchMode.ts` (`fast` default; `deep` when explicit or phrase-matched).
+`POST /run` on the API runs **research → analyst → writer** (`RESEARCH_URL` / `ANALYST_URL` / `WRITER_URL`). Mode: `lib/researchMode.ts` (`fast` default; `deep` when explicit / phrase-matched).
 
 ```mermaid
 flowchart LR
-  Chat["Chat / queue\nresearch intent"] --> Run["POST /run\nserver.ts"]
-  Run --> R["Research agent\n:3001 /run"]
-  R --> A["Analyst agent\n:3002 /run"]
-  A --> W["Writer agent\n:3003 /run"]
-  W --> Out["SSE report\nmarkdown + receipt"]
-
-  R -.->|"fast: live retrieval\n+ LLM via lib/hermes.ts"| FastPath["agents/research/server.ts"]
-  R -.->|"deep: deepPipeline\nsource-registry + Firecrawl"| DeepPath["agents/research/deepPipeline"]
+  Chat --> Run["POST /run"]
+  Run --> R["research :3001"]
+  R --> A["analyst :3002"]
+  A --> W["writer :3003"]
+  W --> Out["SSE report"]
 ```
 
-Status copy in `server.ts` for the consumer path:
+- **fast:** Firecrawl + SearXNG live retrieval, then analyst/writer  
+- **deep:** `deepPipeline` + source-registry / Firecrawl verification  
 
-- **fast:** research → analyst → writer with Firecrawl + SearXNG live retrieval  
-- **deep:** source-registry retrieval, Firecrawl verification, analyst review, writer synthesis  
-
-Overflow jobs can enqueue via `lib/research-queue.ts` (Redis). Persist/search helpers: `lib/research-memory.ts`.
+Queue: `lib/research-queue.ts`. Persist/search: `lib/research-memory.ts`.
 
 ---
 
-## Tools
+## 3. Hermes Agent vs Hermes LLM
 
-### Schemas executed by `lib/tool-executor.ts`
+Same brand, **different layers** — not two peer “clients.”
 
-Source of truth: `lib/agentflow-tools.ts` (`AGENTFLOW_TOOLS`).
+| | **Hermes Agent** | **Hermes LLM** |
+|--|------------------|----------------|
+| **What** | Agent runtime ([hermes-agent](https://github.com/nousresearch/hermes-agent)) | Model API (e.g. Hermes-4) |
+| **Here** | `hermes-brain/` · `scripts/start-hermes.cjs` · PM2 `agentflow-hermes` | `HERMES_BASE_URL` (default `inference-api.nousresearch.com/v1`) |
+| **Entry** | `lib/agent-brain.ts` → `AGENTFLOW_HERMES_URL` `/v1/runs` | Agent `config.yaml` **and** Node `lib/hermes.ts` |
+| **Env** | `AGENTFLOW_HERMES_*`, API server key | `HERMES_API_KEY`, `HERMES_BASE_URL`, `HERMES_MODEL*` |
 
-| Tool name | Purpose (from schema description) |
-|-----------|-----------------------------------|
-| `get_balance` | USDC, EURC, and vault balance |
-| `swap_tokens` | USDC ↔ EURC; `confirmed=false` preview, `true` after YES |
-| `vault_action` | `list` / `position` / `deposit` / `withdraw`; vault symbols `luneUSDC`, `luneEURC` |
-| `predict_action` | Pred-market `list` / `detail` / `position` / `buy` / `sell` / `redeem` / `refund` |
-| `agentpay_send` | AgentPay send preview → YES before execute |
-| `agentpay_request` | Create a payment request (no immediate on-chain send) |
-| `bridge_precheck` | Read-only supported CCTP source chains + bridge flow explanation |
-| `get_portfolio` | Holdings / PnL analysis |
-| `research` | Topic research; `mode`: `fast` \| `deep` |
+**Agent uses the LLM.** Chat brain goes through the Agent. Most other paths call the LLM **directly** via `lib/hermes.ts`.
 
-### Brain HTTP endpoints (Hermes Agent → API)
+| Uses **Agent** (`/v1/runs`) | Uses **LLM only** (`lib/hermes.ts`) |
+|----------------------------|-------------------------------------|
+| Default web `/chat` (`runAgentBrain`) | Research / analyst / writer (+ embedded handlers in `server.ts`) |
+| Fast-report **review** (`lib/fast-report-supervisor.ts`, if Agent URL set) | Fast-report **rewrite**; report follow-ups; profile extract; translate |
+| Chat QA scripts | Telegram chat + intent (no Agent); schedule NL; portfolio narrative; invoice PDF; vision/PDF helpers; market understanding; daily-report cron; intent router if enabled |
 
-Mounted on `server.ts` (internal key):
-
-| Method | Path |
-|--------|------|
-| GET | `/api/brain/balance` |
-| GET | `/api/brain/portfolio` |
-| GET | `/api/brain/circle-stack` |
-| GET | `/api/brain/agentpay-history` |
-| POST | `/api/brain/swap` |
-| POST | `/api/brain/vault` |
-| POST | `/api/brain/bridge` |
-| POST | `/api/brain/bridge-precheck` |
-
-Hermes Agent progress UI may show aliased names (e.g. `agentflow_swap`, `agentflow_vault`) that map to the same product clusters in `lib/agent-brain.ts`. Do not treat those strings as a second public API.
-
-Schedule / split / batch / invoice also exist as **Agent Store agents** and `/pay` surfaces; they are not all listed in `AGENTFLOW_TOOLS` above.
+Config/soul: `start-hermes.cjs` writes `hermes-brain/config.yaml` + `SOUL.md`. Skills pack: §5.
 
 ---
 
-## Skills
+## 4. Tools
 
-| Path | What it is |
-|------|------------|
-| [`hermes-skills/agentflow-report-research/SKILL.md`](hermes-skills/agentflow-report-research/SKILL.md) | Report-research skill: retrieval plans `direct` / `light` / `standard`, subquery rules, coverage check, writer handoff brief. In-repo skill pack (not loaded by Node boot). |
-| [`agentflow-frontend/SKILL.md`](agentflow-frontend/SKILL.md) | Intent / anti-hallucination skill for payment & balance commands (live-state-only rules; maps phrases to scheduled-payment / balance / history tools). |
+Schemas: `lib/agentflow-tools.ts` → `lib/tool-executor.ts`.
 
-Hermes Agent config + soul: gitignored `hermes-brain/` (`scripts/start-hermes.cjs` writes `config.yaml`, `SOUL.md`).
+| Tool | Purpose |
+|------|---------|
+| `get_balance` | USDC, EURC, vault balance |
+| `swap_tokens` | USDC ↔ EURC; preview then YES |
+| `vault_action` | list / position / deposit / withdraw (`luneUSDC`, `luneEURC`) |
+| `predict_action` | Pred-market list / detail / buy / sell / redeem / refund |
+| `agentpay_send` / `agentpay_request` | Send preview → YES · payment request |
+| `bridge_precheck` | Supported CCTP sources + flow |
+| `get_portfolio` | Holdings / PnL |
+| `research` | Topic research (`fast` \| `deep`) |
 
----
+Brain HTTP (Hermes Agent → API): `GET/POST /api/brain/{balance,portfolio,circle-stack,agentpay-history,swap,vault,bridge,bridge-precheck}`.
 
-## Reputation, ratings & agent economy
-
-Not in the nav as their own page; wired into Agent Store + paid-task flows.
-
-| Piece | Where |
-|-------|--------|
-| **On-chain reputation** (ERC-8004 Reputation Registry) | `lib/reputation.ts` · registry address `ARC.reputationRegistry` in `lib/arc-config.ts` |
-| **User star ratings** (web chat, post paid task) | `POST /api/agent-ratings` → `api/agent-ratings.ts` → `submitReputationFeedback` (stars × 20 = score); FE proxy `agentflow-frontend/app/api/agent-ratings/route.ts` |
-| **Ratings DB** | `db/migrations/20260515_create_agent_ratings.sql` (`agent_ratings`) |
-| **Agent Store UI** | `/agents` — `agentflow-frontend/app/(app)/agents/page.tsx` shows `reputationScore` / rating stats |
-| **Product copy** | `agentflow-frontend/lib/docsContent.ts` + `lib/product-rag.ts` (`reputation` topic) |
-| **A2A payment ledger** (agent→agent x402 settlements) | `lib/a2a-ledger.ts` → `lib/agent-economy-ledger.ts` · `GET /api/agent-economy-ledger` · migration `db/migrations/20260504_create_agent_economy_ledger.sql` |
-| **A2A follow-ups** (e.g. invoice→research, portfolio after tool) | `lib/a2a-chat-scheduler.ts`, `lib/a2a-followups.ts` (used from `server.ts`) |
-| **Identity / validation registries** | `ARC.identityRegistry`, `ARC.validationRegistry` in `lib/arc-config.ts` (identity minting is live via `lib/mintIdentityOwners.ts`; validation address is configured — little/no other runtime use in `lib/`) |
-| **AgentPay `.arc` registry (on-chain)** | `contracts/AgentPayRegistry.sol`, `lib/agentpay-registry.ts`, `AGENTPAY_REGISTRY_ADDRESS` — register/resolve via `api/pay.ts` |
-| **x402 attempt ledger** | `lib/x402AttemptLedger.ts` (payment attempts, not reputation) |
-
-Some agents also call `recordReputationSafe` after runs (e.g. `agents/vision/server.ts`, `agents/transcribe/server.ts`).
-
-**Counterparty / handle “reputation” in chat** is separate: research can use an internal reputation **cache** + payment history for `.arc` risk questions (`server.ts` / capability routing) — not the same as ERC-8004 agent ratings.
+UI may show aliases (`agentflow_swap`, …) in `lib/agent-brain.ts` — not a second public API. Schedule/split/batch/invoice are Agent Store + `/pay` surfaces; not all are in `AGENTFLOW_TOOLS`.
 
 ---
 
-## DeFi providers (code)
+## 5. Skills
+
+| Path | Role |
+|------|------|
+| [`hermes-skills/agentflow-report-research/SKILL.md`](hermes-skills/agentflow-report-research/SKILL.md) | Report retrieval plans `direct` / `light` / `standard` |
+| [`agentflow-frontend/SKILL.md`](agentflow-frontend/SKILL.md) | Payment/balance intent rules (live state only) |
+
+---
+
+## 6. Agent Store & DeFi providers
+
+**Catalog** — `lib/coreAgentSpecs.ts` (prices via `*_AGENT_PRICE`):
+
+| Slug | Notes |
+|------|--------|
+| `research` | Research → Analyst → Writer |
+| `swap` | Arc swaps (multi-DEX router) |
+| `vault` | Lunex (`luneUSDC` / `luneEURC`) |
+| `predmarket` | AchMarket |
+| `bridge` | CCTP into Arc |
+| `portfolio` | Balances / PnL |
+| `invoice` | Business invoices |
+| `schedule` / `split` / `batch` | Recurring / split / CSV USDC |
+| `vision` | x402-paid; Hermes + OpenAI fallback |
+| `transcribe` | OpenAI voice→text; **$0** fallback; JWT + daily caps; no x402 middleware |
+
+**Providers (code):**
 
 | Area | Implementation |
 |------|----------------|
-| **Swap** | `lib/dex/router.ts` quotes **`swaparc`**, **`achswap`**, **`lunex`**, then selects a route |
-| **Vault** | `lib/vault/router.ts` — **Lunex only** (`luneUSDC`, `luneEURC`) |
-| **Pred markets** | `lib/predmarket/router.ts` — **AchMarket only** |
-| **Bridge** | CCTP into Arc; sources in `lib/bridge/supportedSources.ts` |
-| **AgentPay** | USDC + EURC — `lib/agentpay-transfer.ts` |
+| Swap | `lib/dex/router.ts` — **swaparc**, **achswap**, **lunex** |
+| Vault | `lib/vault/router.ts` — Lunex only |
+| Pred markets | `lib/predmarket/router.ts` — AchMarket only |
+| Bridge | CCTP; sources in `lib/bridge/supportedSources.ts` |
+| AgentPay tokens | USDC + EURC — `lib/agentpay-transfer.ts` |
 
-### x402 facilitator
-
-Circle **Gateway batched** payments proxy (`facilitator/server.ts` — `/v1/x402/supported|verify|settle`). Local `dev:stack` runs it as its own process; **PM2 embeds it inside `agentflow-backend`** (`EMBEDDED_AGENT_SERVERS` default true in prod). Prefer `FACILITATOR_PORT=3010` in `.env` (code falls back to 3000 if unset).
+**x402 facilitator:** Circle Gateway batched proxy (`facilitator/server.ts` — `/v1/x402/supported|verify|settle`). Separate process in `dev:stack`; **embedded in PM2 backend**. Prefer `FACILITATOR_PORT=3010` (code default **3000** if unset).
 
 ---
 
-## Agent Store
+## 7. Reputation & agent economy
 
-`lib/coreAgentSpecs.ts`:
+Wired into Agent Store + paid tasks (not a nav item).
 
-| Slug | Name |
-|------|------|
-| `research` | Research (pipeline Research → Analyst → Writer) |
-| `swap` | Swap |
-| `vault` | Vault (Lunex; testnet / experimental per spec text) |
-| `predmarket` | Prediction Markets (AchMarket; testnet / experimental) |
-| `bridge` | Bridge |
-| `portfolio` | Portfolio |
-| `invoice` | Invoice |
-| `schedule` / `split` / `batch` | Recurring / split / CSV batch USDC |
-| `vision` / `transcribe` | Vision: x402-paid image/PDF brief (Hermes + OpenAI fallback). Transcribe: voice → text via OpenAI; **$0** fallback price, JWT + daily caps (no x402 middleware on agent) |
+| Piece | Where |
+|-------|--------|
+| ERC-8004 reputation | `lib/reputation.ts` · `ARC.reputationRegistry` |
+| Star ratings | `POST /api/agent-ratings` → `api/agent-ratings.ts` (stars × 20) |
+| Ratings table | `db/migrations/20260515_create_agent_ratings.sql` |
+| Store UI | `/agents` — `reputationScore` |
+| Docs/RAG copy | `docsContent.ts`, `lib/product-rag.ts` |
+| A2A ledger | `lib/a2a-ledger.ts` → `lib/agent-economy-ledger.ts` · `GET /api/agent-economy-ledger` |
+| A2A follow-ups | `lib/a2a-chat-scheduler.ts`, `lib/a2a-followups.ts` |
+| Identity mint | `lib/mintIdentityOwners.ts` · `ARC.identityRegistry` (validation registry address configured; little other runtime use) |
+| `.arc` registry | `contracts/AgentPayRegistry.sol`, `lib/agentpay-registry.ts`, `AGENTPAY_REGISTRY_ADDRESS` |
+| x402 attempts | `lib/x402AttemptLedger.ts` |
 
-Prices: `*_AGENT_PRICE` env keys in that file.
+Vision/transcribe may call `recordReputationSafe` after runs. **Counterparty “reputation” in chat** (`.arc` risk) uses internal cache + payment history — not ERC-8004 store ratings.
 
 ---
 
-## Production cron (`crons/index.ts`)
+## 8. Production cron
 
-Runs only when `NODE_ENV=production` (PM2 `agentflow-cron`). From that file:
+`crons/index.ts` — only when `NODE_ENV=production` (PM2 `agentflow-cron`):
 
-| Job | Schedule (UTC) |
-|-----|----------------|
+| Job | UTC |
+|-----|-----|
 | Yield monitor | every 6h |
 | Semantic-memory consolidation | every 6h at :15 |
 | Agent treasury top-up | hourly |
-| Daily reports (topics) + due scheduled USDC payments | 09:00 |
+| Daily reports + due scheduled payments | 09:00 |
 | Weekly `arc_ecosystem` report | Monday 09:00 |
-| Training export | 03:00 daily |
-| Monthly business digest | 1st of month 09:00 |
+| Training export | 03:00 |
+| Monthly business digest | 1st 09:00 |
 
-Semantic memory capture/retrieval also feeds chat context (`lib/semantic-memory.ts`); local/telemetry dirs are gitignored (`.agentflow-memory/`, `.agentflow-telemetry/`).
+Chat also uses `lib/semantic-memory.ts` for capture/retrieval. Local dirs: `.agentflow-memory/`, `.agentflow-telemetry/` (gitignored).
 
 ---
 
-## Runbook
+## 9. Runbook
 
 ### Prerequisites
 
 - Node **20+**, npm **8+**, `CLOUDSMITH_TOKEN` ([.npmrc](.npmrc))
-- Root `.env` from [.env.example](.env.example); `npm run setup`
-- `agentflow-frontend/.env.local` from `.env.local.example` (`NEXT_PUBLIC_BACKEND_URL`, `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID`; optional Telegram username; `OPENAI_API_KEY` for transcribe)
-- Local Hermes Agent: `hermes-brain/` checkout + venv (model via `HERMES_*`)
+- `.env` ← [.env.example](.env.example); `npm run setup`
+- `agentflow-frontend/.env.local` ← `.env.local.example` (`NEXT_PUBLIC_BACKEND_URL`, WalletConnect; optional Telegram username; `OPENAI_API_KEY` for transcribe)
+- `hermes-brain/` + venv for local Hermes Agent
 
 ### Local
 
@@ -346,153 +263,117 @@ Semantic memory capture/retrieval also feeds chat context (`lib/semantic-memory.
 npm run dev:stack
 ```
 
-Starts frontend `:3005`, Hermes Agent, facilitator, research/analyst/writer, API `:4000`, DeFi/payment/media agents, Telegram bot. **No cron.**
+Frontend `:3005`, Hermes Agent, facilitator, R/A/W, API `:4000`, DeFi/payment/media agents, Telegram bot. **No cron.**
 
-| Check | URL |
-|-------|-----|
-| API | `http://localhost:4000/health` |
-| Stack | `http://localhost:4000/health/stack` |
-| Frontend | `http://localhost:3005/api/health` |
-| Hermes Agent | `/health` on `AGENTFLOW_HERMES_PORT` (default 8000) |
+| Check | Notes |
+|-------|--------|
+| `:4000/health` | Liveness |
+| `:4000/health/stack` | **Subset only:** facilitator, research, analyst, writer, bridge, vision, transcribe — **not** swap/vault/predmarket/portfolio/invoice/schedule/split/batch |
+| `:3005/api/health` | Frontend |
+| Hermes `/health` | `AGENTFLOW_HERMES_PORT` (default 8000) |
 
-**`/health/stack` scope** (`server.ts`): probes **facilitator, research, analyst, writer, bridge, vision, transcribe** only. It does **not** include swap, vault, predmarket, portfolio, invoice, schedule, split, or batch — those can be up while `ok` is still true if the listed subset is healthy. Hit each agent’s own `/health` (ports above) when debugging DeFi/payment agents.
-
-Windows port conflict on 8000 (documented in `.env.example`):
-
-```env
-AGENTFLOW_HERMES_PORT=8001
-AGENTFLOW_HERMES_URL=http://127.0.0.1:8001
-```
-
-Helpers: `npm run stack:detach`, `npm run dev:stack:clean`, `node scripts/stack-cleanup.cjs`. Prefer `FACILITATOR_PORT=3010`.
+Windows `:8000` stuck → set `AGENTFLOW_HERMES_PORT=8001` + `AGENTFLOW_HERMES_URL` (see `.env.example`). Helpers: `stack:detach`, `dev:stack:clean`, `node scripts/stack-cleanup.cjs`.
 
 ### Production (PM2)
 
 ```bash
 npm install
 npm run build --prefix agentflow-frontend
-pm2 start ecosystem.config.cjs   # first time
-pm2 reload all                   # after deploy
+pm2 start ecosystem.config.cjs    # first time
+pm2 reload all                    # after deploy
 pm2 save && pm2 startup
 ```
 
-PM2 apps: hermes (Agent), backend (API + embedded facilitator/R/A/W), swap, vault, portfolio, vision, transcribe, bridge, invoice, split, batch, schedule, predmarket, cron, telegram-bot, frontend (`next start -p 3005`).
+Apps: hermes, backend (API + embedded facilitator/R/A/W), swap, vault, portfolio, vision, transcribe, bridge, invoice, split, batch, schedule, predmarket, cron, telegram-bot, frontend (`next start -p 3005`).
 
-### Default ports
+### Ports
 
 | Service | Port |
 |---------|------|
 | Frontend | 3005 |
 | API | 4000 |
 | Hermes Agent | 8000 (`AGENTFLOW_HERMES_PORT`) |
-| Facilitator | Prefer **3010** via `FACILITATOR_PORT` (unset → code default **3000**) |
+| Facilitator | Prefer **3010** (`FACILITATOR_PORT`; unset → **3000**) |
 | Research / Analyst / Writer | 3001 / 3002 / 3003 |
 | Swap / Vault / Predmarket / Portfolio | 3011 / 3012 / 3013 / 3014 |
 | Invoice / Vision / Transcribe | 3015 / 3016 / 3017 |
 | Schedule / Split / Batch / Bridge | 3018 / 3019 / 3020 / 3021 |
 
-### Environment
+### Environment (summary)
 
-Use [.env.example](.env.example) and `agentflow-frontend/.env.local.example` — do not treat this README as a full env catalog.
+Full list: [.env.example](.env.example). Typically: Cloudsmith, `HERMES_*`, Hermes Agent URL/port + brain key, Circle DCW, JWT/auth, Redis/Supabase, facilitator/agent ports, Telegram, WalletConnect, `AGENTPAY_REGISTRY_ADDRESS`, research keys as needed.
 
-Typically needed: Cloudsmith, Hermes LLM (`HERMES_*`), Hermes Agent port/URL + brain internal key, Circle DCW, JWT + auth domain, Redis/Supabase, facilitator/agent ports, Telegram, WalletConnect, `AGENTPAY_REGISTRY_ADDRESS`, research retrieval keys as needed.
+Optional safety: `MAINNET_KILL_SWITCH`, `PAY_PER_TASK_*`, `VISION_DAILY_LIMIT`, `TRANSCRIBE_DAILY_LIMIT`.
 
-Safety (optional / policy): `MAINNET_KILL_SWITCH` (blocks money execution when set — `lib/execution-guard.ts`), pay-per-task and vision/transcribe daily limits (`.env.example`).
-
-### Debug / telemetry flags (`.env.example`)
-
-Optional; leave unset unless debugging:
-
-| Flag | Role |
-|------|------|
-| `AGENTFLOW_X402_DEBUG` | x402 path logging |
-| `AGENTFLOW_CIRCLE_DEBUG` | Circle/DCW logging |
-| `AGENTFLOW_A2A_DEBUG` | A2A follow-up logging |
-| `AGENTFLOW_CHAT_SESSION_TRACE` | Chat session tracing |
-| `AGENTFLOW_CHAT_SSE_DEBUG` | Chat SSE debug events |
-| `FAST_REPORT_SUPERVISOR_ENABLED` | Fast-report Agent review gate (default on if Agent URL set) |
-| `INTENT_ROUTER_ENABLED` | Alternate intent router (default **false**) |
-
-Local dirs (gitignored): `.agentflow-telemetry/`, `.logs/`, `.agentflow-memory/`.
-
-### Operator npm scripts
-
-Useful ops scripts from root `package.json` (not the full test catalog):
-
-| Script | Purpose |
-|--------|---------|
-| `npm run setup` | First-time install (Cloudsmith token) |
-| `npm run dev:stack` / `dev:stack:clean` / `stack:detach` | Full local stack |
-| `npm run dev:hermes` / `dev:chat-core` | Hermes only / minimal chat core |
-| `npm run start:api` | API only (`EMBEDDED_AGENT_SERVERS=false`) |
-| `npm run qa:prelaunch` / `qa:chat-prelaunch` / `qa:agents-prelaunch` | Pre-launch QA |
-| `npm run cron:worker` | Cron entry (exits unless `NODE_ENV=production`) |
-| `npm run treasury:topup` | One-shot agent treasury top-up |
-| `npm run memory:consolidate` / `memory:metrics` / `memory:eval` | Semantic memory jobs |
-| `npm run script:pre-launch` / `script:check-balances` | Pre-launch / balance checks |
-| `npm run script:setup-circle` / `script:mint-identity` / `script:create-missing-wallets` | Circle / ERC-8004 identity bootstrap |
-| `npm run deposit:agent-gateway` / `fund:agent-wallets` | Fund agent Gateway / wallets |
-| `npm run contract:deploy-agentpay-registry` | Deploy AgentPay `.arc` registry (Hardhat) |
-| `npm run typecheck` | `tsc --noEmit` |
-
-Individual agents: `npm run dev:swap`, `dev:vault`, `dev:bridge`, … (see `package.json`).
-
-### API mounts (`server.ts`)
-
-Product-relevant mounts on the public API (not every handler):
-
-| Mount / route | Role |
-|---------------|------|
-| `/api/auth` | Wallet nonce + JWT |
-| `/api/access` | Access-code claim / status |
-| `/api/wallet` | Gateway + execution wallet |
-| `/api/telegram` | Telegram link state |
-| `/api/settings` | User settings |
-| `/api/agentpay`, `/api/business` | Business / AgentPay onboarding (shared router) |
-| `/api/pay` | Send, schedule, `.arc` registry, contacts, history |
-| `/api/agent-store` | Agent catalog |
-| `/api/agent-ratings` | Post-task star ratings → ERC-8004 |
-| `/api/agent-economy-ledger` | A2A / economy ledger |
-| `/api/portfolio` | Portfolio API |
-| `/api/docs`, `/api/stats` | Docs topics / stats |
-| `/api/chat/respond`, `/api/chat/feedback` | Chat SSE + feedback |
-| `/api/research/status/:jobId`, `/api/research/queue` | Research job status |
-| `/api/x402/preflight`, `/api/x402/attempts/*` | x402 preflight + attempt ledger |
-| `/api/brain/*` | Hermes Agent brain tools |
-| `/api/schedule|split|batch|invoice/*` | Payment agent confirm/run proxies |
-| `/api/bridge/finalize` | Bridge finalize |
-| `/api/media/quota` | Vision/transcribe quotas |
-| `/api/dcw/agents/:slug/run` | DCW-paid agent run |
-| `/api/profile/remember` | Profile facts |
-| `/api/memory/*`, `/api/internal/*` | Admin memory / review / feedback |
-| `POST /run` | Research → analyst → writer pipeline |
-| `/health`, `/health/stack` | Liveness (stack = subset; see above) |
-
-Still mounted but **not product** (retired plan): `/api/extension`, `/api/webhooks/email`.
-
-- [docs/db-access-security.md](docs/db-access-security.md)  
-- [docs/known-issues.md](docs/known-issues.md)
+More: [docs/db-access-security.md](docs/db-access-security.md) · [docs/known-issues.md](docs/known-issues.md)
 
 ---
 
-## Repo layout
+## 10. Reference
+
+### Operator scripts (`package.json`)
+
+| Script | Purpose |
+|--------|---------|
+| `setup` | First-time install |
+| `dev:stack` / `dev:stack:clean` / `stack:detach` | Full local stack |
+| `dev:hermes` / `dev:chat-core` | Hermes / minimal chat |
+| `start:api` | API only (`EMBEDDED_AGENT_SERVERS=false`) |
+| `qa:prelaunch` (+ chat/agents variants) | Pre-launch QA |
+| `cron:worker` | Cron (needs `NODE_ENV=production`) |
+| `treasury:topup` | One-shot treasury |
+| `memory:consolidate` / `memory:metrics` / `memory:eval` | Semantic memory |
+| `script:pre-launch` / `script:check-balances` | Checks |
+| `script:setup-circle` / `script:mint-identity` / `script:create-missing-wallets` | Bootstrap |
+| `deposit:agent-gateway` / `fund:agent-wallets` | Funding |
+| `contract:deploy-agentpay-registry` | Deploy `.arc` registry |
+| `typecheck` | `tsc --noEmit` |
+| `dev:swap`, `dev:vault`, … | Single agents |
+
+### API mounts (`server.ts`)
+
+| Mount | Role |
+|-------|------|
+| `/api/auth`, `/api/access` | JWT + access code |
+| `/api/wallet`, `/api/telegram`, `/api/settings` | Wallet / Telegram / settings |
+| `/api/agentpay`, `/api/business`, `/api/pay` | AgentPay / business / pay + `.arc` |
+| `/api/agent-store`, `/api/agent-ratings`, `/api/agent-economy-ledger` | Store / ratings / A2A ledger |
+| `/api/portfolio`, `/api/docs`, `/api/stats` | Portfolio / docs / stats |
+| `/api/chat/respond`, `/api/chat/feedback` | Chat |
+| `/api/research/status/:jobId`, `/api/research/queue` | Research jobs |
+| `/api/x402/preflight`, `/api/x402/attempts/*` | x402 |
+| `/api/brain/*` | Hermes Agent tools |
+| `/api/schedule|split|batch|invoice/*` | Payment confirms |
+| `/api/bridge/finalize`, `/api/media/quota`, `/api/dcw/agents/:slug/run` | Bridge / media / DCW run |
+| `/api/profile/remember` | Profile facts |
+| `/api/memory/*`, `/api/internal/*` | Admin |
+| `POST /run` | Research pipeline |
+| `/health`, `/health/stack` | Liveness (stack = subset) |
+
+Retired but still mounted: `/api/extension`, `/api/webhooks/email`.
+
+### Debug flags (`.env.example`)
+
+`AGENTFLOW_X402_DEBUG`, `AGENTFLOW_CIRCLE_DEBUG`, `AGENTFLOW_A2A_DEBUG`, `AGENTFLOW_CHAT_SESSION_TRACE`, `AGENTFLOW_CHAT_SSE_DEBUG`, `FAST_REPORT_SUPERVISOR_ENABLED`, `INTENT_ROUTER_ENABLED` (default false).
+
+### Repo layout
 
 ```text
-server.ts                 Public API + (prod) embedded facilitator/research/analyst/writer
-agentflow-frontend/       Next.js UI (+ SKILL.md intent guidance)
-agents/                   Microservices (/run handlers)
+server.ts                 API (+ prod embedded facilitator/R/A/W)
+agentflow-frontend/       Next.js UI
+agents/                   Microservices
 facilitator/              x402 facilitator
 api/                      Express routers
-lib/                      Brain, tools, dex/vault/predmarket, AgentPay, research queue, …
-hermes-skills/            Skill pack for Hermes Agent (report research)
-crons/                    Production schedulers (PM2)
-scripts/                  Stack / Hermes Agent launchers
-ecosystem.config.cjs      PM2 apps
+lib/                      Shared backend
+hermes-skills/            Hermes Agent skills
+crons/                    PM2 cron
+scripts/                  Stack / Hermes launchers
+ecosystem.config.cjs      PM2
 docs/                     Ops notes
 contracts/ · foundry/     On-chain tooling
 ```
 
-Gitignored runtime/local: `hermes-brain/` (Hermes Agent checkout), `tmp/`, `.logs/`, `.agentflow-telemetry/` (see `.gitignore`).
+Gitignored: `hermes-brain/`, `tmp/`, `.logs/`, `.agentflow-telemetry/`, `.agentflow-memory/`.
 
 ---
 
@@ -504,4 +385,4 @@ Chain ID `5042002` · RPC `https://rpc.testnet.arc.network` · Explorer https://
 
 ## Out of scope
 
-Not the live product path: `/dashboard`, `orchestrator/` / `npm run dev:orchestrator`, Railway writeups, one-off probe scripts, and retired surfaces such as the browser **extension** API and **email inbound** webhook (code may still exist under `api/extension.ts` / `api/webhooks/email.ts` — not documented as product). Prefer this README + the cited source files + `ecosystem.config.cjs`.
+`/dashboard`, `orchestrator/` / `dev:orchestrator`, Railway writeups, one-off probes, retired **extension** + **email inbound** webhook (still mounted under `api/` — not product). Prefer this README + cited sources + `ecosystem.config.cjs`.
