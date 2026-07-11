@@ -28,7 +28,7 @@ App shell (`app/(app)/layout.tsx`) wraps those with **`AccessCodeGate`** plus wa
 | `/agents` | Agent Store — prices + reputation (`lib/coreAgentSpecs.ts`) |
 | `/telegram` | Link wallet to Telegram bot |
 | `/docs` | Marketing docs (`GET /api/docs`) — marketing nav, not app sidebar |
-| `/` | Landing → `/chat` |
+| `/` | Marketing landing (`(marketing)/page.tsx`) — not an auto-redirect to `/chat` |
 | `/internal/*` | Ops only (`memory`, `review`, `feedback`) — `INTERNAL_PANEL_KEY` + `INTERNAL_ADMIN_WALLETS` |
 
 **Auth:** WalletConnect → nonce/sign JWT (`api/auth.ts`) → access-code claim (`api/access.ts`). Env: `AUTH_SIGN_DOMAIN`, `AUTH_NONCE_TTL_SECONDS`.
@@ -137,7 +137,7 @@ Inside the research agent (before analyst/writer):
 
 - **fast / deep modes** still apply at the research agent (`agents/research/server.ts` / `deepPipeline`) after `/run` passes `reasoningMode`.
 - Retrieval planning on this path is **Node code**: `agents/research/orchestrator.ts` — `buildResearchBrief` via `callHermesFast` with `query_strategy`: `direct` | `light` | `standard` (does not load the skill file).
-- Explicit research/report asks in web chat **bypass Hermes Agent** and go straight to this `/run` pipeline (`server.ts` research fast-path) so Agent cannot invent citations.
+- Explicit research/report (and some related) asks in web chat **bypass Hermes Agent** and go straight to this `/run` pipeline (`server.ts` `shouldHandleAsResearchRequest` / research fast-path) so Agent cannot invent citations.
 - Hermes Agent skill for the same vocabulary: [`hermes-skills/agentflow-report-research`](hermes-skills/agentflow-report-research/SKILL.md) — installed into `hermes-brain/skills/` and reachable via `skills_list` / `skill_view` when Agent is in the loop (see §5; smoke: `npm run smoke:hermes-research-skill`). Not a required step on every report.
 
 Persist/search helpers: `lib/research-memory.ts`.
@@ -159,7 +159,7 @@ Same brand, **different layers** — not two peer “clients.”
 
 | Uses **Agent** (`/v1/runs`) | Uses **LLM only** (`lib/hermes.ts`) |
 |----------------------------|-------------------------------------|
-| Default web `/chat` conversation (`runAgentBrain`) — except explicit research/report, which bypasses Agent → `/run` | Research / analyst / writer (+ embedded handlers in `server.ts`) |
+| Default web `/chat` conversation (`runAgentBrain`) — except research-routed asks (`shouldHandleAsResearchRequest`), which bypass Agent → `/run` | Research / analyst / writer (+ embedded handlers in `server.ts`) |
 | Fast-report **review** (`lib/fast-report-supervisor.ts`, if Agent URL set) | Fast-report **rewrite**; report follow-ups; profile extract; translate |
 | Chat QA scripts | Telegram chat + intent (no Agent); schedule NL; portfolio narrative; invoice PDF; vision/PDF helpers; market understanding; intent router if enabled |
 
@@ -232,7 +232,7 @@ Verified: Hermes `/v1/runs` + `skills_list` returned `agentflow-report-research`
 | `invoice` | Business invoices |
 | `schedule` / `split` / `batch` | Recurring / split / CSV USDC |
 | `vision` | x402-paid; Hermes + OpenAI fallback |
-| `transcribe` | OpenAI voice→text; **$0** fallback; JWT + daily caps; no x402 middleware |
+| `transcribe` | OpenAI voice→text; price from `TRANSCRIBE_AGENT_PRICE` (`.env.example` **0.002**; code fallback **0** if unset); JWT + daily caps; no x402 middleware |
 
 **Providers (code):**
 
