@@ -12,6 +12,51 @@ Backend (`server.ts`, `agents/`, `facilitator/`) and frontend (`agentflow-fronte
 
 ---
 
+## Quick start (clone → local stack)
+
+For judges / first clone. Needs **GitHub access** to the private repo, Node **20+**, npm **8+**, and Python with **Hermes Agent** available (`python -m gateway.run` — see [Hermes Agent install](https://hermes-agent.nousresearch.com/docs/getting-started/installation)).
+
+```bash
+git clone https://github.com/Snehal707/agentflow-pvt.git
+cd agentflow-pvt
+
+cp .env.example .env
+# Required before install: CLOUDSMITH_TOKEN (Circle private npm — see .npmrc)
+# Also set at least: HERMES_API_KEY, HERMES_BASE_URL, Circle DCW, Supabase/Redis, JWT/auth,
+# FACILITATOR_PORT=3010 (dev:stack health-checks 3010), AGENTFLOW_BRAIN_INTERNAL_KEY
+# Optional Windows if :8000 is stuck:
+#   AGENTFLOW_HERMES_PORT=8001
+#   AGENTFLOW_HERMES_URL=http://127.0.0.1:8001
+
+npm run setup
+# loads .env then root npm install only — does not install the frontend
+
+npm install --prefix agentflow-frontend
+cp agentflow-frontend/.env.local.example agentflow-frontend/.env.local
+# set NEXT_PUBLIC_BACKEND_URL=http://localhost:4000
+# set NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID
+
+# Hermes Agent: start-hermes prefers hermes-brain/.venv, else system python.
+# hermes-brain/ is gitignored; start-hermes creates it and writes config.yaml + skills.
+
+npm run dev:stack
+```
+
+**Check**
+
+| URL | Expect |
+|-----|--------|
+| http://127.0.0.1:4000/health | API up |
+| http://127.0.0.1:4000/health/stack | Subset healthy (facilitator, R/A/W, bridge, vision, transcribe) |
+| http://127.0.0.1:3005 | UI |
+| Hermes `/health` on `AGENTFLOW_HERMES_PORT` (default **8000**) | Agent gateway up |
+
+**Use the app:** open http://localhost:3005 → connect wallet → sign JWT → enter a beta **access code** (from the operator / `access_codes` in Supabase — `AccessCodeGate`). Cron is **not** started by `dev:stack`.
+
+Helpers: `npm run dev:stack:clean`, `npm run stack:detach`, `node scripts/stack-cleanup.cjs`. Full ports / PM2: §9.
+
+---
+
 ## 1. Product surfaces
 
 App nav (`agentflow-frontend/lib/appData.ts`): `/chat`, `/pay`, `/funding`, `/portfolio`, `/agents`, `/telegram`.
@@ -296,12 +341,15 @@ Local `dev:stack`: **no cron**. Chat capture/retrieval: `lib/semantic-memory.ts`
 
 ## 9. Runbook
 
+See **Quick start** above for clone → first local run. This section is the expanded operator reference.
+
 ### Prerequisites
 
 - Node **20+**, npm **8+**, `CLOUDSMITH_TOKEN` ([.npmrc](.npmrc))
-- `.env` ← [.env.example](.env.example); `npm run setup`
+- `.env` ← [.env.example](.env.example); `npm run setup` (root install only)
+- `npm install --prefix agentflow-frontend`
 - `agentflow-frontend/.env.local` ← `.env.local.example` (`NEXT_PUBLIC_BACKEND_URL`, WalletConnect; optional Telegram username; `OPENAI_API_KEY` for transcribe)
-- `hermes-brain/` + venv for local Hermes Agent
+- Hermes Agent on PATH or in `hermes-brain/.venv` (`python -m gateway.run`); `start-hermes.cjs` creates gitignored `hermes-brain/` + config
 
 ### Local
 
