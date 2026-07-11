@@ -43,19 +43,64 @@ Easy to conflate — both say “Hermes.” In this repo they are **not** two pe
 | **AgentFlow entry** | `lib/agent-brain.ts` → `AGENTFLOW_HERMES_URL` (`/v1/runs`, `/events`, `/health`) | (1) Agent `config.yaml` model provider; (2) Node `lib/hermes.ts` (`callHermesFast` / `callHermesDeep`) |
 | **Env** | `AGENTFLOW_HERMES_PORT` / `AGENTFLOW_HERMES_URL`, API server key | `HERMES_API_KEY`, `HERMES_BASE_URL`, `HERMES_MODEL*` |
 
-**Relationship:** Hermes Agent **uses** the Hermes LLM (configured in `hermes-brain/config.yaml` by `start-hermes.cjs`). Chat goes Agent → LLM. Research/analyst/writer can also call the **same LLM API directly** via `lib/hermes.ts` without the Agent process.
+**Relationship:** Hermes Agent **uses** the Hermes LLM (configured in `hermes-brain/config.yaml` by `start-hermes.cjs`). Chat goes Agent → LLM. Many other paths call the **same LLM API directly** via `lib/hermes.ts` and never open an Agent `/v1/runs` session.
 
 ```mermaid
 flowchart LR
-  Chat["/chat"] --> Brain["lib/agent-brain.ts"]
+  Chat["/chat default"] --> Brain["lib/agent-brain.ts"]
   Brain --> Agent["Hermes Agent\ngateway :8000"]
   Agent --> LLM["Hermes LLM API\nHERMES_BASE_URL"]
   Agent --> Tools["AgentFlow tools\n/api/brain/* · tool-executor"]
-  Research["research / analyst / writer"] --> Direct["lib/hermes.ts"]
+  Other["research · telegram · intent · cron · …"] --> Direct["lib/hermes.ts"]
   Direct --> LLM
 ```
 
+### When each is used (from call sites)
+
+#### Hermes Agent (`AGENTFLOW_HERMES_URL` → `/v1/runs`)
+
+| When | Code |
+|------|------|
+| **Default web `/chat` conversation** (tool-using brain turn) | `server.ts` → `runAgentBrain()` in `lib/agent-brain.ts` |
+| **Fast-report quality review** (optional gate on writer draft; needs `AGENTFLOW_HERMES_URL` set) | `lib/fast-report-supervisor.ts` → local `/v1/runs` with toolset `clarify`; rewrite step then uses plain LLM |
+| QA scripts that exercise chat brain | `scripts/test-hermes-chat-*.ts`, etc. |
+
+Chat path does **not** call `lib/hermes.ts` for the main turn — the Agent process calls the LLM using its own `config.yaml`.
+
+#### Plain Hermes LLM (`lib/hermes.ts` → `HERMES_BASE_URL`)
+
+| When | Code |
+|------|------|
+| **Research agent** (fast path synthesis) | `agents/research/server.ts` → `callHermesFast` |
+| **Research helpers** (orchestrate / claims / verify / synthesize) | `agents/research/{orchestrator,claimExtractor,verifier,synthesizer}.ts` |
+| **Analyst / Writer agents** | `agents/analyst/server.ts`, `agents/writer/server.ts` → `callHermesFast` |
+| **Embedded R/A/W inside `server.ts`** (same prompts when those apps are in-process) | `server.ts` → `callHermesFast` for research/analyst/writer handlers |
+| **Post-report chat follow-up** (after a report exists; not a full brain tool turn) | `server.ts` → `callHermesFast(REPORT_FOLLOWUP_…)` |
+| **Profile-fact extraction** from chat messages | `server.ts` → `callHermesFast` |
+| **Report language translate** | `lib/reportTranslate.ts` |
+| **Telegram free-form chat answers** | `lib/telegram-bot.ts` → `callHermesFast` (Telegram does **not** use `runAgentBrain`) |
+| **Telegram intent parsing** | `lib/telegram-intent-parser.ts` |
+| **Schedule agent NL intent** | `agents/schedule/schedule-agent.ts` |
+| **Portfolio narrative** | `agents/portfolio/portfolio.ts` → `callHermesDeep` |
+| **Invoice PDF parse** | `agents/invoice/subagents/pdf-parser.ts` → `callHermesDeep` |
+| **Vision/text/PDF assist** (not audio; audio uses OpenAI) | `lib/mediaAgentUtils.ts` → `callHermesFast` / Hermes vision |
+| **Market understanding** | `lib/market-understanding.ts` |
+| **Daily report cron** | `lib/daily-report.ts` ← `crons/index.ts` |
+| **Intent router** (when `INTENT_ROUTER_ENABLED=true`; default **false** in `.env.example`) | `lib/intent-router/index.ts` → `hermes.chat.completions.create` |
+| **Browser extension stream** | `api/extension.ts` → `streamHermes` |
+| Fast-report **rewrite** after Agent review | `lib/fast-report-supervisor.ts` → `callHermesFast` |
+
+#### Both in one flow (example)
+
+Fast report supervisor (`lib/fast-report-supervisor.ts`, used from writer / `server.ts`):
+
+1. **Review** → Hermes Agent `/v1/runs` (if `AGENTFLOW_HERMES_URL` is set and supervisor enabled)  
+2. **Rewrite** (if needed) → plain `callHermesFast`
+
+If Agent URL is unset, supervisor skips and keeps the draft (no Agent call).
+
 ---
+
 
 ## Architecture
 
