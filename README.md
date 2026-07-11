@@ -355,6 +355,8 @@ Starts frontend `:3005`, Hermes Agent, facilitator, research/analyst/writer, API
 | Frontend | `http://localhost:3005/api/health` |
 | Hermes Agent | `/health` on `AGENTFLOW_HERMES_PORT` (default 8000) |
 
+**`/health/stack` scope** (`server.ts`): probes **facilitator, research, analyst, writer, bridge, vision, transcribe** only. It does **not** include swap, vault, predmarket, portfolio, invoice, schedule, split, or batch — those can be up while `ok` is still true if the listed subset is healthy. Hit each agent’s own `/health` (ports above) when debugging DeFi/payment agents.
+
 Windows port conflict on 8000 (documented in `.env.example`):
 
 ```env
@@ -396,6 +398,77 @@ Use [.env.example](.env.example) and `agentflow-frontend/.env.local.example` —
 Typically needed: Cloudsmith, Hermes LLM (`HERMES_*`), Hermes Agent port/URL + brain internal key, Circle DCW, JWT + auth domain, Redis/Supabase, facilitator/agent ports, Telegram, WalletConnect, `AGENTPAY_REGISTRY_ADDRESS`, research retrieval keys as needed.
 
 Safety (optional / policy): `MAINNET_KILL_SWITCH` (blocks money execution when set — `lib/execution-guard.ts`), pay-per-task and vision/transcribe daily limits (`.env.example`).
+
+### Debug / telemetry flags (`.env.example`)
+
+Optional; leave unset unless debugging:
+
+| Flag | Role |
+|------|------|
+| `AGENTFLOW_X402_DEBUG` | x402 path logging |
+| `AGENTFLOW_CIRCLE_DEBUG` | Circle/DCW logging |
+| `AGENTFLOW_A2A_DEBUG` | A2A follow-up logging |
+| `AGENTFLOW_CHAT_SESSION_TRACE` | Chat session tracing |
+| `AGENTFLOW_CHAT_SSE_DEBUG` | Chat SSE debug events |
+| `FAST_REPORT_SUPERVISOR_ENABLED` | Fast-report Agent review gate (default on if Agent URL set) |
+| `INTENT_ROUTER_ENABLED` | Alternate intent router (default **false**) |
+
+Local dirs (gitignored): `.agentflow-telemetry/`, `.logs/`, `.agentflow-memory/`.
+
+### Operator npm scripts
+
+Useful ops scripts from root `package.json` (not the full test catalog):
+
+| Script | Purpose |
+|--------|---------|
+| `npm run setup` | First-time install (Cloudsmith token) |
+| `npm run dev:stack` / `dev:stack:clean` / `stack:detach` | Full local stack |
+| `npm run dev:hermes` / `dev:chat-core` | Hermes only / minimal chat core |
+| `npm run start:api` | API only (`EMBEDDED_AGENT_SERVERS=false`) |
+| `npm run qa:prelaunch` / `qa:chat-prelaunch` / `qa:agents-prelaunch` | Pre-launch QA |
+| `npm run cron:worker` | Cron entry (exits unless `NODE_ENV=production`) |
+| `npm run treasury:topup` | One-shot agent treasury top-up |
+| `npm run memory:consolidate` / `memory:metrics` / `memory:eval` | Semantic memory jobs |
+| `npm run script:pre-launch` / `script:check-balances` | Pre-launch / balance checks |
+| `npm run script:setup-circle` / `script:mint-identity` / `script:create-missing-wallets` | Circle / ERC-8004 identity bootstrap |
+| `npm run deposit:agent-gateway` / `fund:agent-wallets` | Fund agent Gateway / wallets |
+| `npm run contract:deploy-agentpay-registry` | Deploy AgentPay `.arc` registry (Hardhat) |
+| `npm run typecheck` | `tsc --noEmit` |
+
+Individual agents: `npm run dev:swap`, `dev:vault`, `dev:bridge`, … (see `package.json`).
+
+### API mounts (`server.ts`)
+
+Product-relevant mounts on the public API (not every handler):
+
+| Mount / route | Role |
+|---------------|------|
+| `/api/auth` | Wallet nonce + JWT |
+| `/api/access` | Access-code claim / status |
+| `/api/wallet` | Gateway + execution wallet |
+| `/api/telegram` | Telegram link state |
+| `/api/settings` | User settings |
+| `/api/agentpay`, `/api/business` | Business / AgentPay onboarding (shared router) |
+| `/api/pay` | Send, schedule, `.arc` registry, contacts, history |
+| `/api/agent-store` | Agent catalog |
+| `/api/agent-ratings` | Post-task star ratings → ERC-8004 |
+| `/api/agent-economy-ledger` | A2A / economy ledger |
+| `/api/portfolio` | Portfolio API |
+| `/api/docs`, `/api/stats` | Docs topics / stats |
+| `/api/chat/respond`, `/api/chat/feedback` | Chat SSE + feedback |
+| `/api/research/status/:jobId`, `/api/research/queue` | Research job status |
+| `/api/x402/preflight`, `/api/x402/attempts/*` | x402 preflight + attempt ledger |
+| `/api/brain/*` | Hermes Agent brain tools |
+| `/api/schedule|split|batch|invoice/*` | Payment agent confirm/run proxies |
+| `/api/bridge/finalize` | Bridge finalize |
+| `/api/media/quota` | Vision/transcribe quotas |
+| `/api/dcw/agents/:slug/run` | DCW-paid agent run |
+| `/api/profile/remember` | Profile facts |
+| `/api/memory/*`, `/api/internal/*` | Admin memory / review / feedback |
+| `POST /run` | Research → analyst → writer pipeline |
+| `/health`, `/health/stack` | Liveness (stack = subset; see above) |
+
+Still mounted but **not product** (retired plan): `/api/extension`, `/api/webhooks/email`.
 
 - [docs/db-access-security.md](docs/db-access-security.md)  
 - [docs/known-issues.md](docs/known-issues.md)
