@@ -23,7 +23,7 @@ App shell (`app/(app)/layout.tsx`) wraps those with **`AccessCodeGate`** plus wa
 | `/chat` | Main UX — JWT chat; money confirms with YES (`Yes, swap & send` when swap has a recipient — `ChatThread.tsx`) |
 | `/pay` | AgentPay — `.arc` handles, send/request, contacts, schedule/split/batch, invoices, history |
 | `/pay/[handle]` | Public pay page |
-| `/funding` | Gateway funding → **execution (DCW)** wallet (`/vault` re-exports; UI in `funding/page.tsx`) |
+| `/funding` | Move Arc USDC **EOA ↔ DCW** (execution wallet) + faucet link — `funding/page.tsx` (UI copy: not a Gateway/bridge surface; `/vault` re-exports this page) |
 | `/portfolio` | Holdings UI |
 | `/agents` | Agent Store — prices + reputation (`lib/coreAgentSpecs.ts`) |
 | `/telegram` | Link wallet to Telegram bot |
@@ -33,7 +33,7 @@ App shell (`app/(app)/layout.tsx`) wraps those with **`AccessCodeGate`** plus wa
 
 **Auth:** WalletConnect → nonce/sign JWT (`api/auth.ts`) → access-code claim (`api/access.ts`). Env: `AUTH_SIGN_DOMAIN`, `AUTH_NONCE_TTL_SECONDS`.
 
-**Wallets:** EOA (auth) · Circle **Gateway** (fund USDC) · per-user **execution wallet** DCW `user_agent` (agent spend) — `api/wallet.ts`, `lib/dcw.ts`. Limits / `MAINNET_KILL_SWITCH`: `lib/execution-guard.ts`.
+**Wallets:** EOA (auth + `/funding` source) · per-user **execution DCW** `user_agent` (spend / x402 buyer) · Circle **Gateway** (nanopay liquidity; funded from DCW via wallet APIs, not the `/funding` page UI today) — `api/wallet.ts`, `lib/dcw.ts`. Limits / `MAINNET_KILL_SWITCH`: `lib/execution-guard.ts`.
 
 ---
 
@@ -161,7 +161,7 @@ Same brand, **different layers** — not two peer “clients.”
 |----------------------------|-------------------------------------|
 | Default web `/chat` conversation (`runAgentBrain`) — except explicit research/report, which bypasses Agent → `/run` | Research / analyst / writer (+ embedded handlers in `server.ts`) |
 | Fast-report **review** (`lib/fast-report-supervisor.ts`, if Agent URL set) | Fast-report **rewrite**; report follow-ups; profile extract; translate |
-| Chat QA scripts | Telegram chat + intent (no Agent); schedule NL; portfolio narrative; invoice PDF; vision/PDF helpers; market understanding; daily-report cron; intent router if enabled |
+| Chat QA scripts | Telegram chat + intent (no Agent); schedule NL; portfolio narrative; invoice PDF; vision/PDF helpers; market understanding; intent router if enabled |
 
 Config/soul: `start-hermes.cjs` writes `hermes-brain/config.yaml` + `SOUL.md`. Skills: see §5 (Hermes Agent skill pack vs Node `/run` planning).
 
@@ -278,7 +278,7 @@ Vision/transcribe may call `recordReputationSafe` after runs. **Counterparty “
 | Job | UTC | Why it counts |
 |-----|-----|----------------|
 | Due scheduled USDC payments (`processDuePayments`) | 09:00 (with daily tick) | AgentPay schedules (`/pay`, schedule agent) |
-| Agent treasury top-up (`runTreasuryTopUp`) | hourly | Agent funding / treasury wallet ops |
+| Agent treasury top-up (`runTreasuryTopUp`) | hourly | Platform USDC into **agent `owner` wallets** (A2A liquidity) — not user Gateway/Funding |
 | Semantic-memory consolidation | every 6h at :15 | Chat memory (`lib/semantic-memory.ts`; admin/internal panels) |
 
 **Still scheduled in `crons/index.ts`, but not current product docs material without proof they ship value:**
