@@ -32,6 +32,31 @@ Nav: `agentflow-frontend/lib/appData.ts`.
 
 ---
 
+## Hermes Agent vs Hermes LLM (same brand, different layers)
+
+Easy to conflate — both say “Hermes.” In this repo they are **not** two peer clients:
+
+| | **Hermes Agent** | **Hermes LLM** |
+|--|------------------|----------------|
+| **What** | Agent **runtime** ([NousResearch/hermes-agent](https://github.com/nousresearch/hermes-agent)): sessions, tool loop, API server | **Model / inference API** (e.g. Hermes-4-70B / 405B) |
+| **Where here** | `hermes-brain/` · `python -m gateway.run` via `scripts/start-hermes.cjs` · PM2 `agentflow-hermes` · port `AGENTFLOW_HERMES_PORT` (default 8000) | `HERMES_BASE_URL` (default `https://inference-api.nousresearch.com/v1`) |
+| **AgentFlow entry** | `lib/agent-brain.ts` → `AGENTFLOW_HERMES_URL` (`/v1/runs`, `/events`, `/health`) | (1) Agent `config.yaml` model provider; (2) Node `lib/hermes.ts` (`callHermesFast` / `callHermesDeep`) |
+| **Env** | `AGENTFLOW_HERMES_PORT` / `AGENTFLOW_HERMES_URL`, API server key | `HERMES_API_KEY`, `HERMES_BASE_URL`, `HERMES_MODEL*` |
+
+**Relationship:** Hermes Agent **uses** the Hermes LLM (configured in `hermes-brain/config.yaml` by `start-hermes.cjs`). Chat goes Agent → LLM. Research/analyst/writer can also call the **same LLM API directly** via `lib/hermes.ts` without the Agent process.
+
+```mermaid
+flowchart LR
+  Chat["/chat"] --> Brain["lib/agent-brain.ts"]
+  Brain --> Agent["Hermes Agent\ngateway :8000"]
+  Agent --> LLM["Hermes LLM API\nHERMES_BASE_URL"]
+  Agent --> Tools["AgentFlow tools\n/api/brain/* · tool-executor"]
+  Research["research / analyst / writer"] --> Direct["lib/hermes.ts"]
+  Direct --> LLM
+```
+
+---
+
 ## Architecture
 
 ```mermaid
@@ -46,8 +71,8 @@ flowchart TB
     Fac["x402 facilitator"]
   end
 
-  HermesGw["Hermes Python gateway\nscripts/start-hermes.cjs"]
-  HermesLLM["Hermes HTTP LLM client\nlib/hermes.ts → HERMES_BASE_URL"]
+  HermesAgent["Hermes Agent runtime\nhermes-brain/ · gateway.run"]
+  HermesLLM["Hermes LLM API\nHERMES_BASE_URL"]
 
   subgraph Agents["Agent processes"]
     RAW["research :3001\nanalyst :3002\nwriter :3003"]
@@ -60,9 +85,11 @@ flowchart TB
 
   Web --> API
   Tg --> API
-  API <--> HermesGw
-  HermesGw -->|"brain HTTP tools"| API
-  API --> HermesLLM
+  API <-->|"chat brain"| HermesAgent
+  HermesAgent -->|"model completions"| HermesLLM
+  HermesAgent -->|"agentflow_brain tools"| API
+  API -->|"direct completions\nlib/hermes.ts"| HermesLLM
+  RAW -->|"pipeline LLM calls"| HermesLLM
   API --> Fac
   API --> RAW
   API --> DeFi
@@ -84,13 +111,15 @@ sequenceDiagram
   participant U as User /chat
   participant FE as Next.js
   participant API as server.ts
-  participant HG as Hermes gateway
+  participant HA as Hermes Agent
+  participant LLM as Hermes LLM API
   participant TE as tool-executor / agents
 
   U->>FE: message (+ YES confirmations)
   FE->>API: chat / respond (SSE)
-  API->>HG: brain turn (toolset agentflow_brain)
-  HG->>API: tool / brain HTTP calls
+  API->>HA: /v1/runs (toolset agentflow_brain)
+  HA->>LLM: completions via agent config.yaml
+  HA->>API: brain / tool HTTP calls
   API->>TE: executeTool or agent /run
   TE-->>API: preview / receipt / report
   API-->>FE: SSE deltas + meta
@@ -113,7 +142,7 @@ flowchart LR
   A --> W["Writer agent\n:3003 /run"]
   W --> Out["SSE report\nmarkdown + receipt"]
 
-  R -.->|"fast: live retrieval\n+ Hermes LLM"| FastPath["agents/research/server.ts"]
+  R -.->|"fast: live retrieval\n+ LLM via lib/hermes.ts"| FastPath["agents/research/server.ts"]
   R -.->|"deep: deepPipeline\nsource-registry + Firecrawl"| DeepPath["agents/research/deepPipeline"]
 ```
 
@@ -144,7 +173,7 @@ Source of truth: `lib/agentflow-tools.ts` (`AGENTFLOW_TOOLS`).
 | `get_portfolio` | Holdings / PnL analysis |
 | `research` | Topic research; `mode`: `fast` \| `deep` |
 
-### Brain HTTP endpoints (Hermes → API)
+### Brain HTTP endpoints (Hermes Agent → API)
 
 Mounted on `server.ts` (internal key):
 
@@ -159,7 +188,7 @@ Mounted on `server.ts` (internal key):
 | POST | `/api/brain/bridge` |
 | POST | `/api/brain/bridge-precheck` |
 
-Hermes progress UI may show aliased names (e.g. `agentflow_swap`, `agentflow_vault`) that map to the same product clusters in `lib/agent-brain.ts`. Do not treat those strings as a second public API.
+Hermes Agent progress UI may show aliased names (e.g. `agentflow_swap`, `agentflow_vault`) that map to the same product clusters in `lib/agent-brain.ts`. Do not treat those strings as a second public API.
 
 Schedule / split / batch / invoice also exist as **Agent Store agents** and `/pay` surfaces; they are not all listed in `AGENTFLOW_TOOLS` above.
 
@@ -172,7 +201,7 @@ Schedule / split / batch / invoice also exist as **Agent Store agents** and `/pa
 | [`hermes-skills/agentflow-report-research/SKILL.md`](hermes-skills/agentflow-report-research/SKILL.md) | Report-research skill: retrieval plans `direct` / `light` / `standard`, subquery rules, coverage check, writer handoff brief. In-repo skill pack (not loaded by Node boot). |
 | [`agentflow-frontend/SKILL.md`](agentflow-frontend/SKILL.md) | Intent / anti-hallucination skill for payment & balance commands (live-state-only rules; maps phrases to scheduled-payment / balance / history tools). |
 
-Gateway runtime config and soul live under gitignored `hermes-brain/` (`scripts/start-hermes.cjs` → `config.yaml`, `SOUL.md`).
+Hermes Agent config + soul: gitignored `hermes-brain/` (`scripts/start-hermes.cjs` writes `config.yaml`, `SOUL.md`).
 
 ---
 
@@ -215,7 +244,7 @@ Prices: `*_AGENT_PRICE` env keys in that file.
 - Node **20+**, npm **8+**, `CLOUDSMITH_TOKEN` ([.npmrc](.npmrc))
 - Root `.env` from [.env.example](.env.example); `npm run setup`
 - `agentflow-frontend/.env.local` from `.env.local.example` (`NEXT_PUBLIC_BACKEND_URL`, `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID`; optional Telegram username; `OPENAI_API_KEY` for transcribe)
-- Local Hermes: `hermes-brain/` checkout + venv
+- Local Hermes Agent: `hermes-brain/` checkout + venv (model via `HERMES_*`)
 
 ### Local
 
@@ -223,14 +252,14 @@ Prices: `*_AGENT_PRICE` env keys in that file.
 npm run dev:stack
 ```
 
-Starts frontend `:3005`, Hermes, facilitator, research/analyst/writer, API `:4000`, DeFi/payment/media agents, Telegram bot. **No cron.**
+Starts frontend `:3005`, Hermes Agent, facilitator, research/analyst/writer, API `:4000`, DeFi/payment/media agents, Telegram bot. **No cron.**
 
 | Check | URL |
 |-------|-----|
 | API | `http://localhost:4000/health` |
 | Stack | `http://localhost:4000/health/stack` |
 | Frontend | `http://localhost:3005/api/health` |
-| Hermes | `/health` on `AGENTFLOW_HERMES_PORT` (default 8000) |
+| Hermes Agent | `/health` on `AGENTFLOW_HERMES_PORT` (default 8000) |
 
 Windows port conflict on 8000 (documented in `.env.example`):
 
@@ -251,7 +280,7 @@ pm2 reload all                   # after deploy
 pm2 save && pm2 startup
 ```
 
-PM2 apps: hermes, backend (API + embedded facilitator/R/A/W), swap, vault, portfolio, vision, transcribe, bridge, invoice, split, batch, schedule, predmarket, cron, telegram-bot, frontend (`next start -p 3005`).
+PM2 apps: hermes (Agent), backend (API + embedded facilitator/R/A/W), swap, vault, portfolio, vision, transcribe, bridge, invoice, split, batch, schedule, predmarket, cron, telegram-bot, frontend (`next start -p 3005`).
 
 ### Default ports
 
@@ -259,7 +288,7 @@ PM2 apps: hermes, backend (API + embedded facilitator/R/A/W), swap, vault, portf
 |---------|------|
 | Frontend | 3005 |
 | API | 4000 |
-| Hermes | 8000 (`AGENTFLOW_HERMES_PORT`) |
+| Hermes Agent | 8000 (`AGENTFLOW_HERMES_PORT`) |
 | Facilitator | 3010 (`FACILITATOR_PORT`) |
 | Research / Analyst / Writer | 3001 / 3002 / 3003 |
 | Swap / Vault / Predmarket / Portfolio | 3011 / 3012 / 3013 / 3014 |
@@ -270,17 +299,10 @@ PM2 apps: hermes, backend (API + embedded facilitator/R/A/W), swap, vault, portf
 
 Use [.env.example](.env.example) and `agentflow-frontend/.env.local.example` — do not treat this README as a full env catalog.
 
-Typically required for a working stack: Cloudsmith, Hermes API + gateway, Circle DCW, JWT, Redis/Supabase, facilitator/agent ports, Telegram, WalletConnect, research retrieval keys as needed, `MAINNET_KILL_SWITCH` for money safety.
+Typically required: Cloudsmith, Hermes LLM (`HERMES_*`), Hermes Agent port/URL, Circle DCW, JWT, Redis/Supabase, facilitator/agent ports, Telegram, WalletConnect, research retrieval keys as needed, `MAINNET_KILL_SWITCH`.
 
 - [docs/db-access-security.md](docs/db-access-security.md)  
 - [docs/known-issues.md](docs/known-issues.md)
-
----
-
-## Hermes clients
-
-1. **Python gateway** — `scripts/start-hermes.cjs` / PM2 `agentflow-hermes` (chat brain).  
-2. **HTTP LLM client** — `lib/hermes.ts` (`OpenAI` SDK against `HERMES_BASE_URL` / `HERMES_API_KEY`; default host `inference-api.nousresearch.com`). Used by research and other direct model calls — separate from the gateway process.
 
 ---
 
@@ -293,15 +315,15 @@ agents/                   Microservices (/run handlers)
 facilitator/              x402 facilitator
 api/                      Express routers
 lib/                      Brain, tools, dex/vault/predmarket, AgentPay, research queue, …
-hermes-skills/            In-repo Hermes skill pack (report research)
+hermes-skills/            Skill pack for Hermes Agent (report research)
 crons/                    Production schedulers (PM2)
-scripts/                  Stack / Hermes launchers
+scripts/                  Stack / Hermes Agent launchers
 ecosystem.config.cjs      PM2 apps
 docs/                     Ops notes
 contracts/ · foundry/     On-chain tooling
 ```
 
-Gitignored runtime/local: `hermes-brain/`, `tmp/`, `.logs/`, `.agentflow-telemetry/` (see `.gitignore`).
+Gitignored runtime/local: `hermes-brain/` (Hermes Agent checkout), `tmp/`, `.logs/`, `.agentflow-telemetry/` (see `.gitignore`).
 
 ---
 
