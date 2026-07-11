@@ -1,206 +1,155 @@
 # AgentFlow
 
-Private monorepo for the **live AgentFlow** stack: Arc Testnet AI agent economy with Circle **x402** micropayments, chat-driven DeFi + AgentPay, and a Next.js UI.
+Private monorepo for the live AgentFlow stack on **Arc Testnet**: Circle **x402** agents, chat + AgentPay UI, Hermes brain, PM2 production.
 
-Backend (`server.ts` + agents) and frontend (`agentflow-frontend/`) ship together. Production runs on a VPS under **PM2** (`ecosystem.config.cjs`). Private remote: `pvt` → `agentflow-pvt`.
+Backend (`server.ts`, `agents/`, `facilitator/`) and frontend (`agentflow-frontend/`) ship together.
 
-## What it is today
+- **Private GitHub:** `pvt` → https://github.com/Snehal707/agentflow-pvt  
+- **Prod process list:** [`ecosystem.config.cjs`](ecosystem.config.cjs) (PM2)
 
-| Surface | Route | What users do |
-|---------|-------|----------------|
-| **Chat** | `/chat` | Main product — wallet JWT chat for research, DeFi, AgentPay, vision/transcribe; money actions confirm with **YES** |
-| **AgentPay** | `/pay` | `.arc` names, send/request (USDC/EURC), contacts, schedule/split/batch, invoices, history |
-| **Pay link** | `/pay/[handle]` | Public page to pay a `.arc` handle |
-| **Funding** | `/funding` | Fund the Circle **execution (DCW)** wallet for agent-paid actions (`/vault` redirects here) |
-| **Portfolio** | `/portfolio` | EOA + execution-wallet holdings, vault shares, Gateway reserve, PnL snapshot |
-| **Agents** | `/agents` | Agent Store — browse/run priced x402 agents |
-| **Telegram** | `/telegram` | Link wallet → Telegram bot for mobile chat + AgentPay deep links |
-| **Docs** | `/docs` | Product docs (live topics from the API) |
-| **Landing** | `/` | Marketing site → CTA to `/chat` |
+## Product UI (current)
 
-**Wallets:** connect an EOA (WalletConnect) for auth; agents spend from the Circle **DCW execution wallet** (fund via `/funding`). Gateway reserve shows in portfolio.
+Nav from `agentflow-frontend/lib/appData.ts`:
 
-**Providers:** **Lunex** is the swap + vault provider (Arc testnet). Prediction markets use AchMarket. Bridging is CCTP into Arc.
+| Route | Purpose |
+|-------|---------|
+| `/chat` | Main app — wallet JWT chat; money actions confirm with YES (incl. “Yes, swap & send” when swap has a recipient) |
+| `/pay` | AgentPay — `.arc` handles, send/request, contacts, schedule/split/batch, invoices, history |
+| `/pay/[handle]` | Public pay page for a handle |
+| `/funding` | Circle Gateway + move funds to the **execution (DCW)** wallet (`/vault` re-exports this page) |
+| `/portfolio` | Portfolio / holdings UI |
+| `/agents` | Agent Store (catalog from `lib/coreAgentSpecs.ts`) |
+| `/telegram` | Link wallet to the Telegram bot |
+| `/docs` | Marketing docs (also fetches `GET /api/docs`) |
+| `/` | Landing → `/chat` |
 
-**Chat can do (current):** research reports · USDC↔EURC swap via Lunex (incl. **swap & send** to a `.arc` handle) · Lunex vault deposit/withdraw · CCTP bridge into Arc · prediction markets (AchMarket) · portfolio · send / schedule / split / batch / invoice · vision + voice transcript.
+**Wallets (as implemented in the funding UI):** connected EOA (WalletConnect) for auth; **Gateway** for funding USDC; **execution wallet (DCW)** for agent spend. See `GatewayWalletPanel` / `/funding`.
 
-Stack pieces:
+## DeFi providers (from code, not marketing)
 
-- **API gateway** (`server.ts`, `:4000`) — auth, chat/brain, AgentPay, wallets, x402 attempts, research queue, agent proxies
-- **Hermes gateway** (Python, default `:8000`) — chat reasoning; calls brain tools on the API
-- **x402 facilitator** — settlement for paid agent calls
-- **Agents** — see catalog below
-- **Telegram bot** — always-on poller (`lib/telegram-bot.ts`)
-- **Cron** (production only) — scheduled payments, treasury top-up, semantic memory, daily reports, yield monitor
+| Area | What the code does |
+|------|---------------------|
+| **Swap** | `lib/dex/router.ts` quotes **`swaparc`**, **`achswap`**, and **`lunex`**, then picks a route. Not Lunex-only. |
+| **Vault** | `lib/vault/router.ts` — **Lunex only** today (`luneUSDC`, `luneEURC` in `lib/vault/providers/lunex.ts`). |
+| **Pred markets** | `lib/predmarket/router.ts` — **AchMarket only** (`lib/predmarket/providers/achmarket.ts`). |
+| **Bridge** | CCTP into Arc; source chains listed in `lib/bridge/supportedSources.ts`. |
+| **AgentPay tokens** | USDC and EURC (`lib/agentpay-transfer.ts`). |
 
-## Agent catalog (Agent Store)
+## Agent Store catalog
 
-| Slug | Role |
-|------|------|
-| `research` | Research → Analyst → Writer report pipeline |
-| `swap` | Quote/execute Arc swaps (USDC/EURC) via **Lunex** |
-| `vault` | Yield vaults via **Lunex** (`luneUSDC` / `luneEURC`) |
-| `predmarket` | Prediction markets (AchMarket on testnet) |
-| `bridge` | CCTP bridge USDC into Arc (Sepolia / Base / Arb / Fuji / Amoy, …) |
-| `portfolio` | Balances, positions, transfers, PnL |
-| `invoice` | Business invoice review / settlement |
-| `schedule` / `split` / `batch` | Recurring, split, and batch USDC payouts |
-| `vision` / `transcribe` | Image/PDF brief · short voice → text |
+Source of truth: `lib/coreAgentSpecs.ts`.
 
-Specs + prices: `lib/coreAgentSpecs.ts` (overridable via `*_AGENT_PRICE` env).
+| Slug | Name | Notes from that file |
+|------|------|----------------------|
+| `research` | Research | Research → Analyst → Writer pipeline |
+| `swap` | Swap | Live Arc swap flows with guardrails |
+| `vault` | Vault | Lunex vaults (testnet, experimental) |
+| `predmarket` | Prediction Markets | AchMarket (testnet, experimental) |
+| `bridge` | Bridge | USDC into Arc, CCTP progress |
+| `portfolio` | Portfolio | Balances, positions, transfers, PnL |
+| `invoice` | Invoice | Invoice review / business settlement |
+| `schedule` | Schedule | Recurring USDC schedules |
+| `split` | Split | Split USDC across recipients |
+| `batch` | Batch | Bulk USDC from CSV |
+| `vision` | Vision | Images / text / single-page PDF |
+| `transcribe` | Voice Input | Short voice → text |
 
-## Quick start (local)
+Prices: `*_AGENT_PRICE` env keys in that file (fallback prices included).
 
-1. **Prerequisites:** Node **20+**, npm **8+**, `CLOUDSMITH_TOKEN` for `@circlefin/*` (see [.npmrc](.npmrc)). Local Hermes needs a `hermes-brain/` checkout with venv (gitignored; `scripts/start-hermes.cjs` launches it).
-2. **Root env:** copy [.env.example](.env.example) → `.env`, then `npm run setup`.
-3. **Frontend env:** copy `agentflow-frontend/.env.local.example` → `agentflow-frontend/.env.local`  
-   Set `NEXT_PUBLIC_BACKEND_URL=http://localhost:4000`, `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID`, and optionally `NEXT_PUBLIC_TELEGRAM_BOT_USERNAME`.  
-   Transcribe needs `OPENAI_API_KEY` (frontend `.env.local` or root `.env`).
-4. **Run the full product stack:**
+## How the stack runs
 
-   ```bash
-   npm run dev:stack
-   ```
+### Local — `npm run dev:stack`
 
-   Starts API **:4000**, Hermes, facilitator, all dedicated agents, Telegram bot, and Next.js on **:3005** (`EMBEDDED_AGENT_SERVERS=false`). **Does not** start `crons/` — that is PM2-only in production.
+`scripts/start-dev-stack.cjs` starts (separate processes, `EMBEDDED_AGENT_SERVERS=false`):
 
-   **Health:** `http://localhost:4000/health` · `http://localhost:4000/health/stack` · `http://localhost:3005/api/health` · Hermes `/health`
+- frontend (`:3005`), Hermes, facilitator, research, analyst, writer, API (`server.ts` `:4000`)
+- swap, vault, predmarket, bridge, portfolio, invoice, vision, transcribe, schedule, split, batch
+- Telegram bot (`lib/telegram-bot.ts`)
 
-   **Windows:** if `:8000` is stuck (IP Helper), pin Hermes in `.env`:
+It does **not** start `crons/`.
 
-   ```env
-   AGENTFLOW_HERMES_PORT=8001
-   AGENTFLOW_HERMES_URL=http://127.0.0.1:8001
-   ```
+Health: `GET :4000/health`, `GET :4000/health/stack`, `GET :3005/api/health`, Hermes `/health`.
 
-   Use `npm run stack:detach` to keep the supervisor in its own PowerShell window. Clean restart: `npm run dev:stack:clean` or `node scripts/stack-cleanup.cjs`.
+Windows: if `:8000` is occupied, set in `.env` (also documented in `.env.example`):
 
-5. **Frontend hot reload only:** `npm run dev:frontend:hot`
+```env
+AGENTFLOW_HERMES_PORT=8001
+AGENTFLOW_HERMES_URL=http://127.0.0.1:8001
+```
 
-Prefer **`FACILITATOR_PORT=3010`** so facilitator does not collide with other tools on `:3000`.
+Helpers: `npm run stack:detach`, `npm run dev:stack:clean`, `node scripts/stack-cleanup.cjs`. Prefer `FACILITATOR_PORT=3010`.
 
-## Ports (current defaults)
+Hermes process: `scripts/start-hermes.cjs` → local **`hermes-brain/`** (gitignored checkout + venv). Skills pack in-repo: `hermes-skills/`.
+
+### Production — PM2
+
+```bash
+npm install
+npm run build --prefix agentflow-frontend
+pm2 start ecosystem.config.cjs    # first time
+pm2 reload all                    # after pull
+pm2 save && pm2 startup
+```
+
+Apps in `ecosystem.config.cjs`: hermes, **backend** (`server.ts` — embeds facilitator + research/analyst/writer), swap, vault, portfolio, vision, transcribe, bridge, invoice, split, batch, schedule, predmarket, **cron**, **telegram-bot**, **frontend** (`next start -p 3005`).
+
+### Default ports
 
 | Service | Port |
 |---------|------|
-| Next.js UI | 3005 |
-| Public API | 4000 |
-| Hermes gateway | 8000 (or `AGENTFLOW_HERMES_PORT`) |
-| Facilitator | 3010 |
+| Frontend | 3005 |
+| API | 4000 (`PORT`) |
+| Hermes | 8000 (`AGENTFLOW_HERMES_PORT`) |
+| Facilitator | 3010 (`FACILITATOR_PORT`; code default can be 3000 — set 3010 locally) |
 | Research / Analyst / Writer | 3001 / 3002 / 3003 |
 | Swap / Vault / Predmarket / Portfolio | 3011 / 3012 / 3013 / 3014 |
 | Invoice / Vision / Transcribe | 3015 / 3016 / 3017 |
 | Schedule / Split / Batch / Bridge | 3018 / 3019 / 3020 / 3021 |
 
-## Architecture
+## Hermes (two clients)
 
-```mermaid
-flowchart LR
-  subgraph Client
-    Web["Next.js :3005\n/chat /pay /funding /portfolio /agents /telegram"]
-    Tg[Telegram bot]
-  end
+1. **Python gateway** — `scripts/start-hermes.cjs` / PM2 `agentflow-hermes`; chat brain talking to API brain tools.
+2. **HTTP LLM client** — `lib/hermes.ts` (`OpenAI` SDK, `HERMES_BASE_URL` / `HERMES_API_KEY`, default host `inference-api.nousresearch.com`). Used for research pipeline and other direct model calls — not the same process as the gateway.
 
-  subgraph Core
-    API["API gateway :4000\nserver.ts"]
-    Hermes[Hermes gateway]
-    Fac[x402 facilitator]
-  end
+## Quick start
 
-  subgraph Agents
-    Money[swap vault bridge predmarket portfolio]
-    Pay[schedule split batch invoice]
-    Media[vision transcribe]
-    Research[research analyst writer]
-  end
+1. Node **20+**, npm **8+**, `CLOUDSMITH_TOKEN` ([.npmrc](.npmrc)).
+2. Copy [.env.example](.env.example) → `.env`; `npm run setup`.
+3. Copy `agentflow-frontend/.env.local.example` → `agentflow-frontend/.env.local` (`NEXT_PUBLIC_BACKEND_URL`, `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID`; optional Telegram username; `OPENAI_API_KEY` for transcribe as noted there).
+4. Ensure `hermes-brain/` is set up for local Hermes.
+5. `npm run dev:stack` → open `http://localhost:3005`.
 
-  Arc[Arc Testnet + Circle DCW / x402]
+## Environment
 
-  Web --> API
-  Tg --> API
-  API --> Hermes
-  Hermes -->|"brain tools"| API
-  API --> Fac
-  API --> Money
-  API --> Pay
-  API --> Media
-  API --> Research
-  Fac --> Arc
-  Money --> Arc
-```
+Do not invent a full env list here — use [.env.example](.env.example) and `agentflow-frontend/.env.local.example`.
 
-**Hermes has two roles today:**
+Areas you will hit for a working stack: Cloudsmith, Hermes API + gateway ports/keys, Circle DCW, JWT, Redis/Supabase (runtime), facilitator/agent ports, Telegram, WalletConnect, Firecrawl/search as needed for research, `MAINNET_KILL_SWITCH` for money safety.
 
-1. **Python gateway** (`scripts/start-hermes.cjs` → local `hermes-brain/`) — default chat brain; skills live under `hermes-skills/`.
-2. **Nous / Hermes API client** (`lib/hermes.ts`) — research pipeline and other direct LLM calls (`HERMES_API_KEY`, `HERMES_BASE_URL`, models).
+DB access notes: [docs/db-access-security.md](docs/db-access-security.md). Known issues: [docs/known-issues.md](docs/known-issues.md).
 
 ## Repo layout
 
 ```text
-├── server.ts                 # Public API + (in prod) embedded facilitator/research/analyst/writer
-├── agentflow-frontend/       # Next.js 14 product UI
-├── agents/                   # Paid + pipeline microservices
-├── facilitator/              # x402 facilitator
-├── hermes-skills/            # Skills for the Hermes gateway
-├── lib/                      # Shared backend (brain, AgentPay, routing, …)
-├── api/                      # Express routers mounted by server.ts
-├── crons/                    # Production schedulers (PM2 agentflow-cron)
-├── scripts/                  # dev:stack, Hermes launcher, QA helpers
-├── ecosystem.config.cjs      # VPS PM2 process list
-├── docs/                     # Ops notes (db security, known issues, …)
-└── contracts/ · foundry/     # On-chain tooling (not the web UX)
+server.ts                 API gateway (+ embeds facilitator/R/A/W in PM2 backend)
+agentflow-frontend/       Next.js UI
+agents/                   Agent microservices
+facilitator/              x402 facilitator
+api/                      Routers mounted by server.ts
+lib/                      Shared backend (dex/vault/predmarket routers, brain, AgentPay, …)
+hermes-skills/            Skills for Hermes gateway
+crons/                    PM2 cron worker only
+scripts/                  dev:stack, Hermes launcher, QA
+ecosystem.config.cjs      Production PM2 apps
+docs/                     Ops / historical notes
+contracts/ · foundry/     On-chain tooling
 ```
 
-Gitignored local checkouts/artifacts: `hermes-brain/`, `tmp/`, `.logs/`, `.agentflow-telemetry/`.
-
-## Environment (what matters)
-
-Full list: [.env.example](.env.example) + `agentflow-frontend/.env.local.example`. For the current product:
-
-| Area | Vars |
-|------|------|
-| Install | `CLOUDSMITH_TOKEN` |
-| Data | Supabase + `REDIS_URL` (required at runtime — see your deployed `.env`) |
-| Auth | `JWT_SECRET`, `AUTH_SIGN_DOMAIN`, `APP_BASE_URL` |
-| Circle DCW | `CIRCLE_API_KEY`, `CIRCLE_ENTITY_SECRET`, optional `CIRCLE_WALLET_SET_ID` |
-| Hermes LLM | `HERMES_API_KEY`, `HERMES_BASE_URL`, `HERMES_MODEL*` |
-| Hermes gateway | `AGENTFLOW_HERMES_URL` / `AGENTFLOW_HERMES_PORT`, `AGENTFLOW_BRAIN_INTERNAL_KEY` |
-| x402 / chain | `SELLER_ADDRESS`, `FACILITATOR_PORT` (and `*_AGENT_PORT` / URLs when split) |
-| Safety | `MAINNET_KILL_SWITCH=true` blocks money paths |
-| Telegram | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME` (+ matching `NEXT_PUBLIC_*`) |
-| Frontend | `NEXT_PUBLIC_BACKEND_URL`, `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` |
-| Media / memory | `OPENAI_API_KEY` (transcribe + embeddings) |
-| Research | Firecrawl / optional `SEARXNG_API_URL` + source API keys as needed |
-
-Ops-only (not product UX): `INTERNAL_ADMIN_WALLETS`, `INTERNAL_PANEL_KEY` → `/internal/*` panels.
-
-See [docs/db-access-security.md](docs/db-access-security.md) for Supabase RLS notes.
-
-## Production (VPS + PM2)
-
-Canonical deploy is **this repo on the VPS** with [`ecosystem.config.cjs`](ecosystem.config.cjs):
-
-```bash
-git pull   # from private remote / deploy path, e.g. /opt/agentflow
-npm install
-npm run build --prefix agentflow-frontend
-pm2 start ecosystem.config.cjs   # first time
-pm2 reload all                   # after a deploy
-pm2 save && pm2 startup
-```
-
-PM2 apps: Hermes, **backend** (API + embedded facilitator/research/analyst/writer), swap, vault, portfolio, vision, transcribe, bridge, invoice, split, batch, schedule, predmarket, **cron**, **telegram-bot**, **frontend** (`next start -p 3005`).
-
-Local `dev:stack` runs facilitator/research/analyst/writer as **separate** processes; production embeds those four inside `agentflow-backend`. Cron only runs under PM2 with `NODE_ENV=production`.
-
-Known product/ops notes: [docs/known-issues.md](docs/known-issues.md).
+Gitignored: `hermes-brain/`, `tmp/`, `.logs/`, `.agentflow-telemetry/`, etc. (see `.gitignore`).
 
 ## Arc Testnet
 
-**USDC as gas** · Chain ID `5042002` · RPC `https://rpc.testnet.arc.network` · Explorer https://testnet.arcscan.app
+Chain ID `5042002` · RPC `https://rpc.testnet.arc.network` · Explorer https://testnet.arcscan.app · USDC as gas
 
-## Notes
+## Out of scope for this README
 
-- Money and AgentPay flows use **x402** + Circle DCW; chat confirmations (`YES` / **Yes, swap & send**) are intentional.
-- After changing `server.ts` or agents, kill stale listeners on `4000` / agent ports before restarting — stale Node processes cause confusing health/chat failures.
-- Do not treat `/dashboard`, `orchestrator/`, or Railway docs as the live product path — current UX is the app shell routes above; deploy is PM2.
+Not the live product path: `/dashboard`, `orchestrator/` / `dev:orchestrator`, Railway docs, one-off probe scripts. Prefer code + `ecosystem.config.cjs` over old writeups.
