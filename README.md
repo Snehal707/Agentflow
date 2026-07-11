@@ -271,19 +271,26 @@ Vision/transcribe may call `recordReputationSafe` after runs. **Counterparty “
 
 ## 8. Production cron
 
-`crons/index.ts` — only when `NODE_ENV=production` (PM2 `agentflow-cron`):
+`crons/index.ts` runs only when `NODE_ENV=production` (PM2 `agentflow-cron`). **Do not treat every scheduled callback as a product feature** — several jobs no-op, throw without env, or write nowhere users see.
 
-| Job | UTC |
-|-----|-----|
-| Yield monitor | every 6h |
-| Semantic-memory consolidation | every 6h at :15 |
-| Agent treasury top-up | hourly |
-| Daily reports + due scheduled payments | 09:00 |
-| Weekly `arc_ecosystem` report | Monday 09:00 |
-| Training export | 03:00 |
-| Monthly business digest | 1st 09:00 |
+**Tied to current product (code + surface):**
 
-Chat also uses `lib/semantic-memory.ts` for capture/retrieval. Local dirs: `.agentflow-memory/`, `.agentflow-telemetry/` (gitignored).
+| Job | UTC | Why it counts |
+|-----|-----|----------------|
+| Due scheduled USDC payments (`processDuePayments`) | 09:00 (with daily tick) | AgentPay schedules (`/pay`, schedule agent) |
+| Agent treasury top-up (`runTreasuryTopUp`) | hourly | Agent funding / treasury wallet ops |
+| Semantic-memory consolidation | every 6h at :15 | Chat memory (`lib/semantic-memory.ts`; admin/internal panels) |
+
+**Still scheduled in `crons/index.ts`, but not current product docs material without proof they ship value:**
+
+| Job | UTC | Evidence |
+|-----|-----|----------|
+| Daily topic briefs + weekly `arc_ecosystem` | 09:00 / Mon 09:00 | `generateDailyReport` only fills an **in-memory** `Map` in `lib/daily-report.ts` — nothing else reads it; lost on process restart |
+| Yield monitor | every 6h | Skips without vault config; only users with `yield_monitoring=true` |
+| Training export | 03:00 | Needs `TRAINING_EXPORT_BUCKET` + `TRAINING_EXPORT_SALT` (not in `.env.example`); throws if unset |
+| Monthly business invoice digest | 1st 09:00 | Telegram/Resend PDF for `businesses` rows — no app nav surface for “digest” |
+
+Local `dev:stack`: **no cron**. Chat capture/retrieval: `lib/semantic-memory.ts`. Local dirs `.agentflow-memory/`, `.agentflow-telemetry/` are gitignored.
 
 ---
 
