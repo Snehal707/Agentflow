@@ -14,21 +14,26 @@ Backend (`server.ts`, `agents/`, `facilitator/`) and frontend (`agentflow-fronte
 
 ## Product surfaces
 
-Nav: `agentflow-frontend/lib/appData.ts`.
+App nav (`agentflow-frontend/lib/appData.ts`): `/chat`, `/pay`, `/funding`, `/portfolio`, `/agents`, `/telegram`.
+
+App shell (`app/(app)/layout.tsx`) wraps those routes with **`AccessCodeGate`** (access code) in addition to wallet JWT auth.
 
 | Route | Role |
 |-------|------|
 | `/chat` | Primary UX — wallet JWT chat; money actions confirm with YES (UI label `Yes, swap & send` when a swap includes a recipient — `ChatThread.tsx`) |
 | `/pay` | AgentPay hub (`.arc` handles, send/request, contacts, schedule/split/batch, invoices, history) |
 | `/pay/[handle]` | Public pay page |
-| `/funding` | Circle Gateway funding + move to **execution (DCW)** wallet (`/vault` re-exports this page) |
+| `/funding` | Circle Gateway funding + move to **execution (DCW)** wallet (`/vault` re-exports this page; UI in `funding/page.tsx`) |
 | `/portfolio` | Holdings / portfolio UI |
-| `/agents` | Agent Store (`lib/coreAgentSpecs.ts`) |
+| `/agents` | Agent Store (`lib/coreAgentSpecs.ts`) — prices + reputation |
 | `/telegram` | Link wallet to Telegram bot |
-| `/docs` | Product docs (+ `GET /api/docs`) |
+| `/docs` | Marketing docs (+ `GET /api/docs`) — marketing nav, not app sidebar |
 | `/` | Marketing landing → `/chat` |
+| `/internal/*` | Ops-only (`memory`, `review`, `feedback`) — `INTERNAL_PANEL_KEY` + `INTERNAL_ADMIN_WALLETS` |
 
-**Wallets (funding UI):** EOA via WalletConnect for auth; **Gateway** for USDC funding; **execution wallet (DCW)** for agent spend (`GatewayWalletPanel`).
+**Auth (product path):** WalletConnect → nonce/sign JWT (`api/auth.ts`) → access-code claim (`api/access.ts`). Sign domain / TTL: `AUTH_SIGN_DOMAIN`, `AUTH_NONCE_TTL_SECONDS`.
+
+**Wallets:** connected EOA for auth; Circle **Gateway** for USDC funding; per-user **execution wallet (DCW, `user_agent`)** for agent spend (`api/wallet.ts`, `lib/dcw.ts`). Spend policies / kill switch: `lib/execution-guard.ts` (`MAINNET_KILL_SWITCH` blocks money paths when set).
 
 ---
 
@@ -83,7 +88,7 @@ Chat path does **not** call `lib/hermes.ts` for the main turn — the Agent proc
 | **Schedule agent NL intent** | `agents/schedule/schedule-agent.ts` |
 | **Portfolio narrative** | `agents/portfolio/portfolio.ts` → `callHermesDeep` |
 | **Invoice PDF parse** | `agents/invoice/subagents/pdf-parser.ts` → `callHermesDeep` |
-| **Vision/text/PDF assist** (not audio; audio uses OpenAI) | `lib/mediaAgentUtils.ts` → `callHermesFast` / Hermes vision |
+| **Vision/text/PDF assist** (Hermes-first; OpenAI fallback for some attachments; audio uses OpenAI) | `lib/mediaAgentUtils.ts` |
 | **Market understanding** | `lib/market-understanding.ts` |
 | **Daily report cron** | `lib/daily-report.ts` ← `crons/index.ts` |
 | **Intent router** (when `INTENT_ROUTER_ENABLED=true`; default **false** in `.env.example`) | `lib/intent-router/index.ts` → `hermes.chat.completions.create` |
@@ -263,7 +268,8 @@ Not in the nav as their own page; wired into Agent Store + paid-task flows.
 | **Product copy** | `agentflow-frontend/lib/docsContent.ts` + `lib/product-rag.ts` (`reputation` topic) |
 | **A2A payment ledger** (agent→agent x402 settlements) | `lib/a2a-ledger.ts` → `lib/agent-economy-ledger.ts` · `GET /api/agent-economy-ledger` · migration `db/migrations/20260504_create_agent_economy_ledger.sql` |
 | **A2A follow-ups** (e.g. invoice→research, portfolio after tool) | `lib/a2a-chat-scheduler.ts`, `lib/a2a-followups.ts` (used from `server.ts`) |
-| **Identity / validation registries** | `ARC.identityRegistry`, `ARC.validationRegistry` in `lib/arc-config.ts` |
+| **Identity / validation registries** | `ARC.identityRegistry`, `ARC.validationRegistry` in `lib/arc-config.ts` (identity minting is live via `lib/mintIdentityOwners.ts`; validation address is configured — little/no other runtime use in `lib/`) |
+| **AgentPay `.arc` registry (on-chain)** | `contracts/AgentPayRegistry.sol`, `lib/agentpay-registry.ts`, `AGENTPAY_REGISTRY_ADDRESS` — register/resolve via `api/pay.ts` |
 | **x402 attempt ledger** | `lib/x402AttemptLedger.ts` (payment attempts, not reputation) |
 
 Some agents also call `recordReputationSafe` after runs (e.g. `agents/vision/server.ts`, `agents/transcribe/server.ts`).
@@ -272,6 +278,8 @@ Some agents also call `recordReputationSafe` after runs (e.g. `agents/vision/ser
 
 ---
 
+## DeFi providers (code)
+
 | Area | Implementation |
 |------|----------------|
 | **Swap** | `lib/dex/router.ts` quotes **`swaparc`**, **`achswap`**, **`lunex`**, then selects a route |
@@ -279,6 +287,10 @@ Some agents also call `recordReputationSafe` after runs (e.g. `agents/vision/ser
 | **Pred markets** | `lib/predmarket/router.ts` — **AchMarket only** |
 | **Bridge** | CCTP into Arc; sources in `lib/bridge/supportedSources.ts` |
 | **AgentPay** | USDC + EURC — `lib/agentpay-transfer.ts` |
+
+### x402 facilitator
+
+Circle **Gateway batched** payments proxy (`facilitator/server.ts` — `/v1/x402/supported|verify|settle`). Local `dev:stack` runs it as its own process; **PM2 embeds it inside `agentflow-backend`** (`EMBEDDED_AGENT_SERVERS` default true in prod). Prefer `FACILITATOR_PORT=3010` in `.env` (code falls back to 3000 if unset).
 
 ---
 
@@ -296,9 +308,27 @@ Some agents also call `recordReputationSafe` after runs (e.g. `agents/vision/ser
 | `portfolio` | Portfolio |
 | `invoice` | Invoice |
 | `schedule` / `split` / `batch` | Recurring / split / CSV batch USDC |
-| `vision` / `transcribe` | Image-PDF brief / voice → text |
+| `vision` / `transcribe` | Vision: x402-paid image/PDF brief (Hermes + OpenAI fallback). Transcribe: voice → text via OpenAI; **$0** fallback price, JWT + daily caps (no x402 middleware on agent) |
 
 Prices: `*_AGENT_PRICE` env keys in that file.
+
+---
+
+## Production cron (`crons/index.ts`)
+
+Runs only when `NODE_ENV=production` (PM2 `agentflow-cron`). From that file:
+
+| Job | Schedule (UTC) |
+|-----|----------------|
+| Yield monitor | every 6h |
+| Semantic-memory consolidation | every 6h at :15 |
+| Agent treasury top-up | hourly |
+| Daily reports (topics) + due scheduled USDC payments | 09:00 |
+| Weekly `arc_ecosystem` report | Monday 09:00 |
+| Training export | 03:00 daily |
+| Monthly business digest | 1st of month 09:00 |
+
+Semantic memory capture/retrieval also feeds chat context (`lib/semantic-memory.ts`); local/telemetry dirs are gitignored (`.agentflow-memory/`, `.agentflow-telemetry/`).
 
 ---
 
@@ -354,7 +384,7 @@ PM2 apps: hermes (Agent), backend (API + embedded facilitator/R/A/W), swap, vaul
 | Frontend | 3005 |
 | API | 4000 |
 | Hermes Agent | 8000 (`AGENTFLOW_HERMES_PORT`) |
-| Facilitator | 3010 (`FACILITATOR_PORT`) |
+| Facilitator | Prefer **3010** via `FACILITATOR_PORT` (unset → code default **3000**) |
 | Research / Analyst / Writer | 3001 / 3002 / 3003 |
 | Swap / Vault / Predmarket / Portfolio | 3011 / 3012 / 3013 / 3014 |
 | Invoice / Vision / Transcribe | 3015 / 3016 / 3017 |
@@ -364,7 +394,9 @@ PM2 apps: hermes (Agent), backend (API + embedded facilitator/R/A/W), swap, vaul
 
 Use [.env.example](.env.example) and `agentflow-frontend/.env.local.example` — do not treat this README as a full env catalog.
 
-Typically required: Cloudsmith, Hermes LLM (`HERMES_*`), Hermes Agent port/URL, Circle DCW, JWT, Redis/Supabase, facilitator/agent ports, Telegram, WalletConnect, research retrieval keys as needed, `MAINNET_KILL_SWITCH`.
+Typically needed: Cloudsmith, Hermes LLM (`HERMES_*`), Hermes Agent port/URL + brain internal key, Circle DCW, JWT + auth domain, Redis/Supabase, facilitator/agent ports, Telegram, WalletConnect, `AGENTPAY_REGISTRY_ADDRESS`, research retrieval keys as needed.
+
+Safety (optional / policy): `MAINNET_KILL_SWITCH` (blocks money execution when set — `lib/execution-guard.ts`), pay-per-task and vision/transcribe daily limits (`.env.example`).
 
 - [docs/db-access-security.md](docs/db-access-security.md)  
 - [docs/known-issues.md](docs/known-issues.md)
