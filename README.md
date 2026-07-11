@@ -20,7 +20,9 @@ Backend (`server.ts` + agents) and frontend (`agentflow-frontend/`) ship togethe
 
 **Wallets:** connect an EOA (WalletConnect) for auth; agents spend from the Circle **DCW execution wallet** (fund via `/funding`). Gateway reserve shows in portfolio.
 
-**Chat can do (current):** research reports · USDC↔EURC swap (incl. **swap & send** to a `.arc` handle) · vault deposit/withdraw (Lunex testnet) · CCTP bridge into Arc · prediction markets (AchMarket testnet) · portfolio · send / schedule / split / batch / invoice · vision + voice transcript.
+**Providers:** **Lunex** is the swap + vault provider (Arc testnet). Prediction markets use AchMarket. Bridging is CCTP into Arc.
+
+**Chat can do (current):** research reports · USDC↔EURC swap via Lunex (incl. **swap & send** to a `.arc` handle) · Lunex vault deposit/withdraw · CCTP bridge into Arc · prediction markets (AchMarket) · portfolio · send / schedule / split / batch / invoice · vision + voice transcript.
 
 Stack pieces:
 
@@ -36,8 +38,8 @@ Stack pieces:
 | Slug | Role |
 |------|------|
 | `research` | Research → Analyst → Writer report pipeline |
-| `swap` | Quote/execute Arc swaps (USDC/EURC) with guardrails |
-| `vault` | Yield vaults (Lunex on testnet) |
+| `swap` | Quote/execute Arc swaps (USDC/EURC) via **Lunex** |
+| `vault` | Yield vaults via **Lunex** (`luneUSDC` / `luneEURC`) |
 | `predmarket` | Prediction markets (AchMarket on testnet) |
 | `bridge` | CCTP bridge USDC into Arc (Sepolia / Base / Arb / Fuji / Amoy, …) |
 | `portfolio` | Balances, positions, transfers, PnL |
