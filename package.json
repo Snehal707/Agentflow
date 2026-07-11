@@ -69,6 +69,7 @@
     "audit:robots": "tsx scripts/audit-robots.ts",
     "soak:research-topics": "tsx --env-file=.env scripts/soak-research-topic-coverage.ts",
     "smoke:research-reports": "tsx --env-file=.env scripts/smoke-research-reports.ts",
+    "smoke:hermes-research-skill": "node scripts/smoke-hermes-research-skill.cjs",
     "brain:eval": "node scripts/eval-agentflow-brain.cjs",
     "brain:eval:soft": "node scripts/eval-agentflow-brain.cjs --soft",
     "test:hermes-chat-guardrails": "tsx scripts/test-hermes-chat-guardrails.ts",

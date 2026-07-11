@@ -37,7 +37,7 @@ const HERMES_API_KEY = (
 ).trim();
 
 const BRAIN_MAX_TOOL_CALLS_PER_TURN = 5;
-const BRAIN_ALLOWED_TOOLSETS = ['agentflow_brain'] as const;
+const BRAIN_ALLOWED_TOOLSETS = ['agentflow_brain', 'skills'] as const;
 const BRAIN_ALLOWED_TOOL_NAMES = new Set([
   'session_search',
   'clarify',

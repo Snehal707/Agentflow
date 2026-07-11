@@ -136,8 +136,9 @@ sequenceDiagram
 Inside the research agent (before analyst/writer):
 
 - **fast / deep modes** still apply at the research agent (`agents/research/server.ts` / `deepPipeline`) after `/run` passes `reasoningMode`.
-- Retrieval planning is **Node code**, not a Hermes Agent skill load: `agents/research/orchestrator.ts` — `buildResearchBrief` via `callHermesFast` with `query_strategy`: `direct` | `light` | `standard`.
-- Repo file `hermes-skills/agentflow-report-research/SKILL.md` describes the same plan vocabulary, but **is not imported by `agents/research/`** and **is not installed into `hermes-brain/skills/`** by `start-hermes.cjs` (checked: no `agentflow*` under local `hermes-brain/skills/`).
+- Retrieval planning on this path is **Node code**: `agents/research/orchestrator.ts` — `buildResearchBrief` via `callHermesFast` with `query_strategy`: `direct` | `light` | `standard` (does not load the skill file).
+- Explicit research/report asks in web chat **bypass Hermes Agent** and go straight to this `/run` pipeline (`server.ts` research fast-path) so Agent cannot invent citations.
+- Hermes Agent skill for the same vocabulary: [`hermes-skills/agentflow-report-research`](hermes-skills/agentflow-report-research/SKILL.md) — installed into `hermes-brain/skills/` and reachable via `skills_list` / `skill_view` when Agent is in the loop (see §5; smoke: `npm run smoke:hermes-research-skill`). Not a required step on every report.
 
 Persist/search helpers: `lib/research-memory.ts`.
 
@@ -158,11 +159,11 @@ Same brand, **different layers** — not two peer “clients.”
 
 | Uses **Agent** (`/v1/runs`) | Uses **LLM only** (`lib/hermes.ts`) |
 |----------------------------|-------------------------------------|
-| Default web `/chat` (`runAgentBrain`) | Research / analyst / writer (+ embedded handlers in `server.ts`) |
+| Default web `/chat` conversation (`runAgentBrain`) — except explicit research/report, which bypasses Agent → `/run` | Research / analyst / writer (+ embedded handlers in `server.ts`) |
 | Fast-report **review** (`lib/fast-report-supervisor.ts`, if Agent URL set) | Fast-report **rewrite**; report follow-ups; profile extract; translate |
 | Chat QA scripts | Telegram chat + intent (no Agent); schedule NL; portfolio narrative; invoice PDF; vision/PDF helpers; market understanding; daily-report cron; intent router if enabled |
 
-Config/soul: `start-hermes.cjs` writes `hermes-brain/config.yaml` + `SOUL.md`. Skills: see §5 (chat/Hermes Agent optional install — **not** wired into the research `/run` pipeline).
+Config/soul: `start-hermes.cjs` writes `hermes-brain/config.yaml` + `SOUL.md`. Skills: see §5 (Hermes Agent skill pack vs Node `/run` planning).
 
 ---
 
@@ -189,14 +190,30 @@ UI may show aliases (`agentflow_swap`, …) in `lib/agent-brain.ts` — not a se
 
 ## 5. Skills
 
-These are **skill documents** in the repo. They are **not** loaded by `agents/research/*` and are **not** auto-installed by `scripts/start-hermes.cjs`.
+Two different consumers — do not collapse them:
 
-| Path | What it is | Wired into research `/run`? |
-|------|------------|------------------------------|
-| [`hermes-skills/agentflow-report-research/SKILL.md`](hermes-skills/agentflow-report-research/SKILL.md) | Written guidance for `direct` / `light` / `standard` report retrieval | **No.** Same ideas live in code as `agents/research/orchestrator.ts` (`buildResearchBrief` → `callHermesFast`). This file is not under `hermes-brain/skills/` in a normal local checkout. |
-| [`agentflow-frontend/SKILL.md`](agentflow-frontend/SKILL.md) | Intent / anti-hallucination rules for payments & balances | **No.** File itself says drop/symlink into `~/.hermes/skills/agentflow/` for Hermes Agent chat use. |
+| Path | What it is | Who uses it |
+|------|------------|-------------|
+| [`hermes-skills/agentflow-report-research/SKILL.md`](hermes-skills/agentflow-report-research/SKILL.md) | Hermes **Agent** skill: `direct` / `light` / `standard` report retrieval guidance (`skill_view` / `skills_list`) | Available to Hermes Agent chat; **not** a formal step on default `/run` reports (those use `orchestrator.ts`) |
+| [`agentflow-frontend/SKILL.md`](agentflow-frontend/SKILL.md) | Intent / anti-hallucination rules for payments & balances | Optional Hermes Agent install (see that file); not auto-copied by `start-hermes` today |
 
-Research uses the **Hermes LLM** (`lib/hermes.ts`) from Node agents. It does **not** go through Hermes Agent skill tools (`skill_view` / `skills_list`) for report generation.
+**How AgentFlow wires the research skill (verified):**
+
+1. `scripts/start-hermes.cjs` sets `HERMES_HOME` → `hermes-brain/`
+2. On each start it **copies** every `hermes-skills/*/SKILL.md` pack into `hermes-brain/skills/` (real files, not a junction — junctions warn as “outside trusted skills dir”)
+3. Hermes config `platform_toolsets.api_server` includes **`agentflow_brain` + `skills`**
+4. Chat brain (`lib/agent-brain.ts`) enables the same: `enabled_toolsets: ['agentflow_brain', 'skills']`
+5. System prompt tells the Agent to `skill_view` **`agentflow-report-research`** when planning research-report retrieval
+
+**Smoke (local Hermes up):**
+
+```bash
+npm run smoke:hermes-research-skill
+```
+
+Verified: Hermes `/v1/runs` + `skills_list` returned `agentflow-report-research`.
+
+**Node research `/run`:** plans via `orchestrator.ts` → Hermes **LLM** (`lib/hermes.ts`) with the same `direct` / `light` / `standard` vocabulary in code. Explicit research/report chat requests bypass Hermes Agent and hit this pipeline.
 
 ---
 
@@ -387,7 +404,7 @@ agents/                   Microservices
 facilitator/              x402 facilitator
 api/                      Express routers
 lib/                      Shared backend
-hermes-skills/            Skill markdown pack (not auto-loaded by research pipeline)
+hermes-skills/            Hermes Agent skill pack (copied into hermes-brain/skills/ by start-hermes)
 crons/                    PM2 cron
 scripts/                  Stack / Hermes launchers
 ecosystem.config.cjs      PM2

@@ -10,6 +10,8 @@ const hermesPythonPosix = path.join(hermesHome, ".venv", "bin", "python");
 const hermesConfigPath = path.join(hermesHome, "config.yaml");
 const hermesSoulPath = path.join(hermesHome, "SOUL.md");
 const launcherLockPath = path.join(hermesHome, "gateway_launcher.lock.json");
+const hermesSkillsSourceDir = path.join(repoRoot, "hermes-skills");
+const hermesSkillsInstallDir = path.join(hermesHome, "skills");
 const MAX_RESTARTS_PER_MINUTE = 5;
 
 dotenv.config({ path: path.join(repoRoot, ".env") });
@@ -209,8 +211,75 @@ function removeStaleState() {
   }
 }
 
+function copySkillTree(srcDir, destDir) {
+  fs.mkdirSync(destDir, { recursive: true });
+  for (const entry of fs.readdirSync(srcDir, { withFileTypes: true })) {
+    const srcPath = path.join(srcDir, entry.name);
+    const destPath = path.join(destDir, entry.name);
+    if (entry.isDirectory()) {
+      copySkillTree(srcPath, destPath);
+      continue;
+    }
+    if (!entry.isFile()) {
+      continue;
+    }
+    const next = fs.readFileSync(srcPath);
+    const prev = fs.existsSync(destPath) ? fs.readFileSync(destPath) : null;
+    if (!prev || Buffer.compare(prev, next) !== 0) {
+      fs.writeFileSync(destPath, next);
+    }
+  }
+}
+
+function isLinkedSkillDir(destDir) {
+  try {
+    const st = fs.lstatSync(destDir);
+    if (st.isSymbolicLink()) {
+      return true;
+    }
+    // Windows junctions often look like normal directories to lstat.
+    const real = fs.realpathSync(destDir);
+    return path.resolve(real) !== path.resolve(destDir);
+  } catch {
+    return false;
+  }
+}
+
+function installAgentFlowSkill(srcDir, destDir) {
+  const skillName = path.basename(srcDir);
+  // Always materialize under $HERMES_HOME/skills so Hermes treats the pack as
+  // inside the trusted skills directory (junctions to repo hermes-skills/ warn).
+  if (fs.existsSync(destDir) && isLinkedSkillDir(destDir)) {
+    fs.rmSync(destDir, { recursive: true, force: true });
+  }
+  copySkillTree(srcDir, destDir);
+  console.log(`[hermes] synced skill ${skillName}`);
+  return "copied";
+}
+
+function ensureAgentFlowHermesSkills() {
+  if (!fs.existsSync(hermesSkillsSourceDir)) {
+    console.warn("[hermes] hermes-skills/ missing — skipping AgentFlow skill install");
+    return;
+  }
+
+  fs.mkdirSync(hermesSkillsInstallDir, { recursive: true });
+  for (const entry of fs.readdirSync(hermesSkillsSourceDir, { withFileTypes: true })) {
+    if (!entry.isDirectory()) {
+      continue;
+    }
+    const srcDir = path.join(hermesSkillsSourceDir, entry.name);
+    const skillMd = path.join(srcDir, "SKILL.md");
+    if (!fs.existsSync(skillMd)) {
+      continue;
+    }
+    installAgentFlowSkill(srcDir, path.join(hermesSkillsInstallDir, entry.name));
+  }
+}
+
 function ensureAgentFlowHermesConfig() {
   fs.mkdirSync(hermesHome, { recursive: true });
+  ensureAgentFlowHermesSkills();
   const terminalCwd = repoRoot.replace(/\\/g, "/");
   const hermesBaseUrl = process.env.HERMES_BASE_URL || "https://inference-api.nousresearch.com/v1";
   const hermesModel =
@@ -226,6 +295,7 @@ function ensureAgentFlowHermesConfig() {
     "Keep replies natural, human, and concise - not robotic, salesy, or chatbot-like.",
     "Do not claim terminal, file-system, browser automation, cronjob, env-file, or hidden admin access.",
     "Use only the toolset available in this runtime and stay product-grounded.",
+    "When planning AgentFlow research reports (retrieval plan, subquery decomposition, evidence brief), load the agentflow-report-research skill via skill_view before improvising.",
   ].join("\n");
   const agentflowSoul = [
     "You are AgentFlow chat, the natural-language conversation layer for AgentFlow.",
@@ -250,7 +320,7 @@ ${agentflowSystemPrompt.split("\n").map((line) => `    ${line}`).join("\n")}
 terminal:
   cwd: "${terminalCwd}"
 platform_toolsets:
-  api_server: [agentflow_brain]
+  api_server: [agentflow_brain, skills]
 providers:
   agentflow-hermes:
     name: AgentFlow Hermes
