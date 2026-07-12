@@ -15938,11 +15938,12 @@ function createPublicApp(): express.Express {
                 executionTarget: 'DCW',
               })
             : null;
+      const gaOptions = { request: req };
 
       await sendGAEvent('pipeline_started', {
         wallet_address: payerAddress,
         timestamp: Date.now(),
-      });
+      }, gaOptions);
 
       const [researchOwnerWallet, analystOwnerWallet, writerOwnerWallet] = await Promise.all([
         loadAgentOwnerWallet('research'),
@@ -16068,7 +16069,7 @@ function createPublicApp(): express.Express {
         wallet_address: payerAddress,
         tx: researchTx,
         timestamp: Date.now(),
-      })
+      }, gaOptions)
         .then(() => {
           pushPipelineTimingTrace(pipelineTimingTrace, timingTraceStart, 'after_research_ga_event');
         })
@@ -16208,7 +16209,7 @@ function createPublicApp(): express.Express {
         wallet_address: payerAddress,
         tx: analystTx,
         timestamp: Date.now(),
-      });
+      }, gaOptions);
 
       const analysisParse = parseObjectWithDiagnostics(analysisText);
       const parsedAnalysis = analysisParse.parsed;
@@ -16303,7 +16304,7 @@ function createPublicApp(): express.Express {
         wallet_address: payerAddress,
         tx: writerTx,
         timestamp: Date.now(),
-      });
+      }, gaOptions);
 
       const total =
         Number(researchPrice.replace('$', '')) +
@@ -16384,7 +16385,7 @@ function createPublicApp(): express.Express {
         wallet_address: payerAddress,
         total: total.toFixed(3),
         timestamp: Date.now(),
-      });
+      }, gaOptions);
     } catch (e) {
       console.error('[pipeline] pipeline error:', e);
       sendEvent({

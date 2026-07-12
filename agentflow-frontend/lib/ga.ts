@@ -9,6 +9,9 @@ export function trackEvent(
   params?: Record<string, unknown>,
 ): void {
   if (typeof window === "undefined" || typeof window.gtag !== "function") return;
-  window.gtag("event", action, params ?? {});
+  window.gtag("event", action, {
+    event_origin: "browser",
+    ...(params ?? {}),
+  });
 }
 

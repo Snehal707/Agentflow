@@ -27,6 +27,7 @@ export function GoogleAnalyticsPageView({
     const pagePath = query ? `${pathname}?${query}` : pathname;
 
     window.gtag("config", measurementId, {
+      event_origin: "browser",
       page_path: pagePath,
     });
   }, [measurementId, pathname, searchParams]);
