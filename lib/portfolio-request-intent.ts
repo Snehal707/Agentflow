@@ -24,9 +24,22 @@ const BARE_SNAPSHOT_RE = /^(?:my\s+)?(?:portfolio|holdings|positions)\??$/i;
 const DISCUSSION_RE =
   /\b(?:think|thoughts?|opinion|good|bad|healthy|risky|risk|safe|balanced|diversified|diversification|improve|assessment|assess|rate|rating)\b/i;
 
+function isVaultWithdrawActionRequest(message: string): boolean {
+  if (!/\bvaults?\b/i.test(message)) return false;
+
+  const hasWithdrawVerb =
+    /\b(?:withdraw|unstake|redeem)\b/i.test(message) ||
+    /\b(?:take|pull|get|move)\b[\s\S]{0,80}\bout(?:ta|\s+of)?\b/i.test(message) ||
+    /\bremove\b[\s\S]{0,80}\bfrom\b/i.test(message);
+  if (!hasWithdrawVerb) return false;
+
+  return /\d|\b(?:all|everything|usdc|eurc|usd|bucks?|dollars?|funds?|money|cash)\b/i.test(message);
+}
+
 export function isVaultPositionRequest(message: string): boolean {
   const normalized = message.trim();
   if (!normalized) return false;
+  if (isVaultWithdrawActionRequest(normalized)) return false;
   return (
     /\bvault\b[\s\S]{0,40}\b(?:positions?|holdings?|shares?|balance|balances?)\b/i.test(normalized) ||
     /\b(?:positions?|holdings?|shares?|balance|balances?)\b[\s\S]{0,40}\bvault\b/i.test(normalized) ||
