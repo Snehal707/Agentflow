@@ -551,7 +551,7 @@ export function PromptComposer({
   );
 
   return (
-    <form onSubmit={onSubmit} className="w-full">
+    <form onSubmit={handleFormSubmit} className="w-full">
       <input
         ref={fileInputRef}
         type="file"
