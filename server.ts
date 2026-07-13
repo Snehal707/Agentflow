@@ -3611,6 +3611,9 @@ function isPortfolioSnapshotIntent(message: string): boolean {
 }
 
 function shouldClarifyPortfolioRequest(message: string): boolean {
+  if (detectPortfolioImpactIntent(message) || isExplicitResearchRequest(message)) {
+    return false;
+  }
   return classifyPortfolioRequestMode(message) === 'clarify';
 }
 
@@ -11629,7 +11632,7 @@ function createPublicApp(): express.Express {
     );
     const earlyPortfolioSnapshot = findRecentPortfolioSnapshotMessage(earlyPortfolioHistory);
     const earlyPortfolioClarificationReply =
-      shouldClarifyPortfolioRequest(message)
+      !shouldHandleAsResearchRequest(message) && shouldClarifyPortfolioRequest(message)
         ? earlyPortfolioSnapshot && isPortfolioReferentialFollowup(message)
           ? buildPortfolioContextualFollowupReply(message)
           : buildPortfolioCheckClarificationReply()

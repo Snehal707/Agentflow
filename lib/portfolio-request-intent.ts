@@ -1,3 +1,6 @@
+import { detectPortfolioImpactIntent } from './portfolio-impact-intent';
+import { isExplicitResearchRequest } from './research-request-intent';
+
 export type PortfolioRequestMode = 'snapshot' | 'clarify' | 'discussion' | null;
 
 const PORTFOLIO_SUBJECT_RE =
@@ -54,6 +57,14 @@ export function isVaultPositionRequest(message: string): boolean {
 export function classifyPortfolioRequestMode(message: string): PortfolioRequestMode {
   const normalized = message.trim();
   if (!normalized) return null;
+  // Research / portfolio-impact asks belong to the research pipeline, not a paid
+  // portfolio-snapshot confirmation ("run the portfolio check now?").
+  if (detectPortfolioImpactIntent(normalized)) {
+    return null;
+  }
+  if (isExplicitResearchRequest(normalized)) {
+    return null;
+  }
   if (/\b(?:prediction\s+markets?|prediction\s+(?:market\s+)?positions?|predmarket|market\s+positions?)\b/i.test(normalized)) {
     return null;
   }
