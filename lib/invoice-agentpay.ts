@@ -86,7 +86,28 @@ export async function createPaymentRequestFromInvoice(
   if (vendorHandle && issuer) {
     try {
       payerWallet = await resolvePayee(vendorHandle, issuer);
-    } catch {
+    } catch (err) {
+      console.warn(
+        `[invoice-agentpay] resolvePayee failed for ${vendorHandle}:`,
+        err instanceof Error ? err.message : err,
+      );
+      payerWallet = null;
+    }
+  }
+
+  // Fallback: AgentPay registry miss → AgentFlow handle / on-chain registry.
+  if (!payerWallet && vendorHandle) {
+    try {
+      const { resolveHandle, normalizeHandle } = await import('./handles');
+      const bare = vendorHandle.replace(/\.arc$/i, '').trim();
+      if (bare) {
+        payerWallet = await resolveHandle(normalizeHandle(bare));
+      }
+    } catch (err) {
+      console.warn(
+        `[invoice-agentpay] handle fallback failed for ${vendorHandle}:`,
+        err instanceof Error ? err.message : err,
+      );
       payerWallet = null;
     }
   }
@@ -145,7 +166,7 @@ export async function createPaymentRequestFromInvoice(
         `From: ${String(invoice.business_wallet ?? '').slice(0, 6)}...`,
         `For: ${invoice.line_items?.[0]?.description ?? 'Services'}`,
         '',
-        'Pay at agentflow.one/pay → Requests tab',
+        'Pay at agentflow.one/pay → Invoices → To Pay',
       ].join('\n');
       await sendTelegramText(chatId, msg);
       console.log(`[invoice-agentpay] Telegram notification sent for invoice ${invoice.invoice_number} to chat ${chatId}`);

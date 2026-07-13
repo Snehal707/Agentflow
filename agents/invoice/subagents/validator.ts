@@ -22,8 +22,11 @@ export async function validateInvoiceForBusiness(input: {
   if (error) {
     return { approved: false, reason: `business lookup failed: ${error.message}` };
   }
+  // Chat / AgentPay peer invoices are created by regular wallets that are not
+  // onboarded as businesses. Those should still create a TO PAY payment request
+  // for the vendor — business policy only applies when a businesses row exists.
   if (!biz) {
-    return { approved: false, reason: 'Business not registered' };
+    return { approved: true, flags: ['peer_invoice'] };
   }
 
   const flags: string[] = [];

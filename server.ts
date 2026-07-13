@@ -10784,6 +10784,8 @@ function createPublicApp(): express.Express {
 
       const result = await executeDcwPaidAgentViaX402<{
         invoiceId?: string;
+        paymentRequestId?: string | null;
+        validation?: { approved?: boolean; reason?: string };
         error?: string;
       }>({
         userWalletAddress: pending.walletAddress,
@@ -10821,7 +10823,12 @@ function createPublicApp(): express.Express {
 
       await getRedis().del(`invoice:pending:${sessionId}`);
 
-      let message = `Invoice ${pending.invoiceNumber} created and payment request sent to ${pending.vendorHandle}.`;
+      const payReqId = result.data.paymentRequestId;
+      let message = payReqId
+        ? `Invoice ${pending.invoiceNumber} created. ${pending.vendorHandle} can pay it under AgentPay → Invoices → To Pay.`
+        : result.data.validation?.approved === false
+          ? `Invoice ${pending.invoiceNumber} saved for review (${result.data.validation.reason ?? 'needs approval'}). No payment request was sent yet.`
+          : `Invoice ${pending.invoiceNumber} created, but ${pending.vendorHandle} could not be resolved for a payment request yet.`;
 
       if (requestedInvoiceResearch) {
         try {
@@ -10844,7 +10851,7 @@ function createPublicApp(): express.Express {
         success: true,
         invoiceId: result.data.invoiceId ?? null,
         invoiceNumber: pending.invoiceNumber,
-        paymentRequestId: result.data.invoiceId ?? null,
+        paymentRequestId: payReqId ?? null,
         message,
         payment: {
           mode: result.payment.mode,

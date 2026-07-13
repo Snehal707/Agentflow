@@ -43,6 +43,7 @@ export interface RunInvoicePipelineResult {
   executed: boolean;
   businessWallet: string;
   txHash?: `0x${string}`;
+  paymentRequestId?: string | null;
 }
 
 function invoiceVendorHandle(invoice: NormalizedInvoice): string | null {
@@ -157,16 +158,30 @@ export async function runInvoicePipeline(
 
   if (!wantExecute) {
     // No DCW payer available — create an AgentPay payment request so the
-    // payer can approve it manually from the Requests tab.
+    // payer can approve it manually from Invoices → To Pay.
+    let paymentRequestId: string | null = null;
     try {
       const payReq = await createPaymentRequestFromInvoice(invoiceId);
       if (payReq) {
+        paymentRequestId = payReq.requestId;
         console.log('[invoice/pipeline] payment request created:', payReq.requestId);
+      } else {
+        console.warn(
+          '[invoice/pipeline] payment request not created (recipient unresolved?) for',
+          invoiceId,
+        );
       }
     } catch (e) {
       console.warn('[invoice/pipeline] payment request creation failed (non-fatal):', e);
     }
-    return { invoiceId, invoice, validation, executed: false, businessWallet: input.businessWallet };
+    return {
+      invoiceId,
+      invoice,
+      validation,
+      executed: false,
+      businessWallet: input.businessWallet,
+      paymentRequestId,
+    };
   }
 
   if ((input.executionPolicy ?? 'always') === 'auto_settle_band' && !inAutoSettleBand) {
