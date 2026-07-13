@@ -1462,6 +1462,10 @@ function brainHistoryKey(sessionId: string): string {
   return `chat:history:${sessionId}`;
 }
 
+function brainLastResearchReportKey(sessionId: string): string {
+  return `chat:last-research-report:${sessionId}`;
+}
+
 /** When the client sends `x-session-id: wallet-0xabc...-chat-{uuid}`, isolate brain history per thread. */
 function deriveBrainMemorySessionId(
   walletAddress: Address | undefined,
@@ -1883,6 +1887,24 @@ async function storeLocalBrainUserProfile(
   await writeLocalBrainJson(LOCAL_BRAIN_PROFILES_FILE, store);
 }
 
+const BRAIN_HISTORY_DEFAULT_CONTENT_LIMIT = 4_000;
+const BRAIN_HISTORY_REPORT_CONTENT_LIMIT = 80_000;
+
+function looksLikeStoredResearchReportContent(content: string): boolean {
+  const normalized = content.replace(/\r\n/g, '\n');
+  if (/\n\s*---\s*\n/.test(normalized) && /^#{1,3}\s+\S/m.test(normalized)) {
+    return true;
+  }
+  return (
+    /^##\s+(?:Summary|Overview|Executive Summary|Current Situation|Key Evidence|Sources|Takeaway)\b/im.test(
+      normalized,
+    ) ||
+    /^\*\*(?:Summary|Overview|Executive Summary|Current Situation|Sources|Takeaway)[^*]*\*\*/im.test(
+      normalized,
+    )
+  );
+}
+
 function normalizeBrainConversationHistory(
   items: BrainConversationMessage[],
 ): BrainConversationMessage[] {
@@ -1895,10 +1917,17 @@ function normalizeBrainConversationHistory(
             typeof item.content === 'string',
         ),
     )
-    .map((item) => ({
-      role: item.role,
-      content: item.content.trim().slice(0, 4000),
-    }))
+    .map((item) => {
+      const trimmed = item.content.trim();
+      const limit =
+        item.role === 'assistant' && looksLikeStoredResearchReportContent(trimmed)
+          ? BRAIN_HISTORY_REPORT_CONTENT_LIMIT
+          : BRAIN_HISTORY_DEFAULT_CONTENT_LIMIT;
+      return {
+        role: item.role,
+        content: trimmed.slice(0, limit),
+      };
+    })
     .filter((item) => item.content.length > 0)
     .slice(-20);
 }
@@ -7441,6 +7470,7 @@ async function executeBrainResearchPipelineForChat(opts: BrainResearchPipelineCh
       `${intermediate.join('')}${finalText}`,
       redisActionScopeKey,
     );
+    await storeLastResearchReport(memorySessionId, report);
     // Only surface "Trade / prediction market" quick actions when the research
     // was actually launched from a prediction-market context. Plain research
     // (e.g. "BTC report") should NOT auto-attach trade buttons just because it
@@ -9381,14 +9411,23 @@ function isReportRenderingComplaint(message: string): boolean {
 function extractStoredResearchReport(content: string): string | null {
   const normalized = content.replace(/\r\n/g, '\n');
   const divider = /\n\s*---\s*\n/.exec(normalized);
-  if (!divider) return null;
+  const candidate = divider
+    ? normalized.slice(divider.index + divider[0].length).trim()
+    : normalized.trim();
+  if (!candidate) return null;
 
-  const report = normalized.slice(divider.index + divider[0].length).trim();
-  if (!report) return null;
-  if (!/^#{1,3}\s+\S/m.test(report) && !/^##\s+(?:Summary|Overview|Executive Summary|Current Situation|Takeaway)\b/im.test(report)) {
+  const hasMarkdownHeading = /^#{1,3}\s+\S/m.test(candidate);
+  const hasKnownReportHeading =
+    /^##\s+(?:Summary|Overview|Executive Summary|Current Situation|Key Evidence|Sources|Takeaway)\b/im.test(
+      candidate,
+    ) ||
+    /^\*\*(?:Summary|Overview|Executive Summary|Current Situation|Sources|Takeaway)[^*]*\*\*/im.test(
+      candidate,
+    );
+  if (!hasMarkdownHeading && !hasKnownReportHeading) {
     return null;
   }
-  return report;
+  return candidate;
 }
 
 function findLatestStoredResearchReport(history: BrainConversationMessage[]): string | null {
@@ -9398,6 +9437,40 @@ function findLatestStoredResearchReport(history: BrainConversationMessage[]): st
     if (report) return report;
   }
   return null;
+}
+
+async function storeLastResearchReport(sessionId: string, report: string): Promise<void> {
+  const trimmed = report.trim();
+  if (!sessionId || !trimmed) return;
+  try {
+    await getRedis().set(
+      brainLastResearchReportKey(sessionId),
+      trimmed.slice(0, BRAIN_HISTORY_REPORT_CONTENT_LIMIT),
+      'EX',
+      60 * 60 * 24 * 30,
+    );
+  } catch (error) {
+    console.warn('[brain] last research report store failed:', getErrorMessage(error));
+  }
+}
+
+async function loadLastResearchReport(sessionId: string): Promise<string | null> {
+  if (!sessionId) return null;
+  try {
+    const raw = await getRedis().get(brainLastResearchReportKey(sessionId));
+    const trimmed = typeof raw === 'string' ? raw.trim() : '';
+    return trimmed || null;
+  } catch (error) {
+    console.warn('[brain] last research report load failed:', getErrorMessage(error));
+    return null;
+  }
+}
+
+async function resolveLatestResearchReport(
+  sessionId: string,
+  history: BrainConversationMessage[],
+): Promise<string | null> {
+  return findLatestStoredResearchReport(history) ?? (await loadLastResearchReport(sessionId));
 }
 
 function hasRecentStoredResearchReport(history: BrainConversationMessage[]): boolean {
@@ -9619,12 +9692,14 @@ function shouldUseReportContextTurn(
 
   if (NON_RESEARCH_PHRASES.test(normalized)) return true;
   if (/\?$/.test(normalized)) return true;
+  // Source questions after a report ("explain the sources", "what are these sources")
+  // should stay grounded in the report even without pronouns.
+  if (/\b(?:source|sources|citation|citations)\b/i.test(normalized)) {
+    return true;
+  }
   const referential =
     /\b(?:that|this|it|these|those|report|claim|claims|sentence|line|point)\b/i.test(normalized);
   if (/\b(?:report|citation|citations|claim|claims|mean|means|bearish|bullish|why|how|what|which|unfinished|incomplete|cut off|truncated|good|great|nice|helpful|thanks|thank you)\b/i.test(normalized) && referential) {
-    return true;
-  }
-  if (/\b(?:source|sources)\b/i.test(normalized) && referential) {
     return true;
   }
 
@@ -9678,7 +9753,7 @@ function extractReportClaimCandidates(report: string): string[] {
 
 function classifyReportContextTurn(
   message: string,
-): 'ack' | 'source_lookup' | 'explanation' | 'general' {
+): 'ack' | 'source_lookup' | 'source_explain' | 'explanation' | 'general' {
   const normalized = message.trim().toLowerCase();
   if (!normalized) return 'general';
 
@@ -9690,7 +9765,18 @@ function classifyReportContextTurn(
   }
 
   if (
-    /\b(?:which source|what source|source says|where (?:does|did) that come from|citation|cite|cites|cited|source)\b/i.test(
+    /\b(?:explain|describe|what are|what's|whats|tell me about|walk me through)\b[\s\S]{0,48}\b(?:source|sources|citation|citations)\b/i.test(
+      normalized,
+    ) ||
+    /\b(?:source|sources|citation|citations)\b[\s\S]{0,24}\b(?:mean|means|about|for)\b/i.test(
+      normalized,
+    )
+  ) {
+    return 'source_explain';
+  }
+
+  if (
+    /\b(?:which source|what source|source says|where (?:does|did) that come from|citation|cite|cites|cited|sources?)\b/i.test(
       normalized,
     )
   ) {
@@ -9716,6 +9802,22 @@ function buildReportSourceLookupReply(report: string): string {
 
   const preview = sources.slice(0, 4).map((source) => `- ${source}`).join('\n');
   return `Which claim do you want sourced specifically? This report's listed sources are:\n${preview}\n\nIf you point to the exact sentence or claim, I'll map it to the closest source in the report instead of guessing.`;
+}
+
+function buildReportSourceExplainReply(report: string): string {
+  const sources = extractReportSourceBullets(report);
+  if (sources.length === 0) {
+    return "That report doesn't expose a clean Sources list I can explain. Point me at a specific claim from the report and I'll say whether the report itself supports it.";
+  }
+
+  const lines = sources.slice(0, 8).map((source, index) => `${index + 1}. ${source}`);
+  return [
+    'These are the sources listed in that report — not a new research run:',
+    '',
+    ...lines,
+    '',
+    'They are the citations the report used for the Fed/meeting and rates context above. Ask about any one of them (or any claim in the report) and I can map it more tightly.',
+  ].join('\n');
 }
 
 function buildMatchedReportSourceReply(report: string, message: string): string | null {
@@ -11621,7 +11723,8 @@ function createPublicApp(): express.Express {
      * 4) Hermes brain fallback via SSE streaming
      */
     const capabilityThreadCtx = buildCapabilityThreadContext(messages);
-    const earlyPreviousReport = findLatestStoredResearchReport(
+    const earlyPreviousReport = await resolveLatestResearchReport(
+      memorySessionId,
       messages as BrainConversationMessage[],
     );
     const earlyPortfolioHistory = messages as BrainConversationMessage[];
@@ -14810,7 +14913,7 @@ function createPublicApp(): express.Express {
         }
       }
 
-      const previousReport = findLatestStoredResearchReport(historyForBrain);
+      const previousReport = await resolveLatestResearchReport(memorySessionId, historyForBrain);
       console.log('[report-context] previousReport:', Boolean(previousReport));
       console.log(
         '[report-context] shouldUse:',
@@ -14852,6 +14955,8 @@ function createPublicApp(): express.Express {
         let responseText: string;
         if (reportTurnKind === 'ack') {
           responseText = buildReportAcknowledgementReply();
+        } else if (reportTurnKind === 'source_explain') {
+          responseText = buildReportSourceExplainReply(previousReport!);
         } else if (reportTurnKind === 'source_lookup') {
           responseText =
             buildMatchedReportSourceReply(previousReport!, message) ??

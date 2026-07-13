@@ -105,6 +105,17 @@ function replaceInternalToolIdentifiers(text: string): string {
 function stripInternalPromptLeakPatterns(text: string): string {
   let next = text;
 
+  next = next.replace(/VERBATIM_REPORT_START/gi, ' ');
+  next = next.replace(/VERBATIM_REPORT_END/gi, ' ');
+  next = next.replace(/VERBATIM_CAPABILITIES_START/gi, ' ');
+  next = next.replace(/VERBATIM_CAPABILITIES_END/gi, ' ');
+  next = next.replace(/\[[^\]]*Why Research Agent[^\]]*\]/gi, ' ');
+  next = next.replace(/\bAgenda skill\b/gi, ' ');
+  next = next.replace(/\bresearch agent reverted\b/gi, ' ');
+  next = next.replace(/\bResearch is not yet complete\b/gi, ' ');
+  next = next.replace(/\bThis bottoms out at these sources because\b/gi, ' ');
+  next = next.replace(/\bcanonical public meeting schedule\b/gi, ' ');
+
   next = next.replace(
     /\bI can speak Thai when you message me primarily in Thai\.[\s\S]*?(?=(?:\n{2,}|$))/gi,
     ' ',
