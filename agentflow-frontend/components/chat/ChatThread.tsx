@@ -39,7 +39,7 @@ function extractPredmarketResearchTitleFromPrompt(prompt?: string): string {
   if (!raw) return "";
 
   const match = raw.match(
-    /research\s+the\s+prediction\s+market\s+topic:\s*([\s\S]*?)(?=\s*Listed outcomes in AgentFlow:|$)/i,
+    /research\s+the\s+prediction\s+market\s+topic:\s*([\s\S]*?)(?=\s*(?:Listed outcomes in AgentFlow:|Prediction market category in AgentFlow:|Prediction market provider in AgentFlow:|AgentFlow market address reference:|Market address for AgentFlow trade routing only:|Use the market category to disambiguate the subject before searching|Focus on the real-world event)|$)/i,
   );
   return match?.[1]?.replace(/\s+/g, " ").trim() || "";
 }
