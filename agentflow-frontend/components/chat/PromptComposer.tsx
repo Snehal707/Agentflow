@@ -508,6 +508,12 @@ export function PromptComposer({
     event.currentTarget.form?.requestSubmit();
   };
 
+  const handleFormSubmit = (event: FormEvent) => {
+    setVoiceStatus(null);
+    setVoiceError(null);
+    onSubmit(event);
+  };
+
   const micBusy = isStreaming || isTranscribing;
   const micLabel = isTranscribing ? "Transcribing..." : isRecording ? "Stop recording" : "Voice input";
   const showMicTools = audioInputDevices.length > 0 || isRecording || micLevel > 0;
