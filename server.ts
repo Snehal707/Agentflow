@@ -11038,6 +11038,25 @@ function createPublicApp(): express.Express {
           ? String(result.transaction.txHash ?? '') || null
           : null;
 
+      if (result.status >= 200 && result.status < 300) {
+        try {
+          await ensureUserPaidAgentLedger({
+            payer,
+            agent: 'bridge',
+            price: bridgePriceLabel(),
+            requestId: result.requestId,
+            settlement: result.transaction,
+            remark: 'User DCW -> bridge Agent',
+            context: 'user_dcw->bridge',
+          });
+        } catch (ledgerError) {
+          console.warn(
+            '[bridge-finalize] user-paid ledger error:',
+            ledgerError instanceof Error ? ledgerError.message : String(ledgerError),
+          );
+        }
+      }
+
       return res.status(result.status).json({
         ...(typeof result.data === 'object' && result.data ? result.data : { result: result.data }),
         payment: {
