@@ -20,6 +20,9 @@ export function applySwapSlippage(amountOut: bigint, slippagePercent: number): b
  * Compare implied output-per-input at full size vs a tiny probe size.
  * Large divergence suggests price impact from moving the pool (constant-product style).
  * Returns null if not computable (zero tiny quote, etc.).
+ *
+ * Probe must use the same DEX provider as the full quote — otherwise cross-provider
+ * rate gaps (e.g. lunex ~0.83 vs swaparc ~1.20 on USDC/EURC) look like ~30% impact.
  */
 export async function computeSwapPriceImpactPercent(input: {
   tokenIn: `0x${string}`;
@@ -27,18 +30,25 @@ export async function computeSwapPriceImpactPercent(input: {
   amountInFull: bigint;
   quoteFullOut: bigint;
   tokenInDecimals: number;
+  provider?: string | null;
 }): Promise<number | null> {
   const probeIn = choosePriceImpactProbeAmount(input.amountInFull, input.tokenInDecimals);
   if (probeIn === null) {
     return null;
   }
+  const provider = input.provider?.trim() || undefined;
   try {
     const tinyQuote = await fetchSwapQuote({
       tokenIn: input.tokenIn,
       tokenOut: input.tokenOut,
       amountIn: probeIn,
+      provider,
     });
     if (tinyQuote.amountOut === 0n) {
+      return null;
+    }
+    // If a provider was requested, refuse a different source so we never mix venues.
+    if (provider && tinyQuote.source !== provider) {
       return null;
     }
     const outPerInFull = Number(input.quoteFullOut) / Number(input.amountInFull);
@@ -166,6 +176,7 @@ export async function simulateSwapExecution(input: {
     amountInFull: amountRaw,
     quoteFullOut: quote.amountOut,
     tokenInDecimals,
+    provider: quote.source,
   });
 
   const sanity = evaluateSwapSanity({

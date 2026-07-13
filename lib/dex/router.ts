@@ -79,6 +79,18 @@ function getLogicalStableDecimals(token: `0x${string}`): number | null {
   return null;
 }
 
+/** Quote a single named DEX provider (used to keep price-impact probes on-route). */
+export async function getQuoteByProvider(
+  providerName: string,
+  params: QuoteParams,
+): Promise<QuoteResult> {
+  const provider = providers.find((entry) => entry.name === providerName);
+  if (!provider) {
+    throw new Error(`[dex/router] unknown provider: ${providerName}`);
+  }
+  return provider.quote(params);
+}
+
 export async function getBestQuote(params: QuoteParams): Promise<QuoteResult> {
   const attempts = await Promise.allSettled(
     providers.map(async (provider) => {

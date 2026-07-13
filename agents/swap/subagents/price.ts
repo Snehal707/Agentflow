@@ -1,9 +1,11 @@
-import { getBestQuote } from '../../../lib/dex/router';
+import { getBestQuote, getQuoteByProvider } from '../../../lib/dex/router';
 
 export interface SwapQuoteInput {
   tokenIn: `0x${string}`;
   tokenOut: `0x${string}`;
   amountIn: bigint;
+  /** When set, quote only this provider (required for apples-to-apples price impact). */
+  provider?: string;
 }
 
 export interface SwapQuoteResult {
@@ -17,12 +19,15 @@ export interface SwapQuoteResult {
  * No backend code should call AgentFlowSwap.sol.
  */
 export async function fetchSwapQuote(input: SwapQuoteInput): Promise<SwapQuoteResult> {
-  const quote = await getBestQuote({
+  const params = {
     tokenIn: input.tokenIn,
     tokenOut: input.tokenOut,
     amountInRaw: input.amountIn,
     slippageBps: 100,
-  });
+  };
+  const quote = input.provider?.trim()
+    ? await getQuoteByProvider(input.provider.trim(), params)
+    : await getBestQuote(params);
   return {
     amountOut: quote.expectedOutRaw,
     feeRaw: undefined,

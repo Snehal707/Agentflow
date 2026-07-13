@@ -199,6 +199,7 @@ const previewMiddleware = async (req: Request, res: Response, next: NextFunction
       amountInFull: prepared.amountRaw,
       quoteFullOut: quote.expectedOutRaw,
       tokenInDecimals: prepared.tokenInDecimals,
+      provider: quote.provider,
     });
 
     const sanity = evaluateSwapSanity({
@@ -352,6 +353,7 @@ app.post(
         amountInFull: amountRaw,
         quoteFullOut: quote.expectedOutRaw,
         tokenInDecimals,
+        provider: quote.provider,
       });
       const sanity = evaluateSwapSanity({
         amountInRaw: amountRaw,
