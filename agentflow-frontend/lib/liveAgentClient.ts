@@ -586,7 +586,9 @@ async function runDcwPaidAgent<TResponse>(
   authHeaders: Record<string, string>,
 ): Promise<TResponse> {
   const requestId = createClientRequestId(`dcw_${slug}`);
-  const response = await fetch(`/api/dcw/agents/${slug}`, {
+  // Production nginx routes /api/dcw/* to the backend, which only serves
+  // /api/dcw/agents/:slug/run. The Next.js proxy keeps the same /run path for local.
+  const response = await fetch(`/api/dcw/agents/${slug}/run`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -597,12 +599,27 @@ async function runDcwPaidAgent<TResponse>(
     cache: "no-store",
   });
 
-  const json = (await response.json().catch(() => ({}))) as TResponse & {
+  const rawText = await response.text().catch(() => "");
+  let json = {} as TResponse & {
     error?: string;
+    message?: string;
     payment?: AgentRunPayment;
   };
+  if (rawText) {
+    try {
+      json = JSON.parse(rawText) as typeof json;
+    } catch {
+      /* non-JSON upstream body */
+    }
+  }
   if (!response.ok) {
-    throw new Error(json.error || `${slug} DCW run failed`);
+    const detail =
+      typeof json.error === "string" && json.error.trim()
+        ? json.error.trim()
+        : typeof json.message === "string" && json.message.trim()
+          ? json.message.trim()
+          : rawText.trim().slice(0, 300);
+    throw new Error(detail || `${slug} DCW run failed (${response.status})`);
   }
   if (json && typeof json === "object") {
     json.payment = {

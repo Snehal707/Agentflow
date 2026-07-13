@@ -15814,7 +15814,7 @@ function createPublicApp(): express.Express {
     }
   });
 
-  app.post('/api/dcw/agents/:slug/run', authMiddleware, async (req: Request, res: Response) => {
+  const handleDcwPaidAgentRun = async (req: Request, res: Response) => {
     const slug = parseDcwPaidAgentSlug(req.params.slug || '');
     if (!slug) {
       return res.status(404).json({ error: 'Unsupported DCW paid agent slug' });
@@ -15883,7 +15883,12 @@ function createPublicApp(): express.Express {
     } catch (err) {
       return sendServerError(res, 'server', err, 'Request failed');
     }
-  });
+  };
+
+  app.post('/api/dcw/agents/:slug/run', authMiddleware, handleDcwPaidAgentRun);
+  // Nginx routes /api/dcw/* straight to this backend. Older browser clients posted
+  // /api/dcw/agents/:slug without /run and got a bare 404 ("vault DCW run failed").
+  app.post('/api/dcw/agents/:slug', authMiddleware, handleDcwPaidAgentRun);
 
   app.post('/deposit', (_req, res) => {
     res.status(410).json({
