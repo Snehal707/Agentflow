@@ -951,10 +951,15 @@ export async function fetchExecutionWalletSummary(
     if (inflight) {
       return inflight;
     }
+  } else {
+    executionWalletSummaryCache.delete(cacheKey);
   }
 
   const request = (async () => {
-    const response = await fetchBrowserApi(`/api/wallet/execution-summary`, {
+    const path = options?.force
+      ? `/api/wallet/execution-summary?fresh=1`
+      : `/api/wallet/execution-summary`;
+    const response = await fetchBrowserApi(path, {
       headers: {
         ...authHeaders,
       },
@@ -975,11 +980,15 @@ export async function fetchExecutionWalletSummary(
     return summary;
   })();
 
-  executionWalletSummaryInflight.set(cacheKey, request);
+  if (!options?.force) {
+    executionWalletSummaryInflight.set(cacheKey, request);
+  }
   try {
     return await request;
   } finally {
-    executionWalletSummaryInflight.delete(cacheKey);
+    if (!options?.force) {
+      executionWalletSummaryInflight.delete(cacheKey);
+    }
   }
 }
 

@@ -704,13 +704,22 @@ router.get('/execution-summary', authMiddleware, async (req, res) => {
     const eoa = getAddress(auth.walletAddress) as `0x${string}`;
     const queriedDepositors = uniqueAddresses([eoa, executionAddress]);
     const cacheKey = executionAddress.toLowerCase();
+    const freshRaw = String(req.query?.fresh ?? '').trim().toLowerCase();
+    const forceFresh = freshRaw === '1' || freshRaw === 'true' || freshRaw === 'yes';
+    if (forceFresh) {
+      executionSummaryCache.delete(cacheKey);
+    }
     const cached = executionSummaryCache.get(cacheKey);
     const now = Date.now();
-    if (cached && now - cached.fetchedAt <= EXECUTION_SUMMARY_CACHE_TTL_MS) {
+    if (
+      !forceFresh &&
+      cached &&
+      now - cached.fetchedAt <= EXECUTION_SUMMARY_CACHE_TTL_MS
+    ) {
       return res.json(cached.response);
     }
 
-    const inflight = executionSummaryInflight.get(cacheKey);
+    const inflight = forceFresh ? undefined : executionSummaryInflight.get(cacheKey);
     const responsePromise =
       inflight ??
       (async () => {

@@ -115,7 +115,7 @@ export default function FundsPage() {
     [eoaUsdcRaw],
   );
 
-  const loadExecutionSummary = useCallback(async () => {
+  const loadExecutionSummary = useCallback(async (options?: { force?: boolean }) => {
     if (!address || !isAuthenticated || !authHeaders) {
       setExecutionSummary(null);
       setSummaryError(null);
@@ -126,7 +126,9 @@ export default function FundsPage() {
     setSummaryLoading(true);
     setSummaryError(null);
     try {
-      const summary = await fetchExecutionWalletSummary(authHeaders);
+      const summary = await fetchExecutionWalletSummary(authHeaders, {
+        force: options?.force === true,
+      });
       setExecutionSummary(summary);
     } catch (cause) {
       setExecutionSummary(null);
@@ -208,11 +210,14 @@ export default function FundsPage() {
         args: [getAddress(executionWalletAddress), parseUnits(depositAmount.trim(), 6)],
       });
 
-      await publicClient.waitForTransactionReceipt({ hash });
+      const receipt = await publicClient.waitForTransactionReceipt({ hash });
+      if (receipt.status !== "success") {
+        throw new Error("Deposit transaction reverted on Arc.");
+      }
       setTxHash(hash);
       setMessage(`Sent ${amountNumber} USDC from your EOA to the DCW.`);
       setDepositAmount("");
-      await loadExecutionSummary();
+      await loadExecutionSummary({ force: true });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Deposit to DCW failed.");
     } finally {
@@ -246,7 +251,7 @@ export default function FundsPage() {
       }
       setMessage(`Sent ${amountNumber} USDC from the DCW to your EOA.`);
       setWithdrawAmount("");
-      await loadExecutionSummary();
+      await loadExecutionSummary({ force: true });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Withdraw to EOA failed.");
     } finally {
@@ -443,7 +448,7 @@ export default function FundsPage() {
                       </Link>
                       <button
                         type="button"
-                        onClick={() => void loadExecutionSummary()}
+                        onClick={() => void loadExecutionSummary({ force: true })}
                         className="rounded-full border border-white/10 bg-[#121212] px-6 py-3 text-sm font-bold text-white/65 transition hover:border-[#f2ca50]/25 hover:text-[#f2ca50]"
                       >
                         Refresh balances
