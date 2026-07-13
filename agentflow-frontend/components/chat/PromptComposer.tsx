@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import type { ChangeEvent, FormEvent, KeyboardEvent } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ChatAttachment } from "@/components/chat/types";
@@ -30,6 +29,8 @@ type PromptComposerProps = {
   pendingAttachment?: ChatAttachment | null;
   onSelectAttachment?: (file: File) => Promise<void>;
   onClearAttachment?: () => void;
+  /** When false, paperclip is disabled (e.g. session not signed yet). */
+  canAttach?: boolean;
   onRequestTranscription?: (input: AudioTranscriptionInput) => Promise<string>;
   voicePaymentLabel?: string | null;
   size?: "hero" | "thread";
@@ -184,6 +185,7 @@ export function PromptComposer({
   pendingAttachment,
   onSelectAttachment,
   onClearAttachment,
+  canAttach = true,
   onRequestTranscription,
   voicePaymentLabel,
   size = "hero",
@@ -576,13 +578,14 @@ export function PromptComposer({
           {pendingAttachment ? (
             <div className="mt-1 flex items-center gap-3 rounded-xl border border-white/10 bg-[#201f1f]/80 px-3 py-2">
               {pendingAttachment.kind === "image" && pendingAttachment.previewUrl ? (
-                <Image
+                // Native img: blob:/data: previews must not go through next/image decoding.
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
                   src={pendingAttachment.previewUrl}
                   alt={pendingAttachment.name}
                   className="h-12 w-12 rounded-xl object-cover"
                   width={48}
                   height={48}
-                  unoptimized
                 />
               ) : (
                 <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-[#2a2a2a]">
@@ -619,7 +622,12 @@ export function PromptComposer({
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              disabled={isStreaming || isTranscribing || isExtractingAttachment}
+              disabled={!canAttach || isStreaming || isTranscribing || isExtractingAttachment}
+              title={
+                !canAttach
+                  ? "Sign your session before attaching files"
+                  : "Attach context"
+              }
               className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/[0.03] text-white/45 transition-all duration-200 hover:scale-[1.04] hover:border-[#f2ca50]/30 hover:bg-[#f2ca50]/8 hover:text-[#f2ca50] active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-50"
               aria-label="Attach context"
             >

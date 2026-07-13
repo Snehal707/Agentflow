@@ -543,8 +543,28 @@ const VAULT_ADDRESS_BY_SYMBOL: Record<"luneUSDC" | "luneEURC", `0x${string}`> = 
 };
 
 type PendingChatAttachment = ChatAttachment & {
-  dataUrl: string;
+  /** Raw file kept until send — avoid base64 on pick (Chrome hang risk). */
+  file: File;
+  /** Filled lazily at send time for vision / CSV paths. */
+  dataUrl?: string;
 };
+
+function revokeAttachmentPreview(attachment: PendingChatAttachment | null | undefined) {
+  const url = attachment?.previewUrl;
+  if (url?.startsWith("blob:")) {
+    URL.revokeObjectURL(url);
+  }
+}
+
+async function ensureAttachmentDataUrl(
+  attachment: PendingChatAttachment,
+): Promise<PendingChatAttachment & { dataUrl: string }> {
+  if (attachment.dataUrl) {
+    return attachment as PendingChatAttachment & { dataUrl: string };
+  }
+  const dataUrl = await fileToDataUrl(attachment.file);
+  return { ...attachment, dataUrl };
+}
 
 type VisionAgentResponse = {
   success: boolean;
@@ -2492,6 +2512,14 @@ function ChatPageInner() {
     setChatSessionId(createChatSessionId());
   }, []);
   const [pendingAttachment, setPendingAttachment] = useState<PendingChatAttachment | null>(null);
+  const clearPendingAttachment = useCallback((revokePreview = true) => {
+    setPendingAttachment((previous) => {
+      if (revokePreview) {
+        revokeAttachmentPreview(previous);
+      }
+      return null;
+    });
+  }, []);
   const [pendingBridgeDraft, setPendingBridgeDraft] = useState<PendingBridgeDraft | null>(null);
   const [pendingBridgeSelection, setPendingBridgeSelection] = useState<PendingBridgeSelection | null>(null);
   const [pendingSwapSelection, setPendingSwapSelection] = useState<PendingSwapSelection | null>(null);
@@ -2730,6 +2758,14 @@ function ChatPageInner() {
     };
   }, []);
 
+  const pendingAttachmentRef = useRef<PendingChatAttachment | null>(null);
+  pendingAttachmentRef.current = pendingAttachment;
+  useEffect(() => {
+    return () => {
+      revokeAttachmentPreview(pendingAttachmentRef.current);
+    };
+  }, []);
+
   useEffect(() => {
     const currentWallet = address?.toLowerCase() ?? null;
     if (previousWalletRef.current === undefined) {
@@ -2744,7 +2780,7 @@ function ChatPageInner() {
     abortRef.current = null;
     setMessages([]);
     setInput("");
-    setPendingAttachment(null);
+    clearPendingAttachment();
     setPendingBridgeDraft(null);
     setPendingBridgeSelection(null);
     setVoicePaymentLabel(null);
@@ -2753,7 +2789,7 @@ function ChatPageInner() {
     setIsStreaming(false);
     setChatSessionId(createChatSessionId());
     previousWalletRef.current = currentWallet;
-  }, [address]);
+  }, [address, clearPendingAttachment]);
 
   useEffect(() => {
     if (selectedPaymentMessage?.paymentMeta?.entries?.length) {
@@ -2885,9 +2921,17 @@ function ChatPageInner() {
   const resetChatThread = () => {
     abortRef.current?.abort();
     abortRef.current = null;
-    setMessages([]);
+    setMessages((previous) => {
+      for (const message of previous) {
+        const url = message.attachment?.previewUrl;
+        if (url?.startsWith("blob:")) {
+          URL.revokeObjectURL(url);
+        }
+      }
+      return [];
+    });
     setInput("");
-    setPendingAttachment(null);
+    clearPendingAttachment();
     setPendingBridgeDraft(null);
     setPendingBridgeSelection(null);
     setVoicePaymentLabel(null);
@@ -2900,7 +2944,7 @@ function ChatPageInner() {
   const handleQuickAgentPrompt = useCallback((item: QuickAgentPrompt) => {
     setSelectedTab(tabForIntent(item.routeIntent ?? item.tab));
     setInput(item.prompt);
-    setPendingAttachment(null);
+    clearPendingAttachment();
     setPendingBridgeDraft(null);
     setPendingBridgeSelection(null);
     setPendingVaultDraft(null);
@@ -3076,16 +3120,11 @@ function ChatPageInner() {
       throw new Error("Connect your wallet before attaching files.");
     }
 
-    let authHeaders = getAuthHeaders();
+    // Never open wallet sign-in from inside the file-picker flow — that fights
+    // the native Open dialog and can hang Chrome on Windows.
+    const authHeaders = getAuthHeaders();
     if (!isAuthenticated || !authHeaders) {
-      await signIn();
-      authHeaders = authHeadersForWallet(address);
-    }
-
-    if (!authHeaders) {
-      throw new Error(
-        "The wallet signature completed, but the secure session did not attach correctly. Try again once.",
-      );
+      throw new Error("Sign your session first (Sign session), then attach the file.");
     }
 
     return { authHeaders };
@@ -3230,11 +3269,17 @@ function ChatPageInner() {
       throw new Error(payload.error || "Attachment validation failed");
     }
 
-    const dataUrl = await fileToDataUrl(file);
-    setPendingAttachment({
-      ...payload.attachment,
-      dataUrl,
-      previewUrl: payload.attachment.kind === "image" ? dataUrl : undefined,
+    // Object URL preview only — full base64 is deferred until send.
+    const previewUrl =
+      payload.attachment.kind === "image" ? URL.createObjectURL(file) : undefined;
+
+    setPendingAttachment((previous) => {
+      revokeAttachmentPreview(previous);
+      return {
+        ...payload.attachment!,
+        file,
+        previewUrl,
+      };
     });
   };
 
@@ -4423,7 +4468,7 @@ function ChatPageInner() {
           },
         ]);
         setInput("");
-        setPendingAttachment(null);
+        clearPendingAttachment();
         setVoicePaymentLabel(null);
         await continuePendingSwapSelection({
           amount: followupAmount,
@@ -4448,7 +4493,7 @@ function ChatPageInner() {
           },
         ]);
         setInput("");
-        setPendingAttachment(null);
+        clearPendingAttachment();
         setVoicePaymentLabel(null);
         await continuePendingVaultSelection({
           amount: followupAmount,
@@ -4473,7 +4518,7 @@ function ChatPageInner() {
           },
         ]);
         setInput("");
-        setPendingAttachment(null);
+        clearPendingAttachment();
         setVoicePaymentLabel(null);
         await continuePendingBridgeSelection({
           amount: followupAmount,
@@ -4519,7 +4564,7 @@ function ChatPageInner() {
         },
       ]);
       setInput("");
-      setPendingAttachment(null);
+      clearPendingAttachment();
       setVoicePaymentLabel(null);
       return;
     }
@@ -4549,7 +4594,7 @@ function ChatPageInner() {
           },
         ]);
         setInput("");
-        setPendingAttachment(null);
+        clearPendingAttachment();
         setVoicePaymentLabel(null);
         setIsStreaming(true);
         try {
@@ -4582,7 +4627,7 @@ function ChatPageInner() {
       const isConfirm = /^yes$/i.test(trimmed);
       recordRecentChat(trimmed);
       setInput("");
-      setPendingAttachment(null);
+      clearPendingAttachment();
       setVoicePaymentLabel(null);
       const followupAssistantId = `assistant-swap-${now}-confirm`;
 
@@ -4669,7 +4714,7 @@ function ChatPageInner() {
         },
       ]);
       setInput("");
-      setPendingAttachment(null);
+      clearPendingAttachment();
       setVoicePaymentLabel(null);
       return;
     }
@@ -4685,7 +4730,7 @@ function ChatPageInner() {
       };
       recordRecentChat(trimmed);
       setInput("");
-      setPendingAttachment(null);
+      clearPendingAttachment();
       setVoicePaymentLabel(null);
 
       if (!isConfirm) {
@@ -4858,7 +4903,7 @@ function ChatPageInner() {
         },
       ]);
       setInput("");
-      setPendingAttachment(null);
+      clearPendingAttachment(false);
       setVoicePaymentLabel(null);
       return;
     }
@@ -4876,8 +4921,9 @@ function ChatPageInner() {
     // We inline the CSV body into the outgoing message with a "batch pay" header so
     // server.ts's shouldHandleAsBatchPayment picks it up.
     let csvBatchMessage: string | null = null;
-    if (isBatchCsvAttachment(activeAttachment)) {
-      const csvText = decodeTextDataUrl(activeAttachment?.dataUrl);
+    if (activeAttachment && isBatchCsvAttachment(activeAttachment)) {
+      const attachmentWithData = await ensureAttachmentDataUrl(activeAttachment);
+      const csvText = decodeTextDataUrl(attachmentWithData.dataUrl);
       if (csvText && csvText.trim()) {
         const trimmedCsv = csvText.trim();
         const csvStartsWithBatchCommand =
@@ -4977,7 +5023,8 @@ function ChatPageInner() {
 
     setMessages((previous) => [...previous, userMessage, assistantMessage]);
     setInput("");
-    setPendingAttachment(null);
+    // Keep blob preview alive for the user message bubble.
+    clearPendingAttachment(false);
     setVoicePaymentLabel(null);
     setIsStreaming(true);
 
@@ -5389,6 +5436,7 @@ function ChatPageInner() {
       }
 
       try {
+        const attachmentWithData = await ensureAttachmentDataUrl(activeAttachment);
         updateMessage(assistantId, (message) => ({
           ...message,
           content:
@@ -5424,7 +5472,7 @@ function ChatPageInner() {
               name: activeAttachment.name,
               mimeType: activeAttachment.mimeType,
               size: activeAttachment.size,
-              dataUrl: activeAttachment.dataUrl,
+              dataUrl: attachmentWithData.dataUrl,
             },
             executionTarget,
           },
@@ -6042,13 +6090,14 @@ function ChatPageInner() {
                     placeholder="Ask AgentFlow..."
                     contextTags={contextItems}
                     onToggleContext={toggleContext}
-                    pendingAttachment={pendingAttachment}
-                    onSelectAttachment={handleSelectAttachment}
-                    onClearAttachment={() => setPendingAttachment(null)}
-                    onRequestTranscription={handleRequestTranscription}
-                    voicePaymentLabel={voicePaymentLabel}
-                    size="thread"
-                  />
+                      pendingAttachment={pendingAttachment}
+                      onSelectAttachment={handleSelectAttachment}
+                      onClearAttachment={clearPendingAttachment}
+                      canAttach={Boolean(address && isAuthenticated)}
+                      onRequestTranscription={handleRequestTranscription}
+                      voicePaymentLabel={voicePaymentLabel}
+                      size="thread"
+                    />
                 </div>
                 </div>
               </div>
@@ -6091,7 +6140,8 @@ function ChatPageInner() {
                       onToggleContext={toggleContext}
                       pendingAttachment={pendingAttachment}
                       onSelectAttachment={handleSelectAttachment}
-                      onClearAttachment={() => setPendingAttachment(null)}
+                      onClearAttachment={clearPendingAttachment}
+                      canAttach={Boolean(address && isAuthenticated)}
                       onRequestTranscription={handleRequestTranscription}
                       voicePaymentLabel={voicePaymentLabel}
                       size="hero"

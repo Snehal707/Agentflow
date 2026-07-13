@@ -1191,13 +1191,12 @@ export function ChatThread({
                           <div className="rounded-2xl border border-white/10 bg-[#201f1f] p-2.5">
                             {message.attachment.kind === "image" &&
                             message.attachment.previewUrl ? (
-                              <Image
+                              // blob:/data: previews — avoid next/image decode of large payloads
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img
                                 src={message.attachment.previewUrl}
                                 alt={message.attachment.name}
                                 className="max-h-72 w-full rounded-xl object-cover"
-                                width={1200}
-                                height={720}
-                                unoptimized
                               />
                             ) : (
                               <div className="flex items-center gap-3 rounded-xl bg-[#2a2a2a] px-3 py-3">
