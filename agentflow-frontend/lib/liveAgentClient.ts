@@ -602,7 +602,14 @@ async function runDcwPaidAgent<TResponse>(
     payment?: AgentRunPayment;
   };
   if (!response.ok) {
-    throw new Error(json.error || `${slug} DCW run failed`);
+    const detail =
+      typeof json.error === "string" && json.error.trim()
+        ? json.error.trim()
+        : typeof (json as { message?: unknown }).message === "string" &&
+            String((json as { message?: string }).message).trim()
+          ? String((json as { message: string }).message).trim()
+          : "";
+    throw new Error(detail || `${slug} DCW run failed`);
   }
   if (json && typeof json === "object") {
     json.payment = {

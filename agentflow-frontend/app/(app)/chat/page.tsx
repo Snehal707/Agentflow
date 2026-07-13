@@ -5894,13 +5894,19 @@ function ChatPageInner() {
         }
 
         const amount = parseAmount(trimmed, 1);
+        const resolvedVaultAddress = selectedVaultSymbol
+          ? VAULT_ADDRESS_BY_SYMBOL[selectedVaultSymbol]
+          : null;
+        const assetSymbol = selectedVaultSymbol
+          ? vaultAssetSymbol(selectedVaultSymbol)
+          : "USDC";
 
         updateMessage(assistantId, (message) => ({
           ...message,
           content:
             action === "check_apy"
               ? "Checking the live AgentFlow Vault APY."
-              : `Running vault ${action} for ${amount} USDC.`,
+              : `Running vault ${action} for ${amount} ${assetSymbol}.`,
           trace: [
             action === "check_apy"
               ? "Vault agent reading APY from chain"
@@ -5930,7 +5936,15 @@ function ChatPageInner() {
                   amount,
                   walletAddress: payerAddress,
                   executionTarget,
-                  ...(selectedVaultSymbol ? { vaultSymbol: selectedVaultSymbol, amountTokenHint: vaultAssetSymbol(selectedVaultSymbol) } : {}),
+                  confirmed: executionTarget === "DCW",
+                  provider: "lunex",
+                  ...(selectedVaultSymbol
+                    ? {
+                        vaultSymbol: selectedVaultSymbol,
+                        amountTokenHint: assetSymbol,
+                      }
+                    : {}),
+                  ...(resolvedVaultAddress ? { vaultAddress: resolvedVaultAddress } : {}),
                 },
         });
 

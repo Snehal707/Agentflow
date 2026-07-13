@@ -231,16 +231,32 @@ app.post('/run', (req: Request, res: Response, next: NextFunction) => {
       typeof req.body?.provider === 'string' && req.body.provider.trim()
         ? req.body.provider.trim()
         : 'lunex';
-    const vaultAddress =
+    const vaultSymbolHint =
+      typeof req.body?.vaultSymbol === 'string' && req.body.vaultSymbol.trim()
+        ? req.body.vaultSymbol.trim()
+        : null;
+    const availableVaults = await listAllVaults();
+    const vaultAddressFromBody =
       typeof req.body?.vaultAddress === 'string' && /^0x[a-fA-F0-9]{40}$/.test(req.body.vaultAddress)
         ? getAddress(req.body.vaultAddress)
         : null;
+    const vaultAddress =
+      vaultAddressFromBody ??
+      (vaultSymbolHint
+        ? availableVaults.find(
+            (vault) =>
+              vault.vaultSymbol === vaultSymbolHint &&
+              (!providerName || vault.provider === providerName),
+          )?.address ?? null
+        : null);
 
     if (!vaultAddress) {
-      return res.status(400).json({ success: false, error: 'vaultAddress is required' });
+      return res.status(400).json({
+        success: false,
+        error: 'vaultAddress or vaultSymbol is required',
+      });
     }
 
-    const availableVaults = await listAllVaults();
     const selectedVault = availableVaults.find(
       (vault) => vault.provider === providerName && vault.address === vaultAddress,
     );
