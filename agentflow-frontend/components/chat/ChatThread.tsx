@@ -1,5 +1,4 @@
 import { useEffect, useRef } from "react";
-import Image from "next/image";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { ChatAttachment, LiveChatMessage } from "@/components/chat/types";
