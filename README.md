@@ -274,7 +274,7 @@ Verified: Hermes `/v1/runs` + `skills_list` returned `agentflow-report-research`
 | `predmarket` | AchMarket |
 | `bridge` | CCTP into Arc |
 | `portfolio` | Balances / PnL |
-| `invoice` | Business invoices |
+| `invoice` | Chat invoices → AgentPay **To Pay** (not the legacy email-inbox business flow) |
 | `schedule` / `split` / `batch` | Recurring / split / CSV USDC |
 | `vision` | x402-paid; Hermes + OpenAI fallback |
 | `transcribe` | OpenAI voice→text; free (`resolveSystemAgentPrice` hardcodes `0`); JWT + daily caps; no x402 middleware |
@@ -333,7 +333,15 @@ Vision/transcribe may call `recordReputationSafe` after runs. **Counterparty “
 | Daily topic briefs + weekly `arc_ecosystem` | 09:00 / Mon 09:00 | `generateDailyReport` only fills an **in-memory** `Map` in `lib/daily-report.ts` — nothing else reads it; lost on process restart |
 | Yield monitor | every 6h | Skips without vault config; only users with `yield_monitoring=true` |
 | Training export | 03:00 | Needs `TRAINING_EXPORT_BUCKET` + `TRAINING_EXPORT_SALT` (not in `.env.example`); throws if unset |
-| Monthly business invoice digest | 1st 09:00 | Telegram/Resend PDF for `businesses` rows — no app nav surface for “digest” |
+
+**Legacy (not current product — code may still exist, do not build on it):**
+
+| Piece | Status |
+|-------|--------|
+| Current invoices | Chat → confirm → AgentPay **Invoices → To Pay**. Any signed-in wallet can create; recipient pays/declines. |
+| `businesses` table / `/api/business/*` | Old B2B profile + settlement rules. Not required for chat invoices. |
+| Email inbound (`/api/webhooks/email`) | Old “email PDF to `@invoices.agentflow.one`” path. |
+| Monthly business digest | **Disabled** in `crons/index.ts` (was 1st 09:00 Telegram/Resend PDF). |
 
 Local `dev:stack`: **no cron**. Chat capture/retrieval: `lib/semantic-memory.ts`. Local dirs `.agentflow-memory/`, `.agentflow-telemetry/` are gitignored.
 

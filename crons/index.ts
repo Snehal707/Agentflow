@@ -1,6 +1,7 @@
 import cron from 'node-cron';
 import dotenv from 'dotenv';
-import { runMonthlyDigest } from './monthly-digest';
+// Legacy B2B path — kept in repo but not scheduled:
+// import { runMonthlyDigest } from './monthly-digest';
 import { runTrainingExport } from './training-export';
 import { runYieldMonitor } from './yield-monitor';
 import { generateDailyReport } from '../lib/daily-report';
@@ -49,13 +50,15 @@ cron.schedule(
   { timezone: 'UTC' },
 );
 
-cron.schedule(
-  '0 9 1 * *',
-  () => {
-    void runMonthlyDigest().catch((e) => console.error('[cron] monthly-digest', e));
-  },
-  { timezone: tz },
-);
+// Disabled: monthly business invoice digest (legacy `businesses` / email-inbox product).
+// Re-enable only if that B2B surface ships again.
+// cron.schedule(
+//   '0 9 1 * *',
+//   () => {
+//     void runMonthlyDigest().catch((e) => console.error('[cron] monthly-digest', e));
+//   },
+//   { timezone: tz },
+// );
 
 cron.schedule(
   '0 3 * * *',
@@ -97,5 +100,5 @@ cron.schedule(
 );
 
 console.log(
-  '[crons] Scheduler started (production): yield-monitor (6h), semantic-memory-consolidation (every 6h at :15), treasury top-up (hourly), monthly (09:00 1st), training (03:00), daily reports + scheduled USDC payments (09:00).',
+  '[crons] Scheduler started (production): yield-monitor (6h), semantic-memory-consolidation (every 6h at :15), treasury top-up (hourly), training (03:00), daily reports + scheduled USDC payments (09:00). Monthly business digest: disabled (legacy).',
 );
