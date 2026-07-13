@@ -400,3 +400,41 @@ select {
     transform: translateX(200%);
   }
 }
+
+/* Shared AgentPay / surface accents (restored — used by /pay pages) */
+.gold-gradient-text {
+  background: linear-gradient(135deg, #d4af37 0%, #f2ca50 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.gold-gradient-bg {
+  background: linear-gradient(135deg, #d4af37 0%, #f2ca50 100%);
+}
+
+.btn-hover-effect {
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.btn-hover-effect:hover {
+  transform: translateY(-2px);
+  filter: brightness(1.1);
+  box-shadow: 0 12px 24px -10px rgba(212, 175, 55, 0.4);
+}
+
+.burnished-gold {
+  background: linear-gradient(135deg, #d4af37 0%, #f2ca50 50%, #b08c10 100%);
+  box-shadow: 0 10px 40px -10px rgba(212, 175, 55, 0.3);
+}
+
+.burnished-gold:hover {
+  background: linear-gradient(135deg, #e6c35c 0%, #f7d97d 50%, #c49d15 100%);
+  box-shadow: 0 10px 45px -5px rgba(212, 175, 55, 0.4);
+}
+
+.burnished-gold:active {
+  transform: scale(0.985);
+  filter: brightness(0.9);
+}
+
