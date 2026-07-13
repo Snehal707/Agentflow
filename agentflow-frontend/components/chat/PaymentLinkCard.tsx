@@ -251,7 +251,7 @@ export function PaymentLinkCard({
           <div className="text-sm font-medium text-white">
             Pay {displayHandle}
             {amount ? (
-              <span className="text-[#69daff]"> · {amount} USDC</span>
+              <span className="text-[#f2ca50]"> · {amount} USDC</span>
             ) : null}
           </div>
           {remark ? (
@@ -263,7 +263,7 @@ export function PaymentLinkCard({
           href={fullUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="truncate rounded-lg border border-white/10 bg-[#0a0b0f] px-3 py-2 font-mono text-[11px] text-[#69daff] transition hover:border-[#69daff]/40"
+          className="truncate rounded-lg border border-white/10 bg-[#0a0b0f] px-3 py-2 font-mono text-[11px] text-[#f2ca50] transition hover:border-[#f2ca50]/40"
           title={fullUrl}
         >
           {fullUrl || path}
@@ -274,14 +274,14 @@ export function PaymentLinkCard({
           <button
             type="button"
             onClick={handleCopyLink}
-            className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-[#201f1f] px-4 py-1.5 text-xs font-medium text-white/80 transition hover:border-[#69daff]/40 hover:text-white"
+            className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-[#201f1f] px-4 py-1.5 text-xs font-medium text-white/80 transition hover:border-[#f2ca50]/40 hover:text-white"
           >
             {linkCopied ? "Copied!" : "Copy link"}
           </button>
           <button
             type="button"
             onClick={handleShareLink}
-            className="inline-flex items-center gap-2 rounded-full border border-[#69daff]/35 bg-[#69daff]/10 px-4 py-1.5 text-xs font-medium text-[#69daff] transition hover:bg-[#69daff]/20"
+            className="inline-flex items-center gap-2 rounded-full border border-[#f2ca50]/35 bg-[#f2ca50]/10 px-4 py-1.5 text-xs font-medium text-[#f2ca50] transition hover:bg-[#f2ca50]/20"
           >
             Share link
           </button>
