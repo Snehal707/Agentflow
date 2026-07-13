@@ -69,15 +69,19 @@ Examples:
 - "pay jack.arc 5 USDC every monday" → intent=create, recipient=jack.arc, amount=5, schedule=every monday
 - "pay vendor 10 USDC every monday" → intent=create, recipient=vendor, amount=10, schedule=every monday
 - "Create a weekly schedule to send 10 USDC to vendor every monday" → intent=create, recipient=vendor, amount=10, schedule=every monday
+- "create a weekly schedule payment of 1 usdc for jack2.arc, work" → intent=create, recipient=jack2.arc, amount=1, schedule=weekly, remark=work
+- "create a weekly schedule payment of 1 usdc for jack2.arc, remark: work" → intent=create, recipient=jack2.arc, amount=1, schedule=weekly, remark=work
 - "cancel my weekly payment to alice.arc" → intent=cancel, recipient=alice.arc, schedule=weekly
 - "show my scheduled payments" → intent=list
 - "cancel payment 0509a92a" → intent=cancel, paymentId=0509a92a
+Remark rules: only the note/label (e.g. work, dinner, rent). Never include the recipient handle, "for", or schedule words in remark. Use null when no note is given.
 Return ONLY the JSON object.`;
 
 export async function parseScheduleTask(
   task: string,
   _walletAddress: string,
 ): Promise<ParsedIntent> {
+  const extractedRemark = extractAgentpayRemark(task) ?? null;
   try {
     const raw = await callHermesFast(INTENT_SYSTEM_PROMPT, task);
     const cleaned = raw.replace(/```json\n?|\n?```/g, '').trim();
@@ -85,7 +89,11 @@ export async function parseScheduleTask(
     if (!parsed.intent) {
       return { intent: 'unknown' };
     }
-    return parsed;
+    // Prefer deterministic remark extraction over the LLM (avoids "for work", dropped tails).
+    return {
+      ...parsed,
+      remark: extractedRemark ?? (typeof parsed.remark === 'string' ? parsed.remark.trim() || null : null),
+    };
   } catch {
     // Fallback: simple keyword-based parsing
     const lower = task.toLowerCase();
@@ -107,7 +115,7 @@ export async function parseScheduleTask(
       recipient: extractRecipientFallback(task),
       amount: extractAmountFallback(task),
       schedule: extractScheduleFallback(task),
-      remark: extractAgentpayRemark(task) ?? null,
+      remark: extractedRemark,
     };
   }
 }
@@ -245,13 +253,11 @@ export async function handleCreateIntent(
     intent.remark ? `- Remark: ${intent.remark}` : null,
     '',
     'Confirm to create this recurring payment.',
-  ]
-    .filter(Boolean)
-    .join('\n');
+  ].filter((line) => line !== null);
 
   return {
     action: 'preview',
-    message: lines,
+    message: lines.join('\n'),
     confirmId,
     confirmLabel: 'Confirm schedule',
   };
@@ -517,8 +523,11 @@ export async function handleScheduleConfirm(
           `Amount: ${payload.amount} USDC`,
           `Schedule: ${schedLabel}`,
           `First run: ${nextRun}`,
+          payload.remark ? `Remark: ${payload.remark}` : null,
           `ID: ${result?.id ?? 'saved'}`,
-        ].join('\n'),
+        ]
+          .filter((line) => line !== null)
+          .join('\n'),
       };
     }
 
