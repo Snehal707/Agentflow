@@ -599,15 +599,15 @@ async function runDcwPaidAgent<TResponse>(
 
   const json = (await response.json().catch(() => ({}))) as TResponse & {
     error?: string;
-    message?: string;
     payment?: AgentRunPayment;
   };
   if (!response.ok) {
     const detail =
       typeof json.error === "string" && json.error.trim()
         ? json.error.trim()
-        : typeof json.message === "string" && json.message.trim()
-          ? json.message.trim()
+        : typeof (json as { message?: unknown }).message === "string" &&
+            String((json as { message?: string }).message).trim()
+          ? String((json as { message: string }).message).trim()
           : "";
     throw new Error(detail || `${slug} DCW run failed`);
   }
