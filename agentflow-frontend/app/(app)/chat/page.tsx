@@ -4405,6 +4405,7 @@ function ChatPageInner() {
                 price: paymentPriceLabel("bridge"),
                 payer: paymentPayer,
                 mode: paymentMode,
+                transactionRef: paymentAttemptSnapshot?.transaction ?? null,
               },
             ],
           }
