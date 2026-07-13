@@ -5,9 +5,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { ChatAttachment } from "@/components/chat/types";
 
 const MIC_DEVICE_STORAGE_KEY = "agentflow:selected-mic-id";
-const ATTACHMENT_ACCEPT =
-  ".png,.jpg,.jpeg,.webp,.gif,.pdf,.txt,.md,.csv,.json";
-
 type AudioTranscriptionInput = {
   blob: Blob;
   name: string;
@@ -558,7 +555,6 @@ export function PromptComposer({
       <input
         ref={fileInputRef}
         type="file"
-        accept={ATTACHMENT_ACCEPT}
         className="hidden"
         onChange={handleAttachmentSelect}
       />
