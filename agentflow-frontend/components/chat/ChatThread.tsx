@@ -666,8 +666,6 @@ export function ChatThread({
               )
             : message.content;
           const portfolioCard = isAssistant && message.reportMeta?.kind === "portfolio";
-          const portfolioPaid =
-            portfolioCard && (message.paymentMeta?.entries?.length ?? 0) > 0;
           const visibleRenderedContent = portfolioCard
             ? stripPortfolioPaymentFooter(renderedContent)
             : renderedContent;
