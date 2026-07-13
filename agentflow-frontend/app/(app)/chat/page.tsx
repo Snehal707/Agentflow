@@ -3529,97 +3529,45 @@ function ChatPageInner() {
     selection: PendingVaultSelection;
   }) => {
     const { amount, selection } = input;
-    setIsStreaming(true);
     const followupAssistantId = `assistant-vault-${Date.now()}`;
     const assetSymbol = vaultAssetSymbol(selection.vaultSymbol);
     const vaultAddress = VAULT_ADDRESS_BY_SYMBOL[selection.vaultSymbol];
 
+    // Amount chips must not call the paid DCW vault route for an unpaid preview.
+    // That path always settles x402 first, so confirmed:false previews fail before
+    // the vault agent runs. Confirm locally, then execute on YES with confirmed:true.
     setMessages((previous) => [
       ...previous,
       {
         id: followupAssistantId,
         role: "assistant",
         title: "Vault",
-        content: "",
-        trace: [],
-        status: "streaming",
-      },
-    ]);
-
-    try {
-      updateMessage(followupAssistantId, (message) => ({
-        ...message,
-        content: `Preparing a vault ${selection.action} preview for ${amount} ${assetSymbol}.`,
-        trace: [
-          `Vault selected: ${vaultLabel(selection.vaultSymbol)}`,
-          `Amount captured: ${amount} ${assetSymbol}`,
-          "AgentFlow is preparing the live vault preview",
-        ],
-        status: "streaming",
-      }));
-
-      const result = await runPaidAgent<VaultAgentResponse & AgentRunPaymentResult, Record<string, unknown>>({
-        slug: "vault",
-        walletClient: walletClient!,
-        payer: selection.payerAddress,
-        authHeaders: selection.authHeaders,
-        onAwaitSignature: () => {
-          const paymentMessage = buildPaymentSignatureMessage("DCW");
-          updateMessage(followupAssistantId, (message) => ({
-            ...message,
-            content: paymentMessage.content,
-            trace: [...(message.trace || []), paymentMessage.trace],
-            status: "streaming",
-          }));
-        },
-        body: {
-          action: selection.action,
-          amount,
-          walletAddress: selection.payerAddress,
-          executionTarget: "DCW",
-          vaultAddress,
-          vaultSymbol: selection.vaultSymbol,
-          amountTokenHint: assetSymbol,
-        },
-      });
-
-      if (!result.success) {
-        throw new Error(result.error || "Vault preview failed");
-      }
-
-      updateMessage(followupAssistantId, (message) => ({
-        ...message,
         content:
           selection.action === "deposit"
             ? `Ready to deposit ${amount} ${assetSymbol} into ${vaultLabel(selection.vaultSymbol)}.\n\nReply YES to continue or NO to cancel.`
             : `Ready to withdraw ${amount} ${assetSymbol} from ${vaultLabel(selection.vaultSymbol)}.\n\nReply YES to continue or NO to cancel.`,
-        trace: [...(message.trace || []), "Vault preview is ready"],
+        trace: [
+          `Vault selected: ${vaultLabel(selection.vaultSymbol)}`,
+          `Amount captured: ${amount} ${assetSymbol}`,
+          "Waiting for YES before the paid vault DCW run",
+        ],
         confirmation: {
           required: true,
           action: "vault",
         },
         status: "complete",
-      }));
-      setPendingVaultDraft({
-        assistantId: followupAssistantId,
-        action: selection.action,
-        vaultSymbol: selection.vaultSymbol,
-        vaultAddress,
-        amount,
-        payerAddress: selection.payerAddress,
-        authHeaders: selection.authHeaders,
-      });
-      setPendingVaultSelection(null);
-    } catch (error) {
-      updateMessage(followupAssistantId, (message) => ({
-        ...message,
-        content: friendlyChatErrorMessage(error, "Vault preparation failed."),
-        trace: [...(message.trace || []), "Vault preparation failed"],
-        status: "error",
-      }));
-    } finally {
-      setIsStreaming(false);
-    }
+      },
+    ]);
+    setPendingVaultDraft({
+      assistantId: followupAssistantId,
+      action: selection.action,
+      vaultSymbol: selection.vaultSymbol,
+      vaultAddress,
+      amount,
+      payerAddress: selection.payerAddress,
+      authHeaders: selection.authHeaders,
+    });
+    setPendingVaultSelection(null);
   };
 
   const continuePendingSwapSelection = async (input: {
@@ -3815,6 +3763,7 @@ function ChatPageInner() {
           amount: draft.amount,
           walletAddress: draft.payerAddress,
           executionTarget: "DCW",
+          provider: "lunex",
           vaultAddress: draft.vaultAddress,
           vaultSymbol: draft.vaultSymbol,
           amountTokenHint: vaultAssetSymbol(draft.vaultSymbol),
