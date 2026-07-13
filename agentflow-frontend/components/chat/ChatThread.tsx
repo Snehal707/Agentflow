@@ -1184,41 +1184,6 @@ export function ChatThread({
                             {markdownContent}
                           </ReactMarkdown>
                         )}
-                        {portfolioPaid ? (
-                          <div className="not-prose mt-5 border-t border-[#f2ca50]/15 pt-4">
-                            <div className="mb-3 text-[10px] font-black uppercase tracking-[0.2em] text-white/38">
-                              Nanopayment
-                            </div>
-                            {(message.paymentMeta?.entries?.length ?? 0) > 0 ? (
-                              <div className="space-y-2">
-                                {message.paymentMeta?.entries.map((entry) => (
-                                  <div
-                                    key={entry.requestId}
-                                    className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-[12px]"
-                                  >
-                                    <span className="text-white/62">
-                                      {entry.agent.charAt(0).toUpperCase()}
-                                      {entry.agent.slice(1)} Agent via Gateway/DCW
-                                    </span>
-                                    <span className="font-mono text-[#f2ca50]">
-                                      {entry.price || "x402"}
-                                    </span>
-                                    <span className="basis-full font-mono text-[11px] text-white/35">
-                                      request {shortPaymentRef(entry.requestId)}
-                                      {entry.transactionRef
-                                        ? ` · ref ${shortPaymentRef(entry.transactionRef)}`
-                                        : ""}
-                                    </span>
-                                  </div>
-                                ))}
-                              </div>
-                            ) : (
-                              <div className="text-[12px] text-white/45">
-                                Paid Portfolio Agent via x402.
-                              </div>
-                            )}
-                          </div>
-                        ) : null}
                       </div>
                     ) : (
                       <div className="space-y-3">
