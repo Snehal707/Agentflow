@@ -535,9 +535,16 @@ function isPredictionMarketOffTopicSource(task: string, text: string): boolean {
     return true;
   }
   if (
+    /\b(bitcoin|btc)\b/i.test(task) &&
+    /\b(market cap|market capitalization|valuation|price target)\b/i.test(task) &&
+    /\bbitcoin\.org\/(?:bitcoin\.pdf|en\/release\/)|\belastos\b|\bbtcd\b/i.test(haystack)
+  ) {
+    return true;
+  }
+  if (
     /\bPrediction market category in AgentFlow:\s*Sports\b/i.test(task) &&
     /\b(world cup|fifa|winner|champion|title)\b/i.test(task) &&
-    /\b(golden boot|golden glove|top scorer|top goalscorer|player of the tournament|most world cup appearances|women'?s world cup|u-?17|u-?20|under-17|under-20|half[- ]?time show|halftime show|quiz)\b/i.test(
+    /\b(golden boot|golden glove|top scorer|top goalscorer|player of the tournament|most world cup appearances|women'?s world cup|u-?17|u-?20|under-17|under-20|half[- ]?time show|halftime show|quiz|red cards?|yellow cards?|disciplinary|goalkeeper profile|in profile|coach (?:exit|exits|leaves|leaving|resigns|resigned|steps down)|manager (?:exit|exits|leaves|leaving|resigns|resigned|steps down))\b/i.test(
       haystack,
     )
   ) {
@@ -2690,10 +2697,18 @@ function mergeNormalizedSources(
       accessedAt: existing.accessedAt ?? source.accessedAt,
     });
   }
+  const recencyScore = (source: NormalizedReportSource): number => {
+    const publishedTimestamp = source.publishedAt ? Date.parse(source.publishedAt) : Number.NaN;
+    if (Number.isFinite(publishedTimestamp)) return publishedTimestamp;
+    const urlDate = source.url.match(/\/(20\d{2})\/(\d{2})\/(\d{2})(?:\/|$)/);
+    if (!urlDate) return 0;
+    return Date.UTC(Number(urlDate[1]), Number(urlDate[2]) - 1, Number(urlDate[3]));
+  };
   return [...merged.values()]
     .sort(
       (left, right) =>
-        sourcePriority(right.url, right.name) - sourcePriority(left.url, left.name),
+        sourcePriority(right.url, right.name) - sourcePriority(left.url, left.name) ||
+        recencyScore(right) - recencyScore(left),
     )
     .slice(0, maxItems);
 }
@@ -3618,7 +3633,7 @@ export function assessFastReportEvidence(params: {
           evidence,
         );
       const hasNumericOdds =
-        /\b\d+(?:\.\d+)?\s*%|\b[+-]\d{2,4}\b|\b\d+(?:\.\d+)?[-/]\d+(?:\.\d+)?\b/.test(
+        /\b\d+(?:\.\d+)?\s*%(?![0-9a-f]{2})|\b[+-]\d{2,4}\b|\b\d+(?:\.\d+)?[-/]\d+(?:\.\d+)?\b/i.test(
           evidence,
         );
       return hasWinnerContext && hasNumericOdds;

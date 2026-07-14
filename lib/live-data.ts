@@ -376,7 +376,7 @@ function hasSportsWinnerMarketEvidenceSignal(haystack: string): boolean {
 }
 
 function hasSportsWinnerOffTopicSignal(haystack: string): boolean {
-  return /\b(golden boot|golden glove|top scorer|top goalscorer|player of the tournament|most world cup appearances|women'?s world cup|u-?17|u-?20|under-17|under-20|half[- ]?time show|halftime show|quiz)\b/i.test(
+  return /\b(golden boot|golden glove|top scorer|top goalscorer|player of the tournament|most world cup appearances|women'?s world cup|u-?17|u-?20|under-17|under-20|half[- ]?time show|halftime show|quiz|red cards?|yellow cards?|disciplinary|goalkeeper profile|in profile|coach (?:exit|exits|leaves|leaving|resigns|resigned|steps down)|manager (?:exit|exits|leaves|leaving|resigns|resigned|steps down))\b/i.test(
     haystack,
   );
 }
@@ -1554,6 +1554,10 @@ async function fetchPredictionMarketSportsAuthorityEvidence(
       fallbackUrls,
       'https://theanalyst.com/articles/fifa-world-cup-2026-groups-predictions-previews',
     );
+    addUniqueQuery(
+      fallbackUrls,
+      'https://theanalyst.com/articles/world-cup-predictions-2026-quarter-finals-opta-supercomputer',
+    );
     addUniqueQuery(fallbackUrls, 'https://www.covers.com/world-cup/odds');
     addUniqueQuery(fallbackUrls, 'https://www.cbssports.com/betting/news/world-cup-odds/');
   }
@@ -1562,7 +1566,9 @@ async function fetchPredictionMarketSportsAuthorityEvidence(
     fallbackUrls.slice(0, 7).map(async (url) => {
       try {
         const markdown = await fetchUrlViaFirecrawl(url);
-        const summary = markdownToSnippet(markdown, 520);
+        const summary = isSportsWinnerPredictionMarketTask(task, understanding)
+          ? extractSportsWinnerNumericEvidenceSnippet(markdown) ?? markdownToSnippet(markdown, 520)
+          : markdownToSnippet(markdown, 520);
         if (!summary) return null;
         const title =
           normalizeSourceText(markdown.match(/^#\s+(.+)$/m)?.[1] || '', {
@@ -1762,13 +1768,27 @@ async function enrichPredictionMarketSnapshotsFromPages(
   const candidates = snapshots
     .filter((snapshot) => !isLikelyHomepageUrl(snapshot.url))
     .filter((snapshot) => !isLowValueSocialSourceUrl(snapshot.url))
+    .filter(
+      (snapshot) =>
+        !isSportsWinnerPredictionMarketTask(task, understanding) ||
+        !hasSportsWinnerOffTopicSignal(
+          `${snapshot.title} ${snapshot.summary} ${snapshot.publisher || ''} ${snapshot.url}`,
+        ),
+    )
+    .sort(
+      (a, b) =>
+        predictionMarketEvidenceSortScore(b, task, understanding) -
+        predictionMarketEvidenceSortScore(a, task, understanding),
+    )
     .slice(0, 6);
 
   const enriched = await Promise.all(
     candidates.map(async (snapshot) => {
       try {
         const markdown = await fetchUrlViaFirecrawl(snapshot.url);
-        const summary = markdownToSnippet(markdown, 520);
+        const summary = isSportsWinnerPredictionMarketTask(task, understanding)
+          ? extractSportsWinnerNumericEvidenceSnippet(markdown) ?? markdownToSnippet(markdown, 520)
+          : markdownToSnippet(markdown, 520);
         if (!summary) return snapshot;
         const title =
           normalizeSourceText(markdown.match(/^#\s+(.+)$/m)?.[1] || '', {
@@ -2857,7 +2877,7 @@ function predictionMarketEvidenceSortScore(
   if (official && !hasArticleLikePath(snapshot)) score -= 10;
   if (isSportsWinnerPredictionMarketTask(task, understanding)) {
     if (hasSportsWinnerMarketEvidenceSignal(haystack)) score += 55;
-    if (/\b\d+(?:\.\d+)?\s*%|\b[+-]\d{2,4}\b|\b\d+(?:\.\d+)?[-/]\d+(?:\.\d+)?\b/.test(haystack)) {
+    if (/\b\d+(?:\.\d+)?\s*%(?![0-9a-f]{2})|\b[+-]\d{2,4}\b|\b\d+(?:\.\d+)?[-/]\d+(?:\.\d+)?\b/i.test(haystack)) {
       score += 35;
     }
     if (hasSportsWinnerOffTopicSignal(haystack)) score -= 250;
@@ -3963,6 +3983,45 @@ function markdownToSnippet(markdown: string, maxChars = 520): string | null {
   }
 
   return truncateSentences(text, maxChars) ?? null;
+}
+
+export function extractSportsWinnerNumericEvidenceSnippet(
+  markdown: string,
+  maxChars = 1_200,
+): string | null {
+  const plainText = markdown
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/!\[[^\]]*\]\([^)]+\)/g, ' ')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/https?:\/\/\S+/g, ' ')
+    .replace(/^#{1,6}\s+/gm, '')
+    .replace(/[*_~`>#]+/g, ' ')
+    .replace(/\r/g, '\n');
+  const actualPercentage = /\b\d+(?:\.\d+)?\s*%(?![0-9a-f]{2})/i;
+  const winnerContext =
+    /\b(win|wins|winner|winning|favo(?:u)?rite|chance|probability|probabilities|projection|projected|simulation|supercomputer|title|champion)\b/i;
+  const seen = new Set<string>();
+  const evidence: string[] = [];
+
+  for (const fragment of plainText.split(/(?<=[.!?])\s+|\n+/)) {
+    const normalized = fragment.replace(/\s+/g, ' ').trim();
+    if (
+      normalized.length < 20 ||
+      normalized.length > 900 ||
+      !actualPercentage.test(normalized) ||
+      !winnerContext.test(normalized) ||
+      /%[0-9a-f]{2}/i.test(normalized) ||
+      seen.has(normalized.toLowerCase())
+    ) {
+      continue;
+    }
+    seen.add(normalized.toLowerCase());
+    evidence.push(normalized);
+    if (evidence.length >= 6) break;
+  }
+
+  if (evidence.length === 0) return null;
+  return truncateSentences(evidence.join(' '), maxChars) ?? null;
 }
 
 function extractVisiblePublishedDateFromMarkdown(markdown: string | undefined): string | undefined {

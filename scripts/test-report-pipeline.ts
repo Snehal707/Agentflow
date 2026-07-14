@@ -4,7 +4,11 @@ import {
   collectPreferredReportSources,
   finalizeReportMarkdown,
 } from '../lib/reportPipeline';
-import { buildPrimaryFirecrawlQueryVariants, shouldGatherCurrentEvents } from '../lib/live-data';
+import {
+  buildPrimaryFirecrawlQueryVariants,
+  extractSportsWinnerNumericEvidenceSnippet,
+  shouldGatherCurrentEvents,
+} from '../lib/live-data';
 
 const badWriterMarkdown = `# Iran-US Tensions Research Report
 
@@ -984,6 +988,52 @@ assert.match(
   /numeric winner odds or probabilities|independent source domain/i,
   'Expected Golden Boot/Glove and quiz pages not to satisfy the tournament-winner gate.',
 );
+
+const encodedPercentAndTournamentNoiseAreNotWinnerEvidence = assessFastReportEvidence({
+  task: worldCupEvidenceTask,
+  research: null,
+  liveData: {
+    dynamic_sources: {
+      articles: [
+        {
+          title: 'FIFA disciplinary statistics and red cards',
+          publisher: 'FIFA',
+          url: 'https://www.fifa.com/en/articles/world-cup-2026%20disciplinary-stats',
+          summary: 'Red and yellow card leaders during the tournament.',
+        },
+        {
+          title: 'World Cup coach exits after semifinal',
+          publisher: 'BBC News',
+          url: 'https://www.bbc.com/sport/football/world-cup-coach-exit',
+          summary: 'The manager steps down after the final match.',
+        },
+        {
+          title: 'Goalkeeper in profile',
+          publisher: 'The Analyst',
+          url: 'https://theanalyst.com/articles/world-cup-goalkeeper-profile',
+          summary: 'A profile of one goalkeeper at the tournament.',
+        },
+      ],
+    },
+  },
+});
+assert.equal(encodedPercentAndTournamentNoiseAreNotWinnerEvidence.ok, false);
+assert.match(
+  encodedPercentAndTournamentNoiseAreNotWinnerEvidence.issues.join('\n'),
+  /numeric winner odds or probabilities|independent source domain/i,
+  'Expected URL-encoded spaces and tournament noise not to pass the winner-odds gate.',
+);
+
+const extractedSportsWinnerEvidence = extractSportsWinnerNumericEvidenceSnippet(`
+[Share](https://example.com/share?title=World%20Cup%202026%20predictions)
+Navigation and newsletter copy.
+The Opta supercomputer gives France a 28.9% chance of winning the tournament.
+Spain are favourites with a 31.4% title probability after the quarter-finals.
+Goalkeeper saves reached 75% in the last match.
+`);
+assert.match(extractedSportsWinnerEvidence || '', /France a 28\.9% chance of winning/i);
+assert.match(extractedSportsWinnerEvidence || '', /Spain are favourites with a 31\.4% title probability/i);
+assert.doesNotMatch(extractedSportsWinnerEvidence || '', /World%20Cup|Goalkeeper saves/i);
 
 const bitcoinMarketCapTask = `research the prediction market topic: Will Bitcoin Reach a $2 Trillion Market Cap Before December 31, 2026?
 Listed outcomes in AgentFlow: Yes / No.
