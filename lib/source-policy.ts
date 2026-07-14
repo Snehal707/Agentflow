@@ -127,6 +127,15 @@ export function isLowValueSourceForTask(task: string, source: SourceLike): boole
 
   if (isCircularResearchSourceUrl(task, url)) return true;
   if (isLowValueSocialSourceUrl(url)) return true;
+  if (
+    /\b(?:duckduckgo\.com|google\.com|bing\.com|search\.yahoo\.com|search\.brave\.com)\b/.test(domain) &&
+    /(?:[?&]q=|\/search\b|\/search\?)/i.test(url)
+  ) {
+    return true;
+  }
+  if (/\bduckduckgo\b/.test(haystack) && /\blive data duckduckgo context\b/.test(haystack)) {
+    return true;
+  }
 
   if (isCreatorAudienceMetricTask(task)) {
     const allowedCreatorMetricSource =

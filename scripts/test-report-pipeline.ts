@@ -1108,6 +1108,52 @@ assert.doesNotMatch(
   /Source URLs were not available/i,
 );
 
+const duckDuckGoSearchContextIsNotFinalSource = finalizeReportMarkdown({
+  task: 'research on future of AI in India',
+  writerMarkdown: `## Overview
+
+Fast report with mixed source quality.`,
+  research: {
+    topic: 'Future of AI in India',
+    facts: [
+      {
+        claim: 'DuckDuckGo supplied search context.',
+        support: 'LIVE DATA duckduckgo context',
+        source_name: 'DuckDuckGo',
+        source_url: 'https://duckduckgo.com/?q=future+of+AI+in+India',
+      },
+      {
+        claim: 'IndiaAI published an article about the future of AI in India.',
+        support: 'IndiaAI article',
+        source_name: 'IndiaAI',
+        source_url: 'https://indiaai.gov.in/article/future-of-ai-in-india',
+      },
+    ],
+    sources: [
+      {
+        name: 'DuckDuckGo',
+        url: 'https://duckduckgo.com/?q=future+of+AI+in+India',
+        used_for: 'LIVE DATA duckduckgo context',
+      },
+      {
+        name: 'IndiaAI',
+        url: 'https://indiaai.gov.in/article/future-of-ai-in-india',
+        used_for: 'Article evidence',
+      },
+    ],
+  },
+  analysis: null,
+  liveData: {
+    snapshot_at: '2026-07-14T00:00:00.000Z',
+  },
+});
+assert.doesNotMatch(duckDuckGoSearchContextIsNotFinalSource.markdown, /duckduckgo\.com/i);
+assert.doesNotMatch(duckDuckGoSearchContextIsNotFinalSource.markdown, /\bDuckDuckGo\b/i);
+assert.match(
+  duckDuckGoSearchContextIsNotFinalSource.markdown,
+  /indiaai\.gov\.in\/article\/future-of-ai-in-india/i,
+);
+
 console.log('Before example:');
 console.log(badWriterMarkdown.split('\n').slice(0, 12).join('\n'));
 console.log('\nAfter example:');
