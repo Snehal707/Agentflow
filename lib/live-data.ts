@@ -6370,7 +6370,13 @@ async function fetchCurrentEventsData(
   // Thin retrieval (e.g. a sports or games prediction market) otherwise falls back to the
   // dominant live geopolitical news, which then contaminates the report with off-topic
   // shipping sources and framing. Stay thin rather than surface unrelated news.
-  if (detectResearchDomain(task) !== 'geopolitics') {
+  // Do NOT apply this to explicit external research (climate, AI, etc.): those topics
+  // legitimately cite Russia/China/nuclear in non-conflict reporting, and wiping them
+  // empties Google News RSS before Sources can ground.
+  if (
+    detectResearchDomain(task) !== 'geopolitics' &&
+    /\bprediction market\b/i.test(task)
+  ) {
     relevantFirecrawlSearchSnapshots = relevantFirecrawlSearchSnapshots.filter(
       (snapshot) => !articleLooksGeopolitical(snapshot.title, snapshot.summary, snapshot.publisher),
     );
