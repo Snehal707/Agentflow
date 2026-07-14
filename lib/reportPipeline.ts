@@ -2442,8 +2442,9 @@ function buildFallbackSourcesFromLiveData(
   liveData: Obj | null,
   task: string,
   primaryTopicLabel?: string | null,
+  research?: Obj | null,
 ): NormalizedReportSource[] {
-  const grounding = buildLiveDataSourceGrounding(liveData, task, primaryTopicLabel);
+  const grounding = buildLiveDataSourceGrounding(liveData, task, primaryTopicLabel, research);
   const deduped = [...grounding.byUrl.values()]
     .sort((left, right) => sourcePriority(right.url, right.name) - sourcePriority(left.url, left.name))
     .slice(0, 6);
@@ -2465,9 +2466,17 @@ function mergeNormalizedSources(
   maxItems = 8,
 ): NormalizedReportSource[] {
   const merged = new Map<string, NormalizedReportSource>();
+  const directSourceNames = new Set<string>();
   for (const source of [...primary, ...supplemental]) {
     const key = normalizeUrl(source.url) || source.name.toLowerCase();
     if (!key) continue;
+    const nameKey = sourceNameKey(source.name);
+    if (isGoogleNewsRssUrl(source.url) && directSourceNames.has(nameKey)) {
+      continue;
+    }
+    if (!isGoogleNewsRssUrl(source.url)) {
+      directSourceNames.add(nameKey);
+    }
     const existing = merged.get(key);
     if (!existing) {
       merged.set(key, source);
@@ -3450,12 +3459,11 @@ export function finalizeReportMarkdown(params: FinalizeParams): {
     params.liveData,
     params.task,
     primaryTopicLabel,
+    params.research,
   );
   const mergedSources = isPredictionMarketResearchTask(params.task)
     ? mergeNormalizedSources(state.sources, fallbackSources)
-    : state.sources.length > 0
-      ? state.sources
-      : fallbackSources;
+    : mergeNormalizedSources(state.sources, fallbackSources);
   const nonLowValueSources = mergedSources.filter(
     (source) => {
       const sourceText = `${source.name} ${source.url} ${source.usedFor || ''}`;

@@ -948,6 +948,91 @@ assert.ok(
   ),
 );
 
+const broadAiIndiaReportKeepsFreshLiveSources = finalizeReportMarkdown({
+  task: 'research on future of AI in India',
+  writerMarkdown: `## Overview
+
+India is expanding AI investment.
+
+## Sources
+
+- Old policy source`,
+  research: {
+    topic: 'Future of AI in India',
+    scope: {
+      entities: ['India'],
+    },
+    facts: [
+      {
+        claim: 'India has an active national AI policy push.',
+        value: 'Policy push',
+        status: 'reported',
+        date_or_period: '2024-03-01',
+        confidence: 'medium',
+        support: 'Older policy background',
+        source_name: 'Archived policy source',
+        source_url: 'https://example.com/india-ai-background-2024',
+      },
+    ],
+  },
+  analysis: null,
+  liveData: {
+    snapshot_at: '2026-07-14T00:00:00.000Z',
+    dynamic_sources: {
+      articles: [
+        {
+          title: 'IndiaAI Mission expands compute capacity for startups',
+          publisher: 'Ministry of Electronics and IT',
+          url: 'https://www.meity.gov.in/indiaai-mission-compute-capacity-2026',
+          summary: 'India expanded public AI compute access for startups and researchers.',
+          seen_at: '2026-07-13T00:00:00.000Z',
+        },
+      ],
+    },
+  },
+});
+assert.match(
+  broadAiIndiaReportKeepsFreshLiveSources.markdown,
+  /meity\.gov\.in\/indiaai-mission-compute-capacity-2026/i,
+);
+assert.match(
+  broadAiIndiaReportKeepsFreshLiveSources.markdown,
+  /example\.com\/india-ai-background-2024/i,
+);
+assert.doesNotMatch(
+  broadAiIndiaReportKeepsFreshLiveSources.markdown,
+  /Source URLs were not available/i,
+);
+
+const sourceOnlyResearchPayloadStillRendersSources = finalizeReportMarkdown({
+  task: 'research future of AI in India',
+  writerMarkdown: `## Overview
+
+Research payload has sources but sparse claims.`,
+  research: {
+    topic: 'Future of AI in India',
+    sources: [
+      {
+        name: 'NITI Aayog',
+        url: 'https://www.niti.gov.in/ai-india-report-2026',
+        used_for: 'AI strategy background',
+      },
+    ],
+  },
+  analysis: null,
+  liveData: {
+    snapshot_at: '2026-07-14T00:00:00.000Z',
+  },
+});
+assert.match(
+  sourceOnlyResearchPayloadStillRendersSources.markdown,
+  /niti\.gov\.in\/ai-india-report-2026/i,
+);
+assert.doesNotMatch(
+  sourceOnlyResearchPayloadStillRendersSources.markdown,
+  /Source URLs were not available/i,
+);
+
 console.log('Before example:');
 console.log(badWriterMarkdown.split('\n').slice(0, 12).join('\n'));
 console.log('\nAfter example:');
