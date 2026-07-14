@@ -365,7 +365,18 @@ function isSportsWinnerPredictionMarketTask(
 }
 
 function hasSportsWinnerMarketEvidenceSignal(haystack: string): boolean {
-  return /\b(odds|favorite|favorites|betting|prediction|predictions|probability|probabilities|implied|outright|power ranking|power rankings|team rankings|ranking|rankings|re-ranking|re-rank|contender|contenders|opta|the analyst|oddschecker|action network|covers|fox sports|sporting news|the athletic)\b/i.test(
+  return (
+    /\b(winner odds|odds to win|outright odds|title odds|champion odds|who will win|win probability|winning probability|tournament predictions?|title favorite|title favourite|world cup favorite|world cup favourite|opta supercomputer)\b/i.test(
+      haystack,
+    ) ||
+    /\b(?:winner|champion|title|tournament)\b[^.\n]{0,100}\b(?:odds|probability|probabilities|prediction|predictions|favorite|favourite|contender)\b/i.test(
+      haystack,
+    )
+  );
+}
+
+function hasSportsWinnerOffTopicSignal(haystack: string): boolean {
+  return /\b(golden boot|golden glove|top scorer|top goalscorer|player of the tournament|most world cup appearances|women'?s world cup|u-?17|u-?20|under-17|under-20|half[- ]?time show|halftime show|quiz)\b/i.test(
     haystack,
   );
 }
@@ -432,6 +443,9 @@ function buildSportsPredictionMarketQueries(
   } else {
     addUniqueQuery(queries, normalizedBase);
     if (broadTournamentWinnerMarket) {
+      addUniqueQuery(queries, `${competition} winner odds semifinals`);
+      addUniqueQuery(queries, `${competition} outright winner probabilities`);
+      addUniqueQuery(queries, `Who will win ${competition} Opta supercomputer probabilities`);
       addUniqueQuery(queries, `${competition} winner odds`);
       addUniqueQuery(queries, `${competition} betting odds favorites`);
       addUniqueQuery(queries, `${competition} predictions`);
@@ -453,13 +467,15 @@ function buildSportsPredictionMarketQueries(
     addUniqueQuery(queries, `site:uefa.com ${competition} winners`);
   }
   if (/\bFIFA World Cup 2026\b/i.test(competition)) {
+    addUniqueQuery(queries, `${competition} winner odds semifinals`);
+    addUniqueQuery(queries, `${competition} outright winner probabilities`);
     addUniqueQuery(queries, `${competition} winner odds`);
     addUniqueQuery(queries, `${competition} betting odds favorites`);
     addUniqueQuery(queries, `site:fifa.com ${competition} favorites odds`);
     addUniqueQuery(queries, `site:espn.com ${competition} predictions`);
-    addUniqueQuery(queries, `site:theanalyst.com ${competition} prediction`);
-    addUniqueQuery(queries, `site:oddschecker.com ${competition} odds`);
-    addUniqueQuery(queries, `site:actionnetwork.com ${competition} odds`);
+    addUniqueQuery(queries, `site:theanalyst.com ${competition} winner probability`);
+    addUniqueQuery(queries, `site:oddschecker.com ${competition} winner odds`);
+    addUniqueQuery(queries, `site:actionnetwork.com ${competition} outright winner odds`);
     addUniqueQuery(queries, `site:foxsports.com ${competition} champion odds`);
     addUniqueQuery(queries, `site:covers.com ${competition} odds`);
     addUniqueQuery(queries, `site:cbssports.com ${competition} odds`);
@@ -1517,13 +1533,13 @@ async function fetchPredictionMarketSportsAuthorityEvidence(
     : canonical;
   const queries: string[] = [];
 
-  addUniqueQuery(queries, `site:theanalyst.com ${competition} prediction`);
   addUniqueQuery(queries, `site:theanalyst.com ${competition} winner odds`);
-  addUniqueQuery(queries, `site:oddschecker.com ${competition} odds`);
   addUniqueQuery(queries, `site:oddschecker.com ${competition} winner odds`);
-  addUniqueQuery(queries, `site:actionnetwork.com ${competition} odds`);
-  addUniqueQuery(queries, `site:espn.com ${competition} odds`);
-  addUniqueQuery(queries, `site:sportingnews.com ${competition} odds`);
+  addUniqueQuery(queries, `${competition} winner odds semifinals`);
+  addUniqueQuery(queries, `${competition} outright winner probabilities`);
+  addUniqueQuery(queries, `site:actionnetwork.com ${competition} outright winner odds`);
+  addUniqueQuery(queries, `site:espn.com ${competition} winner odds`);
+  addUniqueQuery(queries, `site:sportingnews.com ${competition} winner odds`);
 
   const fallbackUrls: string[] = [];
   if (/\bFIFA World Cup\b/i.test(competition)) {
@@ -2088,6 +2104,8 @@ function isEntityRelevantPredictionMarketSource(
     `${snapshot.title} ${snapshot.summary} ${snapshot.publisher || ''} ${snapshot.url}`.toLowerCase();
   if (!haystack.trim()) return false;
   if (matchesResolvedEntityAvoidTerms(snapshot, understanding)) return false;
+  const sportsWinnerMarket = isSportsWinnerPredictionMarketTask(task, understanding);
+  if (sportsWinnerMarket && hasSportsWinnerOffTopicSignal(haystack)) return false;
 
   if (
     understanding.entity.officialDomains.some(
@@ -2116,7 +2134,6 @@ function isEntityRelevantPredictionMarketSource(
   const canonicalSingleToken = canonicalWords.length === 1;
   const sportsTask = extractPredictionMarketCategory(task) === 'sports';
   const sportsContext = hasPredictionMarketSportsContext(haystack);
-  const sportsWinnerMarket = isSportsWinnerPredictionMarketTask(task, understanding);
 
   if (
     !sportsTask &&
@@ -2828,6 +2845,7 @@ function predictionMarketEvidenceSortScore(
   const official = isOfficialPredictionMarketSource(snapshot, understanding);
   const authoritativeCategorySource = isPredictionMarketCategoryAuthorityHost(task, hostname);
   const editorial = hasPredictionMarketEditorialArticleSignal(snapshot, task);
+  const haystack = `${snapshot.title} ${snapshot.summary} ${snapshot.publisher || ''} ${snapshot.url}`;
   let score = resolvedEntitySourceBoost(snapshot, understanding);
 
   score += sourceQualityScore(snapshot, qualityContext);
@@ -2837,6 +2855,13 @@ function predictionMarketEvidenceSortScore(
   if (authoritativeCategorySource && !official) score += 18;
   if (official) score -= 18;
   if (official && !hasArticleLikePath(snapshot)) score -= 10;
+  if (isSportsWinnerPredictionMarketTask(task, understanding)) {
+    if (hasSportsWinnerMarketEvidenceSignal(haystack)) score += 55;
+    if (/\b\d+(?:\.\d+)?\s*%|\b[+-]\d{2,4}\b|\b\d+(?:\.\d+)?[-/]\d+(?:\.\d+)?\b/.test(haystack)) {
+      score += 35;
+    }
+    if (hasSportsWinnerOffTopicSignal(haystack)) score -= 250;
+  }
 
   return score;
 }
@@ -2860,6 +2885,14 @@ function filterPredictionMarketResearchEvidence(
     if (matchesResolvedEntityAvoidTerms(snapshot, understanding ?? null)) return false;
     if (isLowValueSocialSourceUrl(snapshot.url)) return false;
     if (isLowValueVideoUrl(snapshot.url)) return false;
+    if (
+      isSportsWinnerPredictionMarketTask(task, understanding ?? null) &&
+      hasSportsWinnerOffTopicSignal(
+        `${snapshot.title} ${snapshot.summary} ${snapshot.publisher || ''} ${snapshot.url}`,
+      )
+    ) {
+      return false;
+    }
     return true;
   });
   if (candidates.length === 0) return [];
@@ -5432,6 +5465,57 @@ async function fetchCoinGeckoData(task: string): Promise<CoinGeckoAssetSnapshot[
   return setTimedCache(coinGeckoCache, cacheKey, snapshots, COINGECKO_CACHE_TTL_MS);
 }
 
+function extractMarketCapThresholdUsd(task: string): number | null {
+  if (!/\bmarket cap(?:italization)?\b/i.test(task)) return null;
+  const match = task.match(
+    /\$?\s*([\d,.]+)\s*(trillion|billion|million|tn|bn|t|b|m)\b(?=[\s\S]{0,80}\bmarket cap(?:italization)?\b)/i,
+  );
+  if (!match) return null;
+  const value = Number(match[1].replace(/,/g, ''));
+  const scale = match[2].toLowerCase();
+  const multiplier = /^(?:trillion|tn|t)$/.test(scale)
+    ? 1_000_000_000_000
+    : /^(?:billion|bn|b)$/.test(scale)
+      ? 1_000_000_000
+      : 1_000_000;
+  const threshold = value * multiplier;
+  return Number.isFinite(threshold) && threshold > 0 ? threshold : null;
+}
+
+function buildMarketCapThresholdMetrics(
+  task: string,
+  assets: CoinGeckoAssetSnapshot[],
+): Record<string, unknown> | null {
+  const targetMarketCapUsd = extractMarketCapThresholdUsd(task);
+  if (!targetMarketCapUsd) return null;
+  const asset = assets.find(
+    (entry) =>
+      Number.isFinite(entry.price_usd) &&
+      Number(entry.price_usd) > 0 &&
+      Number.isFinite(entry.market_cap_usd) &&
+      Number(entry.market_cap_usd) > 0,
+  );
+  if (!asset?.price_usd || !asset.market_cap_usd) return null;
+
+  const marketCapMultiple = targetMarketCapUsd / asset.market_cap_usd;
+  return {
+    metric: 'market_cap_threshold',
+    symbol: asset.symbol,
+    coin_id: asset.coinId,
+    target_market_cap_usd: targetMarketCapUsd,
+    current_market_cap_usd: asset.market_cap_usd,
+    current_price_usd: asset.price_usd,
+    market_cap_gap_usd: targetMarketCapUsd - asset.market_cap_usd,
+    market_cap_multiple: marketCapMultiple,
+    required_increase_pct: (marketCapMultiple - 1) * 100,
+    equivalent_price_usd: asset.price_usd * marketCapMultiple,
+    calculated_at: asset.last_updated_at,
+    assumption: 'Equivalent price assumes circulating supply is unchanged.',
+    formula:
+      'equivalent_price_usd = current_price_usd * target_market_cap_usd / current_market_cap_usd',
+  };
+}
+
 type MempoolBlock = {
   height?: number;
   timestamp?: number;
@@ -7322,6 +7406,10 @@ export async function fetchLiveData(
         source: 'CoinGecko simple price API',
         assets: coingecko.value,
       };
+      const thresholdMetrics = buildMarketCapThresholdMetrics(contextTask, coingecko.value);
+      if (thresholdMetrics) {
+        payload.prediction_market_metrics = thresholdMetrics;
+      }
     }
 
     if (bitcoinOnchain.status === 'fulfilled' && bitcoinOnchain.value) {

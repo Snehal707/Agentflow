@@ -926,13 +926,13 @@ const decisionGradeWorldCupEvidence = assessFastReportEvidence({
           title: 'World Cup 2026 winner odds entering the semifinals',
           publisher: 'OddsChecker',
           url: 'https://www.oddschecker.com/us/insight/soccer/20260713-2026-fifa-world-cup-winner-odds',
-          summary: 'Current outright prices and implied contender probabilities.',
+          summary: 'Current outright prices imply France at 40%, Spain at 25%, England at 22%, and Argentina at 20%.',
         },
         {
           title: 'World Cup prediction model and team probabilities',
           publisher: 'The Analyst',
           url: 'https://theanalyst.com/articles/world-cup-2026-predictions-semifinals',
-          summary: 'Opta model probabilities for the remaining teams.',
+          summary: 'The Opta supercomputer gives numeric win probabilities for the remaining teams.',
         },
         {
           title: 'World Cup 2026 official semifinal schedule',
@@ -948,6 +948,41 @@ assert.equal(
   decisionGradeWorldCupEvidence.ok,
   true,
   `Expected decision-grade World Cup evidence, got: ${decisionGradeWorldCupEvidence.issues.join('; ')}`,
+);
+
+const awardMarketIsNotWinnerEvidence = assessFastReportEvidence({
+  task: worldCupEvidenceTask,
+  research: null,
+  liveData: {
+    dynamic_sources: {
+      articles: [
+        {
+          title: 'World Cup Golden Glove odds',
+          publisher: 'OddsChecker',
+          url: 'https://www.oddschecker.com/us/insight/soccer/world-cup-golden-glove-odds',
+          summary: 'A goalkeeper is priced at +250 for the Golden Glove.',
+        },
+        {
+          title: 'World Cup Golden Boot race',
+          publisher: 'The Analyst',
+          url: 'https://theanalyst.com/articles/2026-world-cup-golden-boot-race-goals',
+          summary: 'Top scorer probabilities include a 35% favorite.',
+        },
+        {
+          title: 'World Cup semifinal quiz',
+          publisher: 'FIFA',
+          url: 'https://www.fifa.com/en/tournaments/mens/worldcup/articles/semi-final-quiz',
+          summary: 'Official fan quiz.',
+        },
+      ],
+    },
+  },
+});
+assert.equal(awardMarketIsNotWinnerEvidence.ok, false);
+assert.match(
+  awardMarketIsNotWinnerEvidence.issues.join('\n'),
+  /numeric winner odds or probabilities|independent source domain/i,
+  'Expected Golden Boot/Glove and quiz pages not to satisfy the tournament-winner gate.',
 );
 
 const bitcoinMarketCapTask = `research the prediction market topic: Will Bitcoin Reach a $2 Trillion Market Cap Before December 31, 2026?
@@ -1024,6 +1059,64 @@ assert.equal(
   true,
   `Expected decision-grade Bitcoin evidence, got: ${decisionGradeBitcoinMarketCapEvidence.issues.join('; ')}`,
 );
+
+const repairedBitcoinThresholdMath = finalizeReportMarkdown({
+  task: bitcoinMarketCapTask,
+  writerMarkdown: `# Bitcoin market-cap threshold
+
+## Summary
+
+Bitcoin would need to double to about $130,000 per BTC.
+
+## Evidence
+
+- Price increase needed: 64.5% from $64,455.
+
+## Sources`,
+  research: null,
+  analysis: null,
+  liveData: {
+    snapshot_at: '2026-07-14T00:00:00.000Z',
+    prediction_market_metrics: {
+      metric: 'market_cap_threshold',
+      target_market_cap_usd: 2_000_000_000_000,
+      current_market_cap_usd: 1_292_623_459_292,
+      current_price_usd: 64_455,
+      required_increase_pct: 54.723,
+      equivalent_price_usd: 99_727.7,
+    },
+    coingecko: {
+      assets: [
+        {
+          coinId: 'bitcoin',
+          price_usd: 64_455,
+          market_cap_usd: 1_292_623_459_292,
+          last_updated_at: '2026-07-14T00:00:00.000Z',
+        },
+      ],
+    },
+    dynamic_sources: {
+      articles: [
+        {
+          title: 'Bitcoin ETF flows and current market outlook',
+          publisher: 'Reuters',
+          url: 'https://www.reuters.com/technology/bitcoin-etf-flows-2026-07-14/',
+          summary: 'Current institutional demand and macro context.',
+        },
+        {
+          title: 'Bitcoin market-cap outlook',
+          publisher: 'CoinDesk',
+          url: 'https://www.coindesk.com/markets/2026/07/14/bitcoin-market-cap-outlook/',
+          summary: 'Current Bitcoin market drivers and risks.',
+        },
+      ],
+    },
+  },
+});
+assert.match(repairedBitcoinThresholdMath.markdown, /54\.7% increase/i);
+assert.match(repairedBitcoinThresholdMath.markdown, /\$99,728 per coin/i);
+assert.doesNotMatch(repairedBitcoinThresholdMath.markdown, /\b(?:double|doubling)\b/i);
+assert.doesNotMatch(repairedBitcoinThresholdMath.markdown, /\$130,000|64\.5%/i);
 
 const worldCupPredmarketDoesNotTreatSourceUrlSlugAsFutureDate = finalizeReportMarkdown({
   task: 'research the prediction market topic: Who Will Win the FIFA World Cup 2026?',

@@ -534,6 +534,15 @@ function isPredictionMarketOffTopicSource(task: string, text: string): boolean {
   if (/\b(xaut|tether gold)\b/i.test(task) && /\btether\b/i.test(haystack) && !/\b(xaut|tether gold|gold)\b/i.test(haystack)) {
     return true;
   }
+  if (
+    /\bPrediction market category in AgentFlow:\s*Sports\b/i.test(task) &&
+    /\b(world cup|fifa|winner|champion|title)\b/i.test(task) &&
+    /\b(golden boot|golden glove|top scorer|top goalscorer|player of the tournament|most world cup appearances|women'?s world cup|u-?17|u-?20|under-17|under-20|half[- ]?time show|halftime show|quiz)\b/i.test(
+      haystack,
+    )
+  ) {
+    return true;
+  }
   return false;
 }
 
@@ -872,8 +881,7 @@ function buildLiveDataSourceGrounding(
     pushGroundedSource(grounding, task, {
       name: asString(article?.publisher) ?? asString(article?.title) ?? 'Current event source',
       usedFor:
-        asString(article?.title) ??
-        asString(article?.summary) ??
+        [asString(article?.title), asString(article?.summary)].filter(Boolean).join('; ') ||
         'Current event article snapshot',
       url,
       trustedLiveData: true,
@@ -900,8 +908,7 @@ function buildLiveDataSourceGrounding(
     pushGroundedSource(grounding, task, {
       name: asString(article?.publisher) ?? asString(article?.domain) ?? asString(article?.title) ?? 'Current event source',
       usedFor:
-        asString(article?.title) ??
-        asString(article?.summary) ??
+        [asString(article?.title), asString(article?.summary)].filter(Boolean).join('; ') ||
         'Current event article evidence',
       url,
       trustedLiveData: true,
@@ -929,8 +936,7 @@ function buildLiveDataSourceGrounding(
     pushGroundedSource(grounding, task, {
       name: asString(article?.publisher) ?? asString(article?.title) ?? 'Dynamic source',
       usedFor:
-        asString(article?.title) ??
-        asString(article?.summary) ??
+        [asString(article?.title), asString(article?.summary)].filter(Boolean).join('; ') ||
         'Live Data article snapshot',
       url,
       trustedLiveData: true,
@@ -3285,6 +3291,70 @@ function duplicateNarrativeIssues(markdown: string): string[] {
   return issues;
 }
 
+function normalizeMarketCapThresholdMath(markdown: string, liveData: Obj | null): string {
+  const metrics = asObject(liveData?.prediction_market_metrics);
+  if (asString(metrics?.metric) !== 'market_cap_threshold') return markdown;
+  const currentMarketCap = Number(metrics?.current_market_cap_usd);
+  const targetMarketCap = Number(metrics?.target_market_cap_usd);
+  const currentPrice = Number(metrics?.current_price_usd);
+  const equivalentPrice = Number(metrics?.equivalent_price_usd);
+  const requiredIncrease = Number(metrics?.required_increase_pct);
+  if (
+    ![currentMarketCap, targetMarketCap, currentPrice, equivalentPrice, requiredIncrease].every(
+      Number.isFinite,
+    ) ||
+    currentMarketCap <= 0 ||
+    targetMarketCap <= 0 ||
+    currentPrice <= 0 ||
+    equivalentPrice <= 0
+  ) {
+    return markdown;
+  }
+
+  const money = (value: number) =>
+    `$${Math.round(value).toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
+  const compactCap = (value: number) =>
+    value >= 1_000_000_000_000
+      ? `$${(value / 1_000_000_000_000).toFixed(2).replace(/\.00$/, '')}T`
+      : `$${(value / 1_000_000_000).toFixed(1).replace(/\.0$/, '')}B`;
+  const pct = requiredIncrease.toFixed(1);
+  const thresholdSentence = `At the ${compactCap(currentMarketCap)} market-cap baseline and ${money(currentPrice)} spot price, a ${compactCap(targetMarketCap)} market cap implies about ${money(equivalentPrice)} per coin, or a ${pct}% increase, assuming circulating supply is unchanged.`;
+  const wrongRequirementLine = (line: string): boolean => {
+    const lower = line.toLowerCase();
+    if (!/\b(require|required|needed|need to|implies|equivalent|double|doubling|to hit|to reach)\b/.test(lower)) {
+      return false;
+    }
+    if (/\bdouble|doubling\b/.test(lower) && requiredIncrease < 90) return true;
+    const percentages = [...line.matchAll(/(-?\d+(?:\.\d+)?)\s*%/g)].map((match) => Number(match[1]));
+    if (percentages.some((value) => Number.isFinite(value) && Math.abs(value - requiredIncrease) > 1.5)) {
+      return true;
+    }
+    const priceCandidates = [...line.matchAll(/\$\s*([\d,]+(?:\.\d+)?)/g)]
+      .map((match) => Number(match[1].replace(/,/g, '')))
+      .filter((value) => Number.isFinite(value) && value > currentPrice * 1.1 && value < 10_000_000);
+    return priceCandidates.some((value) => Math.abs(value - equivalentPrice) / equivalentPrice > 0.05);
+  };
+
+  let insertedAuthoritativeLine = false;
+  const normalizedLines = markdown.split('\n').flatMap((line) => {
+    if (!wrongRequirementLine(line)) return [line];
+    if (insertedAuthoritativeLine) return [];
+    insertedAuthoritativeLine = true;
+    return [line.trim().startsWith('-') ? `- **Threshold math:** ${thresholdSentence}` : thresholdSentence];
+  });
+  let normalized = normalizedLines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  const expectedPctPattern = new RegExp(`\\b${escapeRegExp(pct)}\\s*%`);
+  const expectedPrice = Math.round(equivalentPrice).toLocaleString('en-US');
+  if (!expectedPctPattern.test(normalized) || !normalized.includes(expectedPrice)) {
+    const section = `## Threshold Math\n\n${thresholdSentence}\n\n`;
+    const sourceHeading = normalized.search(/^##\s+Sources\s*$/im);
+    normalized = sourceHeading >= 0
+      ? `${normalized.slice(0, sourceHeading)}${section}${normalized.slice(sourceHeading)}`.trim()
+      : `${normalized}\n\n${section}`.trim();
+  }
+  return normalized;
+}
+
 function predictionMarketValidationIssues(
   task: string,
   markdown: string,
@@ -3538,6 +3608,26 @@ export function assessFastReportEvidence(params: {
   if (isPredictionMarket) {
     issues.push(...predictionMarketValidationIssues(params.task, '', sources));
     issues.push(...predictionMarketEntityResolutionIssues(params.task, '', params.liveData, sources));
+  }
+
+  if (isSportsWinnerMarket) {
+    const numericWinnerEvidence = sources.some((source) => {
+      const evidence = `${source.name} ${source.url} ${source.usedFor || ''}`;
+      const hasWinnerContext =
+        /\b(winner odds|odds to win|outright odds|title odds|champion odds|who will win|win probability|winning probability|tournament predictions?|opta supercomputer)\b/i.test(
+          evidence,
+        );
+      const hasNumericOdds =
+        /\b\d+(?:\.\d+)?\s*%|\b[+-]\d{2,4}\b|\b\d+(?:\.\d+)?[-/]\d+(?:\.\d+)?\b/.test(
+          evidence,
+        );
+      return hasWinnerContext && hasNumericOdds;
+    });
+    if (!numericWinnerEvidence) {
+      issues.push(
+        'Sports winner market research lacks source-backed numeric winner odds or probabilities.',
+      );
+    }
   }
 
   if (isBitcoinMarketCapMarket) {
@@ -3799,7 +3889,10 @@ export function finalizeReportMarkdown(params: FinalizeParams): {
         params.research,
         params.analysis,
       );
-  const writerMarkdown = sanitizeWriterMarkdown(params.writerMarkdown);
+  const writerMarkdown = normalizeMarketCapThresholdMath(
+    sanitizeWriterMarkdown(params.writerMarkdown),
+    params.liveData,
+  );
   const writerValidationIssues = writerMarkdown
       ? [
         ...validateReportMarkdown(params.task, writerMarkdown, params.liveData),
@@ -3837,7 +3930,10 @@ export function finalizeReportMarkdown(params: FinalizeParams): {
   const normalizedPredictionMarketMarkdown = isPredictionMarketResearchTask(params.task)
     ? normalizePredictionMarketMarkdown(markdownWithDeterministicSources, params.task)
     : markdownWithDeterministicSources;
-  let cleanedMarkdown = removeRedundantPreSourcesLinkList(normalizedPredictionMarketMarkdown);
+  let cleanedMarkdown = normalizeMarketCapThresholdMath(
+    removeRedundantPreSourcesLinkList(normalizedPredictionMarketMarkdown),
+    params.liveData,
+  );
   if (repairedMarkdown !== markdown || hasMojibakeMarkers(markdown)) {
     console.warn('[reportPipeline] repaired mojibake in final markdown');
   }
