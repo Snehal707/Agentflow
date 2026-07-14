@@ -1152,21 +1152,30 @@ export async function finalizeBridgeRun(input: {
   }
 
   const fallbackRequestId = createBrowserX402RequestId();
-  const { response, requestId: finalizedRequestId } = await payProtectedFetchWithMeta({
-    url: "/api/bridge/finalize",
-    method: "POST",
-    requestId: fallbackRequestId,
-    body: input.body,
-    walletClient: input.walletClient,
-    payer: input.payer,
-    chainId: ARC_CHAIN_ID,
-    headers: {
-      "Content-Type": "application/json",
-      "x-agentflow-bridge-rail": "eoa",
-      ...input.authHeaders,
-    },
-    onAwaitSignature: input.onAwaitSignature,
-  });
+  let response: Response;
+  let finalizedRequestId: string;
+  try {
+    ({ response, requestId: finalizedRequestId } = await payProtectedFetchWithMeta({
+      url: "/api/bridge/finalize",
+      method: "POST",
+      requestId: fallbackRequestId,
+      body: input.body,
+      walletClient: input.walletClient,
+      payer: input.payer,
+      chainId: ARC_CHAIN_ID,
+      headers: {
+        "Content-Type": "application/json",
+        "x-agentflow-bridge-rail": "eoa",
+        ...input.authHeaders,
+      },
+      onAwaitSignature: input.onAwaitSignature,
+    }));
+  } catch (error) {
+    if (error && typeof error === "object" && !("requestId" in error)) {
+      (error as { requestId?: string }).requestId = fallbackRequestId;
+    }
+    throw error;
+  }
 
   if (!response.ok) {
     throw new Error("Bridge finalize failed");

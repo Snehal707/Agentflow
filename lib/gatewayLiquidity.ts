@@ -4,6 +4,8 @@ import { fetchGatewayBalanceForAddress } from './gateway-balance';
 
 const GATEWAY_BALANCE_EPSILON = 0.000001;
 const DEFAULT_GATEWAY_TOPUP_TARGET_USDC = 10;
+const DEFAULT_AFTER_TOPUP_BALANCE_ATTEMPTS = 8;
+const DEFAULT_AFTER_TOPUP_BALANCE_DELAY_MS = 1500;
 
 function parseUsdcAmount(value: string): number {
   const parsed = Number(value);
@@ -20,6 +22,24 @@ function gatewayTopUpTargetUsdc(requiredAmountUsdc: number): number {
     ? configured
     : DEFAULT_GATEWAY_TOPUP_TARGET_USDC;
   return Math.max(requiredAmountUsdc, target);
+}
+
+function afterTopUpBalanceAttempts(): number {
+  const parsed = Number.parseInt(process.env.GATEWAY_AFTER_TOPUP_BALANCE_ATTEMPTS || '', 10);
+  return Number.isFinite(parsed) && parsed > 0
+    ? parsed
+    : DEFAULT_AFTER_TOPUP_BALANCE_ATTEMPTS;
+}
+
+function afterTopUpBalanceDelayMs(): number {
+  const parsed = Number.parseInt(process.env.GATEWAY_AFTER_TOPUP_BALANCE_DELAY_MS || '', 10);
+  return Number.isFinite(parsed) && parsed >= 0
+    ? parsed
+    : DEFAULT_AFTER_TOPUP_BALANCE_DELAY_MS;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 export type EnsureGatewayBuyerBalanceResult = {
@@ -100,8 +120,19 @@ export async function ensureGatewayBuyerBalance(input: {
     );
   }
 
-  const after = await fetchGatewayBalanceForAddress(payer);
-  const availableAfterUsdc = parseUsdcAmount(after.available);
+  let availableAfterUsdc = 0;
+  const attempts = afterTopUpBalanceAttempts();
+  const delayMs = afterTopUpBalanceDelayMs();
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    const after = await fetchGatewayBalanceForAddress(payer);
+    availableAfterUsdc = parseUsdcAmount(after.available);
+    if (availableAfterUsdc + GATEWAY_BALANCE_EPSILON >= requiredAmountUsdc) {
+      break;
+    }
+    if (attempt < attempts && delayMs > 0) {
+      await sleep(delayMs);
+    }
+  }
 
   if (availableAfterUsdc + GATEWAY_BALANCE_EPSILON < requiredAmountUsdc) {
     throw new Error(

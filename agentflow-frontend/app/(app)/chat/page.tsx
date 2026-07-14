@@ -4353,28 +4353,37 @@ function ChatPageInner() {
       paymentRequestId = finalized.requestId;
       paymentAttemptSnapshot = await readX402AttemptSnapshot(finalized.requestId);
     } catch (error) {
-      paymentAttemptSnapshot = await waitForX402AttemptTerminalState(finalizeRequestId);
+      const finalizeErrorRequestId =
+        error && typeof error === "object" && "requestId" in error
+          ? String((error as { requestId?: unknown }).requestId || "").trim()
+          : "";
+      const failedFinalizeRequestId = finalizeErrorRequestId || finalizeRequestId;
+      if (failedFinalizeRequestId !== finalizeRequestId) {
+        paymentMode = "eoa";
+        paymentPayer = connectedAddress;
+      }
+      paymentAttemptSnapshot = await waitForX402AttemptTerminalState(failedFinalizeRequestId);
       if (paymentAttemptSnapshot?.stage === "succeeded") {
-        paymentRequestId = finalizeRequestId;
+        paymentRequestId = failedFinalizeRequestId;
       } else if (isBridgeFinalizePendingStage(paymentAttemptSnapshot?.stage)) {
-        paymentRequestId = finalizeRequestId;
-        finalizeWarning = `The bridge reached Arc, and AgentFlow is still verifying the bridge receipt payment. Request ID: ${finalizeRequestId}`;
+        paymentRequestId = failedFinalizeRequestId;
+        finalizeWarning = `The bridge reached Arc, and AgentFlow is still verifying the bridge receipt payment. Request ID: ${failedFinalizeRequestId}`;
       } else if (isChainMismatchError(error)) {
-        paymentRequestId = finalizeRequestId;
-        finalizeWarning = `The bridge reached Arc, but your wallet is still connected to the source chain. Switch back to Arc to finish the AgentFlow bridge receipt payment. Request ID: ${finalizeRequestId}`;
+        paymentRequestId = failedFinalizeRequestId;
+        finalizeWarning = `The bridge reached Arc, but your wallet is still connected to the source chain. Switch back to Arc to finish the AgentFlow bridge receipt payment. Request ID: ${failedFinalizeRequestId}`;
       } else if (paymentAttemptSnapshot) {
-        paymentRequestId = finalizeRequestId;
+        paymentRequestId = failedFinalizeRequestId;
         finalizeWarning = paymentAttemptSnapshot.error
-          ? `${paymentAttemptSnapshot.error}\nRequest ID: ${finalizeRequestId}`
+          ? `${paymentAttemptSnapshot.error}\nRequest ID: ${failedFinalizeRequestId}`
           : friendlyChatErrorMessage(
               error,
-              `The bridge finished, but AgentFlow could not record the bridge receipt payment. Request ID: ${finalizeRequestId}`,
+              `The bridge finished, but AgentFlow could not record the bridge receipt payment. Request ID: ${failedFinalizeRequestId}`,
             );
       } else {
         paymentRequestId = null;
         finalizeWarning = friendlyChatErrorMessage(
           error,
-          `The bridge finished, but AgentFlow could not record the bridge receipt payment. Request ID: ${finalizeRequestId}`,
+          `The bridge finished, but AgentFlow could not record the bridge receipt payment. Request ID: ${failedFinalizeRequestId}`,
         );
       }
     }
