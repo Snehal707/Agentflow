@@ -754,6 +754,17 @@ function buildLiveDataSourceGrounding(
     if (!url) continue;
     const titleOrUrl = `${asString(page?.title) || ''} ${url}`;
     if (!matchesPredictionMarketSourceTokens(task, titleOrUrl)) continue;
+    const pageText = [
+      asString(page?.title),
+      asString(page?.description),
+      asString(page?.summary),
+      url,
+    ]
+      .filter(Boolean)
+      .join(' ');
+    if (!articleMatchesPrimaryTopic(task, primaryTopicLabel ?? null, pageText)) {
+      continue;
+    }
     pushGroundedSource(grounding, task, {
       name: 'Wikipedia',
       url,
@@ -865,6 +876,17 @@ function buildLiveDataSourceGrounding(
     const source = asObject(entry);
     const url = normalizeUrl(asString(source?.url));
     if (!url) continue;
+    const sourceText = [
+      asString(source?.title),
+      asString(source?.domain),
+      asString(source?.description),
+      url,
+    ]
+      .filter(Boolean)
+      .join(' ');
+    if (!articleMatchesPrimaryTopic(task, primaryTopicLabel ?? null, sourceText)) {
+      continue;
+    }
     pushGroundedSource(grounding, task, {
       name: asString(source?.title) ?? asString(source?.domain) ?? 'Retrieved source',
       url,
@@ -1481,6 +1503,12 @@ function buildRawClaims(params: FinalizeParams): RawClaimState {
     const grounded = resolveGroundedSourceHint(sourceGrounding, nameValue, urlValue);
     const rawUrl = normalizeUrl(asString(urlValue));
     const rawName = asString(nameValue);
+
+    if (!params.trustedResearchSources && !sourceGrounding.hasEvidenceInventory) {
+      const descriptor = rawName || rawUrl || 'unknown source';
+      issues.push(`Unsupported ungrounded fast-report source omitted from final source list: ${descriptor}`);
+      return [];
+    }
 
     if (sourceGrounding.hasEvidenceInventory && !grounded) {
       if (

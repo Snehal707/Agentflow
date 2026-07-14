@@ -162,6 +162,8 @@ type CacheEntry<T> = {
 const LIVE_DATA_FETCH_TIMEOUT_MS = 4_000;
 const FAST_GDELT_FETCH_TIMEOUT_MS = 2_000;
 const LIVE_DATA_CACHE_TTL_MS = 60_000;
+const EXPLICIT_RESEARCH_LIVE_DATA_CACHE_TTL_MS = 10 * 60_000;
+const LIVE_DATA_STALE_FALLBACK_TTL_MS = 30 * 60_000;
 const COINGECKO_CACHE_TTL_MS = 30_000;
 const BITCOIN_ONCHAIN_CACHE_TTL_MS = 60_000;
 const DEFILLAMA_CACHE_TTL_MS = 300_000;
@@ -1033,6 +1035,53 @@ function filterFastResearchDynamicEvidence(
   });
 
   return selectFastResearchEvidenceWithHostDiversity(filtered, 6);
+}
+
+function recordValue(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function arrayValue(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function liveArticleEvidenceCount(payload: Record<string, unknown>): number {
+  const dynamicSources = recordValue(payload.dynamic_sources);
+  const currentEvents = recordValue(payload.current_events);
+  return (
+    arrayValue(dynamicSources?.articles).length +
+    arrayValue(currentEvents?.article_snapshots).length +
+    arrayValue(currentEvents?.articles).length
+  );
+}
+
+function shouldCacheLiveDataPayload(
+  task: string,
+  payload: Record<string, unknown>,
+  hasSourceData: boolean,
+): boolean {
+  if (!hasSourceData) return false;
+  if (
+    !isPredictionMarketResearchTask(task) &&
+    detectResearchDomain(task) === 'general' &&
+    isExplicitExternalResearchTask(task)
+  ) {
+    return liveArticleEvidenceCount(payload) > 0;
+  }
+  return true;
+}
+
+function liveDataCacheTtlForTask(task: string): number {
+  return (
+    !isPredictionMarketResearchTask(task) &&
+    detectResearchDomain(task) === 'general' &&
+    isExplicitExternalResearchTask(task) &&
+    !isTimeSensitiveTask(task)
+  )
+    ? EXPLICIT_RESEARCH_LIVE_DATA_CACHE_TTL_MS
+    : LIVE_DATA_CACHE_TTL_MS;
 }
 
 function selectFastResearchEvidenceWithHostDiversity(
@@ -3032,6 +3081,15 @@ function getCacheValue<T>(entry: CacheEntry<T> | null | undefined): T | null {
   return entry.value;
 }
 
+function getStaleCacheValue<T>(
+  entry: CacheEntry<T> | null | undefined,
+  staleFallbackTtlMs: number,
+): T | null {
+  if (!entry) return null;
+  if (Date.now() - entry.expiresAt > staleFallbackTtlMs) return null;
+  return entry.value;
+}
+
 function setTimedCache<T>(
   map: Map<string, CacheEntry<T>>,
   key: string,
@@ -3600,8 +3658,7 @@ function shouldBypassCurrentEventCaches(task: string): boolean {
   const cleanedTask = stripExecutionContext(task);
   return (
     detectResearchDomain(cleanedTask) === 'geopolitics' ||
-    isTimeSensitiveTask(cleanedTask) ||
-    isExplicitExternalResearchTask(cleanedTask)
+    isTimeSensitiveTask(cleanedTask)
   );
 }
 
@@ -6867,7 +6924,8 @@ export async function fetchLiveData(
   const bypassCurrentEventCache =
     shouldBypassCurrentEventCaches(contextTask) || shouldBypassCurrentEventCaches(sourceTask);
   const useLiveDataCache = !bypassCurrentEventCache && !isPredictionMarketTask;
-  const cached = useLiveDataCache ? getCacheValue(liveDataCache.get(normalizedTask)) : null;
+  const liveCacheEntry = normalizedTask ? liveDataCache.get(normalizedTask) : undefined;
+  const cached = useLiveDataCache ? getCacheValue(liveCacheEntry) : null;
   if (cached) {
     return cached;
   }
@@ -7359,11 +7417,22 @@ export async function fetchLiveData(
       payload.dynamic_sources,
   );
   const result = hasSourceData ? JSON.stringify(payload, null, 2) : '';
+  const shouldCacheResult = shouldCacheLiveDataPayload(contextTask, payload, hasSourceData);
 
-  if (normalizedTask && useLiveDataCache && hasSourceData) {
+  if (normalizedTask && useLiveDataCache && !shouldCacheResult) {
+    const staleCached = getStaleCacheValue(
+      liveCacheEntry,
+      LIVE_DATA_STALE_FALLBACK_TTL_MS,
+    );
+    if (staleCached) {
+      return staleCached;
+    }
+  }
+
+  if (normalizedTask && useLiveDataCache && shouldCacheResult) {
     liveDataCache.set(normalizedTask, {
       value: result,
-      expiresAt: Date.now() + LIVE_DATA_CACHE_TTL_MS,
+      expiresAt: Date.now() + liveDataCacheTtlForTask(contextTask),
     });
   }
 

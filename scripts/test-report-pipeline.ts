@@ -1325,9 +1325,64 @@ assert.doesNotMatch(duckDuckGoSearchContextIsNotFinalSource.markdown, /duckduckg
 assert.doesNotMatch(duckDuckGoSearchContextIsNotFinalSource.markdown, /\bDuckDuckGo\b/i);
 assert.doesNotMatch(duckDuckGoSearchContextIsNotFinalSource.markdown, /tracxn\.com/i);
 assert.doesNotMatch(duckDuckGoSearchContextIsNotFinalSource.markdown, /\bTracxn\b/i);
-assert.match(
+assert.doesNotMatch(
   duckDuckGoSearchContextIsNotFinalSource.markdown,
   /indiaai\.gov\.in\/article\/future-of-ai-in-india/i,
+);
+assert.match(
+  duckDuckGoSearchContextIsNotFinalSource.markdown,
+  /Source URLs were not available/i,
+);
+
+const broadAiIndiaReportDropsDictionaryAndOffTopicWikiLiveData = finalizeReportMarkdown({
+  task: 'research on future of AI in India',
+  writerMarkdown: `## Overview
+
+Fast report with noisy live retrieval.
+
+## Sources
+
+- Placeholder`,
+  research: {
+    topic: 'Future of AI in India',
+  },
+  analysis: null,
+  liveData: {
+    snapshot_at: '2026-07-14T00:00:00.000Z',
+    dynamic_sources: {
+      articles: [
+        {
+          title: 'Future Definition & Meaning',
+          publisher: 'Merriam-Webster',
+          url: 'https://www.merriam-webster.com/dictionary/future',
+          summary: 'Dictionary definition of future.',
+          seen_at: '2026-07-14T00:00:00.000Z',
+        },
+      ],
+    },
+    wikipedia: {
+      pages: [
+        {
+          title: 'Future (rapper)',
+          url: 'https://en.wikipedia.org/wiki/Future_(rapper)',
+          summary: 'American rapper.',
+          last_updated_at: '2026-07-14T00:00:00.000Z',
+        },
+      ],
+    },
+  },
+});
+assert.doesNotMatch(
+  broadAiIndiaReportDropsDictionaryAndOffTopicWikiLiveData.markdown,
+  /merriam-webster\.com\/dictionary\/future/i,
+);
+assert.doesNotMatch(
+  broadAiIndiaReportDropsDictionaryAndOffTopicWikiLiveData.markdown,
+  /wikipedia\.org\/wiki\/Future_\(rapper\)/i,
+);
+assert.match(
+  broadAiIndiaReportDropsDictionaryAndOffTopicWikiLiveData.markdown,
+  /Source URLs were not available/i,
 );
 
 console.log('Before example:');

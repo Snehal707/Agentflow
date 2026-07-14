@@ -160,6 +160,13 @@ export function isLowValueSourceForTask(task: string, source: SourceLike): boole
   if (!asksForCommunityEvidence(task) && /\bforums?\./.test(domain)) return true;
   if (!asksForCommunityEvidence(task) && /\bforum[-.]/.test(domain)) return true;
   if (/\/square\/post\//i.test(url)) return true;
+  if (
+    /\b(?:merriam-webster\.com\/dictionary|dictionary\.cambridge\.org|collinsdictionary\.com|dictionary\.com)\b/i.test(
+      url,
+    )
+  ) {
+    return true;
+  }
   if (/pdf\.js\/web\/viewer\.html|(?:login|signout).*[?&](?:source|redirect|url)=/i.test(url)) {
     return true;
   }
