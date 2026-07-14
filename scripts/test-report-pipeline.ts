@@ -1065,7 +1065,7 @@ India is expanding AI investment.
     },
   },
 });
-assert.match(
+assert.doesNotMatch(
   broadAiIndiaReportDropsSocialPageFallback.markdown,
   /indiaai\.gov\.in\/article\/national-ai-strategy/i,
 );
@@ -1158,7 +1158,7 @@ assert.doesNotMatch(
   /indiaai\.gov\.in\/article\/future-of-ai-in-india/i,
 );
 
-const sourceOnlyResearchPayloadStillRendersSources = finalizeReportMarkdown({
+const sourceOnlyResearchPayloadReportsRetrievalGap = finalizeReportMarkdown({
   task: 'research future of AI in India',
   writerMarkdown: `## Overview
 
@@ -1178,14 +1178,98 @@ Research payload has sources but sparse claims.`,
     snapshot_at: '2026-07-14T00:00:00.000Z',
   },
 });
-assert.match(
-  sourceOnlyResearchPayloadStillRendersSources.markdown,
+assert.doesNotMatch(
+  sourceOnlyResearchPayloadReportsRetrievalGap.markdown,
   /niti\.gov\.in\/ai-india-report-2026/i,
 );
-assert.doesNotMatch(
-  sourceOnlyResearchPayloadStillRendersSources.markdown,
+assert.match(
+  sourceOnlyResearchPayloadReportsRetrievalGap.markdown,
   /Source URLs were not available/i,
 );
+
+const inventedFastResearchSources = [
+  {
+    name: 'Hindustan Times',
+    url: 'https://www.hindustantimes.com/tech/google-ai-investment',
+    used_for: 'LIVE DATA firecrawl article snapshot',
+    publishedAt: '2026-03-17',
+  },
+  {
+    name: 'Economic Times',
+    url: 'https://economictimes.indiatimes.com/articleshow/wadhwani-ai-aws',
+    used_for: 'LIVE DATA firecrawl article snapshot',
+    publishedAt: '2026-03-17',
+  },
+  {
+    name: 'WIPO',
+    url: 'https://www.wipo.int/portal/en/index.html',
+    used_for: 'AI patents data',
+    accessedAt: '2026-07-14',
+  },
+];
+
+const inventedFastResearchSourcesWithEmptyLiveData = finalizeReportMarkdown({
+  task: 'research on future of AI in India',
+  writerMarkdown: `## Overview
+
+Model invented sources.
+
+## Sources
+
+- Placeholder`,
+  research: {
+    topic: 'Future of AI in India',
+    sources: inventedFastResearchSources,
+  },
+  analysis: null,
+  liveData: {
+    snapshot_at: '2026-07-14T00:00:00.000Z',
+  },
+});
+assert.doesNotMatch(inventedFastResearchSourcesWithEmptyLiveData.markdown, /hindustantimes\.com/i);
+assert.doesNotMatch(inventedFastResearchSourcesWithEmptyLiveData.markdown, /economictimes\.indiatimes\.com/i);
+assert.doesNotMatch(inventedFastResearchSourcesWithEmptyLiveData.markdown, /wipo\.int/i);
+assert.match(
+  inventedFastResearchSourcesWithEmptyLiveData.markdown,
+  /Source URLs were not available/i,
+);
+
+const inventedFastResearchSourcesWithGroundedLiveData = finalizeReportMarkdown({
+  task: 'research on future of AI in India',
+  writerMarkdown: `## Overview
+
+Model invented sources.
+
+## Sources
+
+- Placeholder`,
+  research: {
+    topic: 'Future of AI in India',
+    sources: inventedFastResearchSources,
+  },
+  analysis: null,
+  liveData: {
+    snapshot_at: '2026-07-14T00:00:00.000Z',
+    dynamic_sources: {
+      articles: [
+        {
+          title: 'Empowering India’s next generation of innovators with ATL Saathi',
+          publisher: 'Google DeepMind',
+          url: 'https://deepmind.google/blog/empowering-indias-next-generation-of-innovators-with-atl-saathi/',
+          summary: 'Google and AIM launched ATL Saathi, a Gemini-powered AI tool for Indian educators.',
+          seen_at: '2026-07-13T00:00:00.000Z',
+        },
+      ],
+    },
+  },
+});
+assert.match(
+  inventedFastResearchSourcesWithGroundedLiveData.markdown,
+  /deepmind\.google\/blog\/empowering-indias-next-generation-of-innovators-with-atl-saathi/i,
+);
+assert.doesNotMatch(inventedFastResearchSourcesWithGroundedLiveData.markdown, /hindustantimes\.com/i);
+assert.doesNotMatch(inventedFastResearchSourcesWithGroundedLiveData.markdown, /economictimes\.indiatimes\.com/i);
+assert.doesNotMatch(inventedFastResearchSourcesWithGroundedLiveData.markdown, /wipo\.int/i);
 
 const duckDuckGoSearchContextIsNotFinalSource = finalizeReportMarkdown({
   task: 'research on future of AI in India',

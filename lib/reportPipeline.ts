@@ -421,6 +421,19 @@ function articleMatchesPrimaryTopic(
   primaryTopicLabel: string | null,
   articleText: string,
 ): boolean {
+  const taskLower = task.toLowerCase();
+  const textLower = articleText.toLowerCase();
+  const hasAiTask = /\b(?:ai|artificial intelligence|machine learning|llm|llms)\b/i.test(taskLower);
+  const hasIndiaTask = /\bindia\b|\bindian\b|\bindiaai\b/i.test(taskLower);
+  if (hasAiTask && hasIndiaTask) {
+    return (
+      /\b(?:ai|artificial intelligence|machine learning|llm|llms|deepmind|openai|google research|microsoft research|anthropic)\b/i.test(
+        textLower,
+      ) &&
+      /\b(?:india|indian|indiaai|meity|niti aayog|niti)\b/i.test(textLower)
+    );
+  }
+
   if (shouldBypassPrimaryTopicSourceFilter(task, primaryTopicLabel)) {
     return true;
   }
@@ -764,6 +777,18 @@ function buildLiveDataSourceGrounding(
   }
   for (const entry of asArray(liveCurrentEvents?.article_snapshots)) {
     const article = asObject(entry);
+    const articleText = [
+      asString(article?.title),
+      asString(article?.summary),
+      asString(article?.publisher),
+      asString(article?.domain),
+      asString(article?.url),
+    ]
+      .filter(Boolean)
+      .join(' ');
+    if (!articleMatchesPrimaryTopic(task, primaryTopicLabel ?? null, articleText)) {
+      continue;
+    }
     const url = normalizeUrl(asString(article?.url));
     if (!url) continue;
     pushGroundedSource(grounding, task, {
@@ -780,6 +805,18 @@ function buildLiveDataSourceGrounding(
   }
   for (const entry of asArray(liveCurrentEvents?.articles)) {
     const article = asObject(entry);
+    const articleText = [
+      asString(article?.title),
+      asString(article?.summary),
+      asString(article?.publisher),
+      asString(article?.domain),
+      asString(article?.url),
+    ]
+      .filter(Boolean)
+      .join(' ');
+    if (!articleMatchesPrimaryTopic(task, primaryTopicLabel ?? null, articleText)) {
+      continue;
+    }
     const url = normalizeUrl(asString(article?.url));
     if (!url) continue;
     pushGroundedSource(grounding, task, {
@@ -1127,6 +1164,18 @@ function addSupplementalLiveEvidenceSources(
     ...asArray(events?.articles),
   ].slice(0, 6)) {
     const article = asObject(entry);
+    const articleText = [
+      asString(article?.title),
+      asString(article?.summary),
+      asString(article?.publisher),
+      asString(article?.domain),
+      asString(article?.url),
+    ]
+      .filter(Boolean)
+      .join(' ');
+    if (!articleMatchesPrimaryTopic(task, primaryTopicLabel ?? null, articleText)) {
+      continue;
+    }
     add(
       asString(article?.publisher) ?? asString(article?.domain) ?? asString(article?.title) ?? 'Current event source',
       article?.url,
@@ -2447,7 +2496,7 @@ function buildFallbackSourcesFromLiveData(
   trustedResearchSources = false,
 ): NormalizedReportSource[] {
   const liveOnlyGrounding = buildLiveDataSourceGrounding(liveData, task, primaryTopicLabel);
-  const grounding = trustedResearchSources || !liveOnlyGrounding.hasEvidenceInventory
+  const grounding = trustedResearchSources
     ? buildLiveDataSourceGrounding(liveData, task, primaryTopicLabel, research)
     : liveOnlyGrounding;
   const deduped = [...grounding.byUrl.values()]

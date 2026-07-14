@@ -2761,8 +2761,37 @@ function sanitizePredictionMarketCurrentEvents(
   currentEvents: CurrentEventsSnapshot | null,
   understanding?: MarketUnderstanding | null,
 ): CurrentEventsSnapshot | null {
-  if (!currentEvents || !/\bprediction market\b/i.test(task)) {
+  if (!currentEvents) {
     return currentEvents;
+  }
+
+  if (!/\bprediction market\b/i.test(task)) {
+    if (!isExplicitExternalResearchTask(task)) {
+      return currentEvents;
+    }
+
+    const anchorGroups = fastResearchTopicAnchorGroups(task);
+    const relevantToFastResearch = (
+      article: GdeltArticleSnapshot | FirecrawlArticleSnapshot,
+    ): boolean => {
+      if (!article.url) return false;
+      if (isLowValueSocialSourceUrl(article.url) || isLowValueVideoUrl(article.url)) return false;
+      if (isGoogleNewsUrl(article.url) || isGoogleConsentUrl(article.url)) return false;
+      const summary = 'summary' in article ? article.summary || '' : '';
+      const haystack = `${article.title} ${summary} ${article.publisher || ''} ${'domain' in article ? article.domain || '' : ''} ${article.url}`.toLowerCase();
+      if (anchorGroups.length > 0) {
+        return anchorGroups.every((group) =>
+          group.some((term) => containsAnchorTerm(haystack, term)),
+        );
+      }
+      return taskKeywordOverlap(task, haystack) >= 2;
+    };
+
+    return {
+      ...currentEvents,
+      articles: (currentEvents.articles || []).filter(relevantToFastResearch),
+      article_snapshots: (currentEvents.article_snapshots || []).filter(relevantToFastResearch),
+    };
   }
 
   const filterUrl = (url: string | undefined): boolean => {
@@ -7230,6 +7259,16 @@ export async function fetchLiveData(
           PREDICTION_MARKET_EVIDENCE_LIMIT,
         );
       }
+    }
+    if (
+      !isPredictionMarketTask &&
+      isExplicitExternalResearchTask(contextTask) &&
+      !creatorAudienceTask
+    ) {
+      finalFirecrawlEvidence = filterFastResearchDynamicEvidence(
+        contextTask,
+        finalFirecrawlEvidence,
+      );
     }
     if (
       !isPredictionMarketTask &&
