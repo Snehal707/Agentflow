@@ -2,22 +2,45 @@
  * Scrape a URL via Firecrawl (markdown). Used by extension + invoice PDF URL flow.
  * Env: FIRECRAWL_API_URL (default https://api.firecrawl.dev), FIRECRAWL_API_KEY.
  */
+const configuredFirecrawlConcurrency = Number(process.env.FIRECRAWL_MAX_CONCURRENCY || 3);
+const FIRECRAWL_MAX_CONCURRENCY =
+  Number.isFinite(configuredFirecrawlConcurrency) && configuredFirecrawlConcurrency > 0
+    ? Math.min(8, Math.floor(configuredFirecrawlConcurrency))
+    : 3;
+let activeFirecrawlRequests = 0;
+const firecrawlWaiters: Array<() => void> = [];
+
+async function withFirecrawlSlot<T>(work: () => Promise<T>): Promise<T> {
+  if (activeFirecrawlRequests >= FIRECRAWL_MAX_CONCURRENCY) {
+    await new Promise<void>((resolve) => firecrawlWaiters.push(resolve));
+  }
+  activeFirecrawlRequests += 1;
+  try {
+    return await work();
+  } finally {
+    activeFirecrawlRequests -= 1;
+    firecrawlWaiters.shift()?.();
+  }
+}
+
 export async function fetchUrlViaFirecrawl(url: string): Promise<string> {
   const base = (process.env.FIRECRAWL_API_URL || 'https://api.firecrawl.dev').replace(/\/+$/, '');
   const apiKey = process.env.FIRECRAWL_API_KEY || '';
 
-  const response = await fetch(`${base}/v2/scrape`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
-    },
-    body: JSON.stringify({
-      url,
-      formats: ['markdown'],
-      onlyMainContent: true,
+  const response = await withFirecrawlSlot(() =>
+    fetch(`${base}/v2/scrape`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+      },
+      body: JSON.stringify({
+        url,
+        formats: ['markdown'],
+        onlyMainContent: true,
+      }),
     }),
-  });
+  );
 
   const json = (await response.json().catch(() => ({}))) as {
     success?: boolean;
@@ -276,30 +299,32 @@ export async function searchFirecrawlNews(
   }
 
   try {
-    const response = await fetchJsonWithTimeout(
-      `${base}/v2/search`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+    const response = await withFirecrawlSlot(() =>
+      fetchJsonWithTimeout(
+        `${base}/v2/search`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+          },
+          body: JSON.stringify({
+            query,
+            limit,
+            sources: ['news', 'web'],
+            ignoreInvalidURLs: true,
+            ...(options?.recency === 'all'
+              ? {}
+              : { tbs: options?.recency === 'year' ? 'qdr:y' : options?.recency === 'month' ? 'qdr:m' : 'qdr:w' }),
+            timeout: 30_000,
+            // Keep discovery metadata-only. Asking self-hosted Firecrawl to
+            // scrape every search hit made otherwise healthy searches exceed
+            // the 20-second client budget. The retrieval pipeline separately
+            // scrapes only the small, ranked set of pages it actually retains.
+          }),
         },
-        body: JSON.stringify({
-          query,
-          limit,
-          sources: ['news', 'web'],
-          ignoreInvalidURLs: true,
-          ...(options?.recency === 'all'
-            ? {}
-            : { tbs: options?.recency === 'year' ? 'qdr:y' : options?.recency === 'month' ? 'qdr:m' : 'qdr:w' }),
-          timeout: 30_000,
-          // Keep discovery metadata-only. Asking self-hosted Firecrawl to
-          // scrape every search hit made otherwise healthy searches exceed
-          // the 20-second client budget. The retrieval pipeline separately
-          // scrapes only the small, ranked set of pages it actually retains.
-        }),
-      },
-      FIRECRAWL_FETCH_TIMEOUT_MS,
+        FIRECRAWL_FETCH_TIMEOUT_MS,
+      ),
     );
 
     const json = (await response.json().catch(() => ({}))) as {
