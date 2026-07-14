@@ -7,19 +7,56 @@ const FIRECRAWL_MAX_CONCURRENCY =
   Number.isFinite(configuredFirecrawlConcurrency) && configuredFirecrawlConcurrency > 0
     ? Math.min(8, Math.floor(configuredFirecrawlConcurrency))
     : 3;
+const configuredFirecrawlQueueTimeoutMs = Number(process.env.FIRECRAWL_QUEUE_TIMEOUT_MS || 8_000);
+const FIRECRAWL_QUEUE_TIMEOUT_MS =
+  Number.isFinite(configuredFirecrawlQueueTimeoutMs) && configuredFirecrawlQueueTimeoutMs > 0
+    ? Math.max(1_000, Math.floor(configuredFirecrawlQueueTimeoutMs))
+    : 8_000;
 let activeFirecrawlRequests = 0;
-const firecrawlWaiters: Array<() => void> = [];
+type FirecrawlWaiter = {
+  active: boolean;
+  resolve: () => void;
+  reject: (error: Error) => void;
+  timer: ReturnType<typeof setTimeout> | null;
+};
+const firecrawlWaiters: FirecrawlWaiter[] = [];
+
+async function acquireFirecrawlSlot(): Promise<void> {
+  if (activeFirecrawlRequests < FIRECRAWL_MAX_CONCURRENCY) {
+    activeFirecrawlRequests += 1;
+    return;
+  }
+
+  await new Promise<void>((resolve, reject) => {
+    const waiter: FirecrawlWaiter = { active: true, resolve, reject, timer: null };
+    waiter.timer = setTimeout(() => {
+      if (!waiter.active) return;
+      waiter.active = false;
+      reject(new Error(`Firecrawl queue timed out after ${FIRECRAWL_QUEUE_TIMEOUT_MS}ms`));
+    }, FIRECRAWL_QUEUE_TIMEOUT_MS);
+    firecrawlWaiters.push(waiter);
+  });
+}
+
+function releaseFirecrawlSlot(): void {
+  activeFirecrawlRequests = Math.max(0, activeFirecrawlRequests - 1);
+  while (firecrawlWaiters.length > 0) {
+    const waiter = firecrawlWaiters.shift();
+    if (!waiter?.active) continue;
+    waiter.active = false;
+    if (waiter.timer) clearTimeout(waiter.timer);
+    activeFirecrawlRequests += 1;
+    waiter.resolve();
+    break;
+  }
+}
 
 async function withFirecrawlSlot<T>(work: () => Promise<T>): Promise<T> {
-  if (activeFirecrawlRequests >= FIRECRAWL_MAX_CONCURRENCY) {
-    await new Promise<void>((resolve) => firecrawlWaiters.push(resolve));
-  }
-  activeFirecrawlRequests += 1;
+  await acquireFirecrawlSlot();
   try {
     return await work();
   } finally {
-    activeFirecrawlRequests -= 1;
-    firecrawlWaiters.shift()?.();
+    releaseFirecrawlSlot();
   }
 }
 
@@ -28,18 +65,22 @@ export async function fetchUrlViaFirecrawl(url: string): Promise<string> {
   const apiKey = process.env.FIRECRAWL_API_KEY || '';
 
   const response = await withFirecrawlSlot(() =>
-    fetch(`${base}/v2/scrape`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+    fetchJsonWithTimeout(
+      `${base}/v2/scrape`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+        },
+        body: JSON.stringify({
+          url,
+          formats: ['markdown'],
+          onlyMainContent: true,
+        }),
       },
-      body: JSON.stringify({
-        url,
-        formats: ['markdown'],
-        onlyMainContent: true,
-      }),
-    }),
+      FIRECRAWL_FETCH_TIMEOUT_MS,
+    ),
   );
 
   const json = (await response.json().catch(() => ({}))) as {

@@ -176,7 +176,9 @@ const THN_RSS_CACHE_TTL_MS = 120_000;
 const WIKIPEDIA_CACHE_TTL_MS = 300_000;
 const FIRECRAWL_CACHE_TTL_MS = 300_000;
 const FIRECRAWL_EMPTY_RETRY_DELAY_MS = 1_500;
-const HYBRID_FIRECRAWL_SEARCH_TIMEOUT_MS = 35_000;
+const HYBRID_FIRECRAWL_SEARCH_TIMEOUT_MS = Number(
+  process.env.HYBRID_FIRECRAWL_SEARCH_TIMEOUT_MS || 30_000,
+);
 const GDELT_MIN_INTERVAL_MS = 6_000;
 const THN_RSS_URL = 'https://feeds.feedburner.com/TheHackersNews';
 const CURRENT_EVENT_RECENCY_WINDOW_DAYS = Number(
@@ -4997,7 +4999,7 @@ async function fetchFirecrawlSearchSnapshots(
     return score;
   };
   const isPredictionMarketQuery = /\bprediction market\b/i.test(task);
-  const maxQueries = Math.min(uniqueQueries.length, isPredictionMarketQuery ? 5 : 5);
+  const maxQueries = Math.min(uniqueQueries.length, isPredictionMarketQuery ? 4 : 5);
   const sortedQueries = uniqueQueries.slice().sort((a, b) => scoreQuery(b) - scoreQuery(a));
 
   // Guarantee broad subject queries are actually searched. site:-scoped queries score highly but
@@ -5161,16 +5163,25 @@ async function fetchFirecrawlSearchSnapshots(
     options?.bypassCache === true,
   );
   const primaryRelevantCount = countRelevantSnapshots(snapshotGroups);
+  const retryIndexes = snapshotGroups
+    .map((group, index) => (group.length === 0 ? index : -1))
+    .filter((index) => index >= 0)
+    .slice(0, 1);
   if (
-    snapshotGroups.every((group) => group.length === 0) ||
-    (isPredictionMarketQuery && primaryRelevantCount < 2)
+    retryIndexes.length > 0 &&
+    (snapshotGroups.every((group) => group.length === 0) ||
+      (isPredictionMarketQuery && primaryRelevantCount < 2))
   ) {
     await sleep(FIRECRAWL_EMPTY_RETRY_DELAY_MS);
-    const retryGroups = await loadSnapshotGroups('retry', true);
-    snapshotGroups = snapshotGroups.map((group, index) => [
-      ...group,
-      ...(retryGroups[index] || []),
-    ]);
+    const retryGroups = await mapWithConcurrency(
+      retryIndexes,
+      1,
+      (index) => fetchSnapshotsForQuery(selectedQueries[index], 'retry', true),
+    );
+    snapshotGroups = snapshotGroups.map((group, index) => {
+      const retryPosition = retryIndexes.indexOf(index);
+      return retryPosition >= 0 ? [...group, ...(retryGroups[retryPosition] || [])] : group;
+    });
   }
   const __searchMs = Date.now() - __t0;
 

@@ -373,6 +373,8 @@ export interface PayProtectedResourceServerInput<TBody extends JsonRequestBody> 
   requestId?: string;
   idempotencyKey?: string;
   skipPreflight?: boolean;
+  /** Bound paid HTTP attempts for long-running or non-idempotent agent work. */
+  maxAttempts?: number;
 }
 
 function createNonce(): `0x${string}` {
@@ -769,6 +771,15 @@ export async function payProtectedResourceServer<
   PayProtectedResourceServerResult<TResponse>
 > {
   const method = input.method ?? 'POST';
+  const maxAttempts = Math.max(
+    1,
+    Math.min(
+      PAYMENT_RETRY_ATTEMPTS,
+      Number.isFinite(input.maxAttempts)
+        ? Math.floor(input.maxAttempts as number)
+        : PAYMENT_RETRY_ATTEMPTS,
+    ),
+  );
   const requestId = input.requestId?.trim() || `x402_${randomUUID()}`;
   const idempotencyKey =
     input.idempotencyKey?.trim() || buildDefaultIdempotencyKey(input);
@@ -1058,7 +1069,7 @@ export async function payProtectedResourceServer<
     let paidResponse: Response | null = null;
     let paidResponseBody = '';
     let paidData: TResponse | undefined;
-    for (let attempt = 1; attempt <= PAYMENT_RETRY_ATTEMPTS; attempt += 1) {
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
       let paymentPayload: any;
       try {
         pushX402TimingTrace(timingTrace, traceStart, 'before_create_payment_payload', {
@@ -1069,9 +1080,9 @@ export async function payProtectedResourceServer<
           attempt,
         });
       } catch (payloadError) {
-        const shouldRetry = attempt < PAYMENT_RETRY_ATTEMPTS && errorLooksRetriable(payloadError);
+        const shouldRetry = attempt < maxAttempts && errorLooksRetriable(payloadError);
         console.warn(
-          `[x402] create payment payload failed attempt=${attempt}/${PAYMENT_RETRY_ATTEMPTS} requestId=${requestId}:`,
+          `[x402] create payment payload failed attempt=${attempt}/${maxAttempts} requestId=${requestId}:`,
           payloadError instanceof Error ? payloadError.message : payloadError,
         );
         if (!shouldRetry) {
@@ -1184,13 +1195,13 @@ export async function payProtectedResourceServer<
         break;
       }
       const shouldRetry =
-        attempt < PAYMENT_RETRY_ATTEMPTS &&
+        attempt < maxAttempts &&
         paidResponseLooksRetriable(paidResponse.status, paidResponseBody);
       if (!shouldRetry) {
         break;
       }
       console.warn(
-        `[x402] paid request transient failure status=${paidResponse.status} attempt=${attempt}/${PAYMENT_RETRY_ATTEMPTS} requestId=${requestId}; retrying`,
+        `[x402] paid request transient failure status=${paidResponse.status} attempt=${attempt}/${maxAttempts} requestId=${requestId}; retrying`,
       );
       await sleep(retryDelayMs(attempt));
     }
