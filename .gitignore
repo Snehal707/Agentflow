@@ -9,7 +9,6 @@ tmp-*.txt
 hermes-brain/gateway_launcher.lock.json
 hermes-brain/gateway.pid
 hermes-brain/gateway_state.json
-.env
 foundry/.env
 .DS_Store
 *.log
@@ -73,3 +72,11 @@ agentflow-frontend/debug-chat.png
 
 # dev stack supervisor lock (runtime)
 .dev-stack.lock.json
+
+.projects/cache
+.projects/vault
+.projects/state.test.json
+.projects/state.local.test.json
+.env
+.env.*
+!.env.example
