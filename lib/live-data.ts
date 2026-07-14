@@ -2265,25 +2265,8 @@ function stripFirecrawlResearchScaffolding(task: string): string {
   return stripped.replace(/\s+/g, ' ').trim();
 }
 
-/**
- * "future of AI in X" often resolves to Future (the rapper) / Instant Future brand hits
- * in weak search backends. Prefer explicit "artificial intelligence" phrasing.
- */
-function rewriteAmbiguousFutureAiQuery(task: string): string {
-  let rewritten = task;
-  rewritten = rewritten.replace(
-    /\bfuture\s+of\s+(?:ai|a\.i\.|artificial\s+intelligence)\b/gi,
-    'artificial intelligence outlook for',
-  );
-  rewritten = rewritten.replace(
-    /\b(?:ai|a\.i\.)\s+in\s+india\b/gi,
-    'artificial intelligence in India',
-  );
-  return rewritten.replace(/\s+/g, ' ').trim();
-}
-
 function expandFirecrawlCryptoSymbols(task: string): string {
-  let expanded = rewriteAmbiguousFutureAiQuery(task);
+  let expanded = task;
   for (const rule of FIRECRAWL_SYMBOL_EXPANSIONS) {
     expanded = expanded.replace(rule.pattern, rule.replacement);
   }

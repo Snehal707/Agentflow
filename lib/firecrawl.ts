@@ -1,30 +1,10 @@
 /**
- * Resolve Firecrawl cloud/self-host env.
- * Supports legacy FIRECRAWL_API_URL/KEY plus Stripe Projects aliases
- * (FIRECRAWL_API_API_* / FIRECRAWL_PLAN_* / FIRECRAWL_API_BASE_URL).
- */
-export function resolveFirecrawlConfig(): { base: string; apiKey: string } {
-  const base = (
-    process.env.FIRECRAWL_API_URL ||
-    process.env.FIRECRAWL_API_API_BASE_URL ||
-    process.env.FIRECRAWL_PLAN_API_BASE_URL ||
-    process.env.FIRECRAWL_API_BASE_URL ||
-    'https://api.firecrawl.dev'
-  ).replace(/\/+$/, '');
-  const apiKey =
-    process.env.FIRECRAWL_API_KEY ||
-    process.env.FIRECRAWL_API_API_KEY ||
-    process.env.FIRECRAWL_PLAN_API_KEY ||
-    '';
-  return { base, apiKey };
-}
-
-/**
  * Scrape a URL via Firecrawl (markdown). Used by extension + invoice PDF URL flow.
  * Env: FIRECRAWL_API_URL (default https://api.firecrawl.dev), FIRECRAWL_API_KEY.
  */
 export async function fetchUrlViaFirecrawl(url: string): Promise<string> {
-  const { base, apiKey } = resolveFirecrawlConfig();
+  const base = (process.env.FIRECRAWL_API_URL || 'https://api.firecrawl.dev').replace(/\/+$/, '');
+  const apiKey = process.env.FIRECRAWL_API_KEY || '';
 
   const response = await fetch(`${base}/v2/scrape`, {
     method: 'POST',
@@ -170,24 +150,12 @@ async function fetchJsonWithTimeout(
 }
 
 export function getSearchBackendDiagnostics(): SearchBackendDiagnostic[] {
-  const { base: firecrawlBase } = resolveFirecrawlConfig();
+  const firecrawlBase = (process.env.FIRECRAWL_API_URL || 'https://api.firecrawl.dev').replace(/\/+$/, '');
   const searxngBase = configuredSearxngBaseUrl();
   const diagnostics: SearchBackendDiagnostic[] = [];
 
   const backends: Array<readonly ['firecrawl' | 'searxng', string, boolean]> = [
-    [
-      'firecrawl',
-      firecrawlBase,
-      Boolean(
-        (
-          process.env.FIRECRAWL_API_URL ||
-          process.env.FIRECRAWL_API_API_BASE_URL ||
-          process.env.FIRECRAWL_PLAN_API_BASE_URL ||
-          process.env.FIRECRAWL_API_BASE_URL ||
-          ''
-        ).trim(),
-      ),
-    ],
+    ['firecrawl', firecrawlBase, Boolean((process.env.FIRECRAWL_API_URL || '').trim())],
   ];
   if (searxngBase) {
     backends.push(['searxng', searxngBase, true]);
@@ -300,7 +268,8 @@ export async function searchFirecrawlNews(
   limit = 3,
   options?: { recency?: 'week' | 'month' | 'year' | 'all' },
 ): Promise<FirecrawlSearchResult[]> {
-  const { base, apiKey } = resolveFirecrawlConfig();
+  const base = (process.env.FIRECRAWL_API_URL || 'https://api.firecrawl.dev').replace(/\/+$/, '');
+  const apiKey = process.env.FIRECRAWL_API_KEY || '';
   const backoffError = getBackendBackoffError('firecrawl', base);
   if (backoffError) {
     throw backoffError;
