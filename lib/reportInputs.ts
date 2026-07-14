@@ -43,7 +43,7 @@ export function buildAnalystModelInput(params: {
         'If liveData.current_events.framing_signals exist, preserve them exactly and keep conflict status separate from route status.',
         params.portfolioImpact
           ? walletContextAvailable
-            ? 'Use liveData.wallet_context as private exposure context. Classify what the user actually holds (stablecoins, volatile crypto, DeFi, Gateway, mixed) and assess impact through those asset classes.'
+            ? 'Use liveData.wallet_context as private exposure context. Classify what the user actually holds (stablecoins, volatile crypto, DeFi, Gateway, mixed) and assess impact through those asset classes. For every personalized impact, identify an actual holding or position, a source-backed event finding, the transmission channel, expected direction, time horizon, and confidence. Reject any personalized claim that names an asset not present in the snapshot as if the user holds it.'
             : 'portfolio_impact is true but wallet_context_available is false. Do not infer or invent holdings, exposure mix, asset classes, balances, or personalized sensitivities. Keep the analysis general and note that the portfolio snapshot was unavailable if personalization would otherwise be required.'
           : 'Ignore liveData.wallet_context for report framing unless portfolio_impact is true.',
         'Do not expose full wallet addresses, raw balances, or PnL unless the task explicitly asks for a balance/portfolio breakdown.',
@@ -96,7 +96,7 @@ export function buildWriterModelInput(params: {
         'If liveData.current_events.framing_signals exist, keep the broader conflict status and each route status aligned with those signals.',
         params.portfolioImpact
           ? walletContextAvailable
-            ? 'When portfolio_impact is true and wallet_context_available is true, include a concise portfolio-relevant section keyed to liveData.wallet_context. Map the research findings to the user exposure profile without exposing raw balances, full wallet addresses, or PnL unless explicitly requested.'
+            ? 'When portfolio_impact is true and wallet_context_available is true, include a concise portfolio-relevant section keyed to liveData.wallet_context. Each impact bullet must connect (1) an actual holding or position, (2) a source-backed event finding, and (3) a concrete transmission channel, with direction, time horizon, and confidence. Cite the external event source; treat the private wallet snapshot as the authority for what the user holds. Do not expose raw balances, full wallet addresses, or PnL unless explicitly requested.'
             : 'When portfolio_impact is true but wallet_context_available is false, do not invent holdings, asset mix, wallet exposure, or portfolio sensitivities. Keep the report general and, if needed, say the portfolio snapshot was unavailable for personalization.'
           : 'When portfolio_impact is false, do not include any portfolio-oriented section and do not reference the user wallet, holdings, or positions.',
         'For stablecoin-heavy portfolios when portfolio_impact is true, focus on peg, issuer/reserve, redemption/liquidity, regulation, rates/Treasuries, on/off-ramp, and Gateway/settlement risks rather than generic BTC/ETH volatility.',

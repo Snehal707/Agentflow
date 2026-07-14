@@ -51,7 +51,10 @@ import {
   takeRecentExecutionMeta,
 } from './lib/tool-executor';
 import { detectForecastingIntent, fetchLiveData, shouldGatherCurrentEvents } from './lib/live-data';
-import { detectPortfolioImpactIntent, stripPortfolioImpactPhrasing } from './lib/portfolio-impact-intent';
+import {
+  detectPortfolioImpactIntent,
+  parseResearchRequest,
+} from './lib/portfolio-impact-intent';
 import { classifyPortfolioRequestMode } from './lib/portfolio-request-intent';
 import { extractAgentpayRemark } from './lib/agentpay-remark';
 import { generateInvoiceNumber } from './lib/invoice-number';
@@ -105,7 +108,10 @@ import {
   buildAnalystModelInput,
   buildWriterModelInput,
 } from './lib/reportInputs';
-import { finalizeReportMarkdown } from './lib/reportPipeline';
+import {
+  collectPreferredReportSources,
+  finalizeReportMarkdown,
+} from './lib/reportPipeline';
 import { maybeImproveFastReport } from './lib/fast-report-supervisor';
 import { setWalletForUser } from './lib/walletStore';
 import { payProtectedResourceServer } from './lib/x402ServerClient';
@@ -9438,6 +9444,35 @@ function ensureWalletContextInReport(
   if (!section) {
     return markdown;
   }
+  const walletContext = liveData?.wallet_context;
+  const hasUsableWalletContext = Boolean(
+    walletContext &&
+      typeof walletContext === 'object' &&
+      !(walletContext as ResearchWalletContext).error,
+  );
+  const hasExistingImpactSection =
+    /^#{2,3}\s+(?:Your Portfolio Impact|Personalized Portfolio Impact|Portfolio Impact|Portfolio Implications)\b/im.test(
+      markdown,
+    );
+
+  // Preserve the writer's event-to-holding reasoning when a real wallet snapshot was
+  // supplied. The former implementation always deleted that analysis and replaced it
+  // with a generic exposure template, which broke personalized-report alignment.
+  if (hasUsableWalletContext && hasExistingImpactSection) {
+    if (/^#{2,3}\s+Verified Portfolio Context\b/im.test(markdown)) {
+      return markdown;
+    }
+    const verifiedContext = section.replace(/^## Your Portfolio Impact/m, '## Verified Portfolio Context');
+    const sourcesIndex = markdown.search(/^##\s+Sources\b/im);
+    if (sourcesIndex >= 0) {
+      return `${markdown.slice(0, sourcesIndex).trim()}\n\n${verifiedContext}\n\n${markdown.slice(sourcesIndex).trim()}`;
+    }
+    return `${markdown.trim()}\n\n${verifiedContext}`;
+  }
+
+  // If no wallet snapshot exists, remove any model-generated personalized section so
+  // the report cannot invent holdings. Otherwise use the deterministic section only as
+  // a fallback when the writer did not produce event-specific portfolio analysis.
   const cleanedMarkdown = stripExistingPortfolioImpactSection(markdown);
 
   const sourcesIndex = cleanedMarkdown.search(/^##\s+Sources\b/im);
@@ -16058,9 +16093,11 @@ function createPublicApp(): express.Express {
     const timingTraceStart = Date.now();
     const pipelineTimingTrace: PipelineTimingTracePoint[] = [];
     const rawTask = (req.body?.task as string | undefined) ?? '';
-    const portfolioImpact =
-      req.body?.portfolioImpact === true || detectPortfolioImpactIntent(rawTask);
-    const task = portfolioImpact ? stripPortfolioImpactPhrasing(rawTask) : rawTask;
+    const parsedRequest = parseResearchRequest(rawTask, {
+      portfolioImpact: req.body?.portfolioImpact === true,
+    });
+    const portfolioImpact = parsedRequest.portfolioImpact;
+    const task = parsedRequest.researchTask;
     const timingTraceId = RESEARCH_TIMING_TRACE ? `openai-trace-${Date.now()}` : '';
     const userAddressInput = (req.body?.userAddress as string | undefined) ?? '';
     const reasoningMode = inferResearchReasoningMode({
@@ -16336,6 +16373,28 @@ function createPublicApp(): express.Express {
       pushPipelineTimingTrace(pipelineTimingTrace, timingTraceStart, 'before_live_data_source_summary');
       const parsedLiveData = researchResult.data.liveData ?? null;
       const actualSources = summarizeLiveDataSourceNames(parsedLiveData, task);
+      if (reasoningMode === 'fast') {
+        const preferredSources = collectPreferredReportSources({
+          task,
+          research: parsedResearch,
+          liveData: parsedLiveData,
+        });
+        const sourceDomains = new Set(
+          preferredSources.flatMap((source) => {
+            try {
+              return [new URL(source.url).hostname.replace(/^www\./i, '').toLowerCase()];
+            } catch {
+              return [];
+            }
+          }),
+        );
+        if (preferredSources.length < 2 || sourceDomains.size < 2) {
+          throw new Error(
+            'Live retrieval did not establish at least two independent public source domains. ' +
+              'The report stopped before the Analyst and Writer stages to avoid charging for an inadequately sourced result. Please retry or use deep research.',
+          );
+        }
+      }
       pushPipelineTimingTrace(pipelineTimingTrace, timingTraceStart, 'after_live_data_source_summary', {
         actualSourcesCount: actualSources.length,
       });
@@ -16652,11 +16711,12 @@ async function start(): Promise<void> {
     RESEARCH_AGENT_TIMEOUT_MS,
     async (req) => {
     const rawTask = (req.body?.task as string) ?? (req.query.task as string) ?? '';
-    const portfolioImpact =
-      req.body?.portfolioImpact === true ||
-      req.query.portfolioImpact === 'true' ||
-      detectPortfolioImpactIntent(rawTask);
-    const task = portfolioImpact ? stripPortfolioImpactPhrasing(rawTask) : rawTask;
+    const parsedRequest = parseResearchRequest(rawTask, {
+      portfolioImpact:
+        req.body?.portfolioImpact === true || req.query.portfolioImpact === 'true',
+    });
+    const portfolioImpact = parsedRequest.portfolioImpact;
+    const task = parsedRequest.researchTask;
     const researchContext =
       typeof req.body?.researchContext === 'string' && req.body.researchContext.trim()
         ? req.body.researchContext.trim()

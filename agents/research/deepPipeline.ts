@@ -1,4 +1,5 @@
 import type express from 'express';
+import { indexDeepResearchEvidence } from '../../lib/local-evidence-index';
 import { buildResearchBrief } from './orchestrator';
 import { buildResearchQueries } from './queryGen';
 import { retrieveSources } from './retriever';
@@ -165,6 +166,15 @@ export async function runDeepResearchCore(input: {
     sessionId: input.sessionId ?? null,
   }).catch((error) => {
     console.warn('[research-memory] deep persist skipped:', error instanceof Error ? error.message : String(error));
+  });
+  void indexDeepResearchEvidence({
+    brief,
+    sources,
+    claims: verified,
+  }).then((count) => {
+    if (count > 0) console.log(`[research-index] deep evidence queued documents=${count}`);
+  }).catch((error) => {
+    console.warn('[research-index] deep persist skipped:', error instanceof Error ? error.message : String(error));
   });
 
   return {
