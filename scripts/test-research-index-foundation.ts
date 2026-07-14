@@ -12,6 +12,10 @@ import {
 } from '../lib/local-evidence-index';
 import { buildResearchQueries } from '../agents/research/queryGen';
 import { retrieveSources } from '../agents/research/retriever';
+import {
+  deriveAllowedEntities,
+  hasNamedEntityAndStrongNarrowingSignal,
+} from '../agents/research/entityDetection';
 import type { ResearchBrief } from '../agents/research/types';
 
 const portfolioCases = [
@@ -76,6 +80,21 @@ const aiBrief = {
 const aiFutureQueries = buildResearchQueries(aiBrief);
 assert.ok(aiFutureQueries.some((query) => /^AI in China\b/i.test(query)));
 assert.equal(aiFutureQueries.some((query) => /^future\b/i.test(query)), false);
+assert.deepEqual(deriveAllowedEntities(aiBrief), ['China']);
+assert.equal(
+  hasNamedEntityAndStrongNarrowingSignal(aiBrief.query, aiBrief).matched,
+  false,
+  'freshness terms must not convert a broad geographic topic into narrow scope',
+);
+assert.equal(
+  hasNamedEntityAndStrongNarrowingSignal('Compare OpenAI vs Anthropic models', {
+    query: 'Compare OpenAI vs Anthropic models',
+    must_answer: [],
+    sub_questions: [],
+  }).matched,
+  true,
+  'comparison language should still force entity-aware narrow scope',
+);
 
 const requests: Array<{ method: string; url: string; authorization: string; body: unknown }> = [];
 const now = Date.now();

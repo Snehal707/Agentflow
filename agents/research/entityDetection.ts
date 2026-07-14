@@ -13,6 +13,7 @@ export const ENTITY_STOP_WORDS = new Set([
   'why',
   'when',
   'where',
+  'future',
 ]);
 
 const STRONG_NARROWING_SIGNAL_PATTERNS = [
@@ -22,10 +23,6 @@ const STRONG_NARROWING_SIGNAL_PATTERNS = [
   { label: 'comparison', pattern: /\bcomparison\b/i },
   { label: 'compared to', pattern: /\bcompared to\b/i },
   { label: 'impact of', pattern: /\bimpact of\b/i },
-  { label: 'latest', pattern: /\blatest\b/i },
-  { label: 'current', pattern: /\bcurrent\b/i },
-  { label: 'today', pattern: /\btoday\b/i },
-  { label: 'now', pattern: /\bnow\b/i },
 ] as const;
 
 export function deriveAllowedEntities(
