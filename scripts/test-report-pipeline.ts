@@ -1079,6 +1079,84 @@ assert.doesNotMatch(
   /Source URLs were not available/i,
 );
 
+const broadAiIndiaReportKeepsFreshSourcesOverModelFallbacks = finalizeReportMarkdown({
+  task: 'research on future of AI in India',
+  writerMarkdown: `## Overview
+
+India is expanding AI investment.
+
+## Sources
+
+- Model fallback sources`,
+  research: {
+    topic: 'Future of AI in India',
+    sources: [
+      {
+        name: 'indiaai.gov.in',
+        url: 'https://indiaai.gov.in/article/future-of-ai-in-india',
+        used_for: 'LIVE DATA article IndiaAI.gov.in summary',
+        publishedAt: '2026-07-14',
+      },
+      {
+        name: 'en.wikipedia.org',
+        url: 'https://en.wikipedia.org/wiki/Artificial_intelligence_in_India',
+        used_for: 'Wikipedia article on AI in India',
+        publishedAt: '2023-01-01',
+      },
+    ],
+  },
+  analysis: null,
+  liveData: {
+    snapshot_at: '2026-07-14T00:00:00.000Z',
+    current_events: {
+      articles: [
+        {
+          title: 'India’s TCS chair says AI agents may equal headcount, dampen hiring',
+          publisher: 'Reuters',
+          domain: 'reuters.com',
+          url: 'https://www.reuters.com/world/india/indias-tcs-chairman-expects-ai-agents-equal-employee-count-2026-06-09/',
+          seen_at: '2026-06-09T07:00:00.000Z',
+        },
+        {
+          title: 'Brookfield: AI and energy security driving India’s renewable future',
+          publisher: 'CNBC',
+          domain: 'cnbc.com',
+          url: 'https://www.cnbc.com/video/2026/07/02/why-brookfield-is-betting-big-on-indiaas-green-energy.html',
+          seen_at: '2026-07-02T07:00:00.000Z',
+        },
+      ],
+    },
+    dynamic_sources: {
+      articles: [
+        {
+          title: 'Empowering India’s next generation of innovators with ATL Saathi',
+          publisher: 'Google DeepMind',
+          url: 'https://deepmind.google/blog/empowering-indias-next-generation-of-innovators-with-atl-saathi/',
+          summary:
+            'Google and AIM launched ATL Saathi, a Gemini-powered AI tool empowering Indian educators in robotics labs.',
+          seen_at: '2026-07-13T12:37:28.000Z',
+        },
+      ],
+    },
+  },
+});
+assert.match(
+  broadAiIndiaReportKeepsFreshSourcesOverModelFallbacks.markdown,
+  /reuters\.com\/world\/india\/indias-tcs-chairman-expects-ai-agents-equal-employee-count-2026-06-09/i,
+);
+assert.match(
+  broadAiIndiaReportKeepsFreshSourcesOverModelFallbacks.markdown,
+  /cnbc\.com\/video\/2026\/07\/02\/why-brookfield-is-betting-big-on-indiaas-green-energy/i,
+);
+assert.match(
+  broadAiIndiaReportKeepsFreshSourcesOverModelFallbacks.markdown,
+  /deepmind\.google\/blog\/empowering-indias-next-generation-of-innovators-with-atl-saathi/i,
+);
+assert.match(
+  broadAiIndiaReportKeepsFreshSourcesOverModelFallbacks.markdown,
+  /indiaai\.gov\.in\/article\/future-of-ai-in-india/i,
+);
+
 const sourceOnlyResearchPayloadStillRendersSources = finalizeReportMarkdown({
   task: 'research future of AI in India',
   writerMarkdown: `## Overview
