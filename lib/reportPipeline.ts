@@ -639,7 +639,8 @@ function pushGroundedSource(
   const url = normalizeUrl(hint.url);
   const name = hint.name.trim();
   if (!url || !name) return;
-  if (isPredictionMarketResearchTask(task) && isGoogleNewsRssUrl(url)) return;
+  // Aggregator Google News links are not usable Sources footer URLs; require publisher URLs.
+  if (isGoogleNewsRssUrl(url)) return;
   if (isLowValueSocialSourceUrl(url)) return;
   if (isLowValueVideoUrl(url)) return;
   if (isCircularResearchSourceUrl(task, url)) return;

@@ -1385,6 +1385,121 @@ assert.match(
   /Source URLs were not available/i,
 );
 
+const climateEuropeResolvedRssSources = finalizeReportMarkdown({
+  task: 'research the climate outlook for Europe',
+  writerMarkdown: `## Overview
+
+Europe faces intensifying heat and flood risk.
+
+## Key Evidence
+
+Reuters and the EEA report record summer temperatures.
+
+## Sources
+
+- Reuters
+- EEA`,
+  research: {
+    topic: 'Climate outlook for Europe',
+    sources: [
+      { name: 'Reuters', used_for: 'Invented without matching live URL' },
+      { name: 'EEA', used_for: 'Invented without matching live URL' },
+    ],
+  },
+  analysis: null,
+  liveData: {
+    snapshot_at: '2026-07-14T12:00:00.000Z',
+    research_domain: 'general',
+    current_events: {
+      articles: [
+        {
+          title: 'Europe braces for extreme heat as climate records tumble',
+          publisher: 'The Guardian',
+          domain: 'theguardian.com',
+          url: 'https://www.theguardian.com/environment/2026/jul/10/europe-extreme-heat-climate',
+          seen_at: '2026-07-10T08:00:00.000Z',
+        },
+        {
+          title: 'WMO: Europe warming faster than global average',
+          publisher: 'World Meteorological Organization',
+          domain: 'wmo.int',
+          url: 'https://wmo.int/news/media-centre/europe-warming-faster-global-average',
+          seen_at: '2026-07-09T10:00:00.000Z',
+        },
+      ],
+    },
+    dynamic_sources: {
+      source: 'Google News RSS (resolved publisher URLs)',
+      articles: [
+        {
+          title: 'Europe braces for extreme heat as climate records tumble',
+          publisher: 'The Guardian',
+          url: 'https://www.theguardian.com/environment/2026/jul/10/europe-extreme-heat-climate',
+          summary: 'Guardian coverage of European extreme heat linked to climate change.',
+          seen_at: '2026-07-10T08:00:00.000Z',
+        },
+        {
+          title: 'WMO: Europe warming faster than global average',
+          publisher: 'World Meteorological Organization',
+          url: 'https://wmo.int/news/media-centre/europe-warming-faster-global-average',
+          summary: 'WMO statement on European warming trends.',
+          seen_at: '2026-07-09T10:00:00.000Z',
+        },
+      ],
+    },
+  },
+});
+assert.match(
+  climateEuropeResolvedRssSources.markdown,
+  /theguardian\.com\/environment\/2026\/jul\/10\/europe-extreme-heat-climate/i,
+);
+assert.match(
+  climateEuropeResolvedRssSources.markdown,
+  /wmo\.int\/news\/media-centre\/europe-warming-faster-global-average/i,
+);
+assert.doesNotMatch(
+  climateEuropeResolvedRssSources.markdown,
+  /Source URLs were not available/i,
+);
+
+const googleNewsAggregatorDroppedFromGrounding = finalizeReportMarkdown({
+  task: 'research the climate outlook for Europe',
+  writerMarkdown: `## Overview
+
+Heat risk rising.
+
+## Sources
+
+- The Guardian`,
+  research: {
+    topic: 'Climate outlook for Europe',
+    sources: [{ name: 'The Guardian', used_for: 'Model cited Google News URL' }],
+  },
+  analysis: null,
+  liveData: {
+    snapshot_at: '2026-07-14T12:00:00.000Z',
+    research_domain: 'general',
+    current_events: {
+      articles: [
+        {
+          title: 'Europe braces for extreme heat as climate records tumble',
+          publisher: 'The Guardian',
+          url: 'https://news.google.com/rss/articles/CBMiExampleGoogleOnly',
+          seen_at: '2026-07-10T08:00:00.000Z',
+        },
+      ],
+    },
+  },
+});
+assert.doesNotMatch(
+  googleNewsAggregatorDroppedFromGrounding.markdown,
+  /news\.google\.com\/rss\/articles/i,
+);
+assert.match(
+  googleNewsAggregatorDroppedFromGrounding.markdown,
+  /Source URLs were not available/i,
+);
+
 console.log('Before example:');
 console.log(badWriterMarkdown.split('\n').slice(0, 12).join('\n'));
 console.log('\nAfter example:');

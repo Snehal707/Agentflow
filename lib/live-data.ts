@@ -1037,6 +1037,61 @@ function filterFastResearchDynamicEvidence(
   return selectFastResearchEvidenceWithHostDiversity(filtered, 6);
 }
 
+/** Publisher URLs already resolved from Google News RSS / current-event merge (no google aggregators). */
+function collectPublisherEvidenceFromCurrentEvents(
+  currentEvents: CurrentEventsSnapshot | null,
+): FirecrawlArticleSnapshot[] {
+  if (!currentEvents) return [];
+
+  const fromSnapshots = (currentEvents.article_snapshots || []).filter(
+    (snapshot) =>
+      Boolean(snapshot.url) &&
+      !isGoogleNewsUrl(snapshot.url) &&
+      !isGoogleConsentUrl(snapshot.url) &&
+      !isLikelyHomepageUrl(snapshot.url) &&
+      !isLowValueSocialSourceUrl(snapshot.url) &&
+      !isLowValueVideoUrl(snapshot.url),
+  );
+  const fromArticles = (currentEvents.articles || [])
+    .map(dynamicArticleToFirecrawlSnapshot)
+    .filter((snapshot): snapshot is FirecrawlArticleSnapshot => Boolean(snapshot))
+    .filter(
+      (snapshot) =>
+        !isGoogleNewsUrl(snapshot.url) &&
+        !isGoogleConsentUrl(snapshot.url) &&
+        !isLikelyHomepageUrl(snapshot.url) &&
+        !isLowValueSocialSourceUrl(snapshot.url) &&
+        !isLowValueVideoUrl(snapshot.url),
+    );
+
+  const deduped = new Map<string, FirecrawlArticleSnapshot>();
+  for (const snapshot of [...fromSnapshots, ...fromArticles]) {
+    if (!deduped.has(snapshot.url)) {
+      deduped.set(snapshot.url, snapshot);
+    }
+  }
+  return [...deduped.values()];
+}
+
+function mergeCurrentEventPublisherEvidence(
+  task: string,
+  currentEvents: CurrentEventsSnapshot | null,
+  existing: FirecrawlArticleSnapshot[],
+  limit = 6,
+): FirecrawlArticleSnapshot[] {
+  const publisherEvidence = collectPublisherEvidenceFromCurrentEvents(currentEvents);
+  if (publisherEvidence.length === 0) return existing;
+
+  const combined = [...existing, ...publisherEvidence];
+  if (isExplicitExternalResearchTask(task) && !/\bprediction market\b/i.test(task)) {
+    return selectFastResearchEvidenceWithHostDiversity(
+      filterFastResearchDynamicEvidence(task, combined),
+      limit,
+    );
+  }
+  return selectFastResearchEvidenceWithHostDiversity(combined, limit);
+}
+
 function recordValue(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -5807,29 +5862,47 @@ async function fetchGoogleNewsRssData(
   const topSnapshots = snapshots
     .filter(isUsableCurrentEventArticle)
     .sort((a, b) => currentEventRank(b) - currentEventRank(a))
-    .slice(0, 3);
-  const resolvedSnapshots = await Promise.all(
-    topSnapshots.map(async (snapshot) => {
-      if (!isGoogleNewsUrl(snapshot.url)) {
-        return snapshot;
-      }
+    .slice(0, 10);
+  const resolvedSnapshots: GdeltArticleSnapshot[] = [];
+  // Resolve in small batches so Google decode does not stampede under LIVE_DATA timeout.
+  const resolveBatchSize = 4;
+  for (let offset = 0; offset < topSnapshots.length; offset += resolveBatchSize) {
+    const batch = topSnapshots.slice(offset, offset + resolveBatchSize);
+    const batchResolved = await Promise.all(
+      batch.map(async (snapshot) => {
+        if (!isGoogleNewsUrl(snapshot.url)) {
+          return isLikelyHomepageUrl(snapshot.url) ? null : snapshot;
+        }
 
-      const resolvedUrl = await resolveArticleUrl(snapshot.url);
-      const directUrl =
-        resolvedUrl && !isGoogleNewsUrl(resolvedUrl) && !isLikelyHomepageUrl(resolvedUrl)
-          ? resolvedUrl
-          : await recoverDirectArticleUrlFromSearch({
-              title: snapshot.title,
-              publisher: snapshot.publisher,
-              domain: snapshot.domain,
-            });
-      return {
-        ...snapshot,
-        article_url: snapshot.url,
-        url: directUrl || resolvedUrl,
-      };
-    }),
-  );
+        const resolvedUrl = await resolveArticleUrl(snapshot.url);
+        const directUrl =
+          resolvedUrl && !isGoogleNewsUrl(resolvedUrl) && !isLikelyHomepageUrl(resolvedUrl)
+            ? resolvedUrl
+            : await recoverDirectArticleUrlFromSearch({
+                title: snapshot.title,
+                publisher: snapshot.publisher,
+                domain: snapshot.domain,
+              });
+        const usableUrl =
+          directUrl && !isGoogleNewsUrl(directUrl) && !isLikelyHomepageUrl(directUrl)
+            ? directUrl
+            : resolvedUrl && !isGoogleNewsUrl(resolvedUrl) && !isLikelyHomepageUrl(resolvedUrl)
+              ? resolvedUrl
+              : null;
+        if (!usableUrl) return null;
+        return {
+          ...snapshot,
+          article_url: snapshot.url,
+          url: usableUrl,
+          domain: extractHostname(usableUrl) || snapshot.domain,
+        };
+      }),
+    );
+    for (const snapshot of batchResolved) {
+      if (snapshot) resolvedSnapshots.push(snapshot);
+    }
+    if (resolvedSnapshots.length >= 8) break;
+  }
 
   if (options?.bypassCache) {
     return resolvedSnapshots;
@@ -6088,7 +6161,12 @@ function buildMetadataSnapshotFromArticle(
   urlOverride?: string,
 ): FirecrawlArticleSnapshot | null {
   const url = (urlOverride || article.url || article.article_url || '').trim();
-  if (!url || isGoogleConsentUrl(url) || isLikelyHomepageUrl(url)) {
+  if (
+    !url ||
+    isGoogleConsentUrl(url) ||
+    isGoogleNewsUrl(url) ||
+    isLikelyHomepageUrl(url)
+  ) {
     return null;
   }
 
@@ -7185,6 +7263,13 @@ export async function fetchLiveData(
         );
       }
       payload.current_events = currentEvents.value;
+      const publisherEvidence = collectPublisherEvidenceFromCurrentEvents(currentEvents.value);
+      if (publisherEvidence.length > 0) {
+        payload.dynamic_sources = {
+          source: 'Google News RSS (resolved publisher URLs)',
+          articles: selectFastResearchEvidenceWithHostDiversity(publisherEvidence, 6),
+        };
+      }
       payload.premise_check = {
         verify_user_framing: true,
         as_of: snapshotAt,
@@ -7326,6 +7411,19 @@ export async function fetchLiveData(
       finalFirecrawlEvidence = filterFastResearchDynamicEvidence(
         contextTask,
         finalFirecrawlEvidence,
+      );
+    }
+    if (
+      !isPredictionMarketTask &&
+      isExplicitExternalResearchTask(contextTask) &&
+      finalFirecrawlEvidence.length < 4
+    ) {
+      // Prefer already-fetched Google News RSS publisher URLs when Firecrawl search is thin.
+      finalFirecrawlEvidence = mergeCurrentEventPublisherEvidence(
+        contextTask,
+        currentEvents,
+        finalFirecrawlEvidence,
+        6,
       );
     }
     if (
