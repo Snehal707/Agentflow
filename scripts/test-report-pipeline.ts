@@ -1363,6 +1363,51 @@ assert.match(sportsPredmarketRetainsNonWhitelistedSources.markdown, /espn\.com\/
 assert.match(sportsPredmarketRetainsNonWhitelistedSources.markdown, /abcnews\.go\.com\/sports/i);
 assert.match(sportsPredmarketRetainsNonWhitelistedSources.markdown, /usatoday\.com\/story\/sports\/soccer/i);
 
+const sportsPredmarketPrioritizesDecisionEvidence = finalizeReportMarkdown({
+  task: worldCupEvidenceTask,
+  writerMarkdown: `## Overview
+
+France led the latest retrieved model at 34.0%, followed by Spain, England, and Argentina.
+
+## Sources
+
+- [The Analyst](https://theanalyst.com/articles/buck-buchanan-award-fcs-football-defensive-player-preseason-watch-list-2026) - unrelated FCS watch list
+- [The Analyst](https://theanalyst.com/articles/world-cup-2026-semi-final-predictions-opta-supercomputer) - current tournament model
+- [Fox Sports](https://www.foxsports.com/stories/soccer/world-cup-2026-champion-odds) - current title odds
+- [BBC News](https://www.bbc.com/sport/football/articles/cjrgew3wv4xo) - semifinalist context`,
+  research: null,
+  analysis: null,
+  liveData: {
+    snapshot_at: '2026-07-14T00:00:00.000Z',
+    dynamic_sources: {
+      articles: [
+        {
+          title: 'FIFA World Cup 2026 Predictions: Opta Supercomputer Ahead of the Semi-Finals',
+          publisher: 'The Analyst',
+          url: 'https://theanalyst.com/articles/world-cup-2026-semi-final-predictions-opta-supercomputer',
+          summary: 'France won the tournament in 34.0% of simulations, Spain 23.4%, England 21.9%, and Argentina 20.6%.',
+        },
+        {
+          title: 'World Cup 2026 title odds',
+          publisher: 'Fox Sports',
+          url: 'https://www.foxsports.com/stories/soccer/world-cup-2026-champion-odds',
+          summary: 'Current outright winner odds and favorites.',
+        },
+        {
+          title: 'Who will win the World Cup?',
+          publisher: 'BBC News',
+          url: 'https://www.bbc.com/sport/football/articles/cjrgew3wv4xo',
+          summary: 'The view from the semifinalists.',
+        },
+      ],
+    },
+  },
+});
+assert.equal(sportsPredmarketPrioritizesDecisionEvidence.sources[0]?.url,
+  'https://theanalyst.com/articles/world-cup-2026-semi-final-predictions-opta-supercomputer');
+assert.match(sportsPredmarketPrioritizesDecisionEvidence.sources[0]?.usedFor || '', /34\.0% of simulations/i);
+assert.doesNotMatch(sportsPredmarketPrioritizesDecisionEvidence.markdown, /buck-buchanan|fcs-football/i);
+
 const structuredResearchSourceSurvivesGrounding = finalizeReportMarkdown({
   task: 'OpenAI latest model research',
   writerMarkdown: `## Summary

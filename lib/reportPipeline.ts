@@ -544,7 +544,7 @@ function isPredictionMarketOffTopicSource(task: string, text: string): boolean {
   if (
     /\bPrediction market category in AgentFlow:\s*Sports\b/i.test(task) &&
     /\b(world cup|fifa|winner|champion|title)\b/i.test(task) &&
-    (/\b(golden boot|golden glove|top scorer|top goalscorer|player of the tournament|most world cup appearances|women'?s world cup|u-?17|u-?20|under-17|under-20|half[- ]?time show|halftime show|quiz|red cards?|yellow cards?|disciplinary|goalkeeper profile|in profile|closing ceremony|match balls?|live match (?:blog|updates?)|player ratings?|box score)\b/i.test(
+    (/\b(golden boot|golden glove|top scorer|top goalscorer|player of the tournament|most world cup appearances|women'?s world cup|u-?17|u-?20|under-17|under-20|half[- ]?time show|halftime show|quiz|red cards?|yellow cards?|disciplinary|goalkeeper profile|in profile|closing ceremony|match balls?|live match (?:blog|updates?)|live updates? on today'?s matches|player ratings?|box score|fcs football|college football|buck buchanan|2030 world cup)\b/i.test(
       haystack,
     ) ||
       /\b(?:coach|manager|role|post|job)\b[^.\n]{0,50}\b(?:exit|exits|leaves|leaving|resigns|resigned|steps down)\b/i.test(
@@ -2608,7 +2608,7 @@ function buildSourcesSection(
   fallbackAccessDate?: string,
   task?: string,
 ): string {
-  const orderedSources = mergeNormalizedSources(sources, [], 24);
+  const orderedSources = mergeNormalizedSources(sources, [], 24, task);
   const dedupedSources: NormalizedReportSource[] = [];
   const selectedUrls = new Set<string>();
   const hostCounts = new Map<string, number>();
@@ -2678,10 +2678,37 @@ function buildFallbackSourcesFromLiveData(
   }));
 }
 
+function predictionMarketDecisionEvidenceScore(
+  task: string | undefined,
+  source: Pick<NormalizedReportSource, 'name' | 'url' | 'usedFor'>,
+): number {
+  if (
+    !task ||
+    !isPredictionMarketResearchTask(task) ||
+    !/\b(world cup|fifa|winner|champions league|nba|nfl|mlb|nhl|tennis)\b/i.test(task)
+  ) {
+    return 0;
+  }
+  const visibleEvidence = `${source.name} ${source.usedFor || ''}`;
+  const contextEvidence = `${visibleEvidence} ${source.url}`;
+  const hasWinnerContext =
+    /\b(winner odds|odds to win|outright odds|title odds|champion odds|who will win|win probability|winning probability|tournament predictions?|opta supercomputer|win the (?:world cup|tournament|title))\b/i.test(
+      contextEvidence,
+    );
+  const hasVisibleNumericEvidence =
+    /\b\d+(?:\.\d+)?\s*%(?![0-9a-f]{2})|\b[+-]\d{2,4}\b|\b\d+(?:\.\d+)?[-/]\d+(?:\.\d+)?\b/i.test(
+      visibleEvidence,
+    );
+  if (hasWinnerContext && hasVisibleNumericEvidence) return 2_000;
+  if (hasWinnerContext) return 300;
+  return 0;
+}
+
 function mergeNormalizedSources(
   primary: NormalizedReportSource[],
   supplemental: NormalizedReportSource[],
   maxItems = 8,
+  task?: string,
 ): NormalizedReportSource[] {
   const merged = new Map<string, NormalizedReportSource>();
   const directSourceNames = new Set<string>();
@@ -2728,6 +2755,8 @@ function mergeNormalizedSources(
   return [...merged.values()]
     .sort(
       (left, right) =>
+        predictionMarketDecisionEvidenceScore(task, right) -
+          predictionMarketDecisionEvidenceScore(task, left) ||
         sourcePriority(right.url, right.name) - sourcePriority(left.url, left.name) ||
         recencyScore(right) - recencyScore(left),
     )
@@ -3859,8 +3888,8 @@ export function finalizeReportMarkdown(params: FinalizeParams): {
     params.trustedResearchSources === true,
   );
   const mergedSources = isPredictionMarketResearchTask(params.task)
-    ? mergeNormalizedSources(state.sources, fallbackSources)
-    : mergeNormalizedSources(state.sources, fallbackSources);
+    ? mergeNormalizedSources(state.sources, fallbackSources, 8, params.task)
+    : mergeNormalizedSources(state.sources, fallbackSources, 8, params.task);
   const nonLowValueSources = mergedSources.filter(
     (source) => {
       const sourceText = `${source.name} ${source.url} ${source.usedFor || ''}`;
