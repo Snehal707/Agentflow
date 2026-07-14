@@ -1270,7 +1270,12 @@ function addSupplementalLiveEvidenceSources(
     add(
       asString(article?.publisher) ?? asString(article?.title) ?? 'Retrieved source',
       article?.url,
-      asString(article?.summary) ?? 'retrieved article evidence',
+      [asString(article?.title), asString(article?.summary)]
+        .filter(
+          (value, index, values): value is string =>
+            Boolean(value) && values.indexOf(value) === index,
+        )
+        .join(' — ') || 'retrieved article evidence',
       article?.seen_at,
     );
   }
@@ -1487,7 +1492,17 @@ function addLiveArticleClaims(
       return;
     }
 
-    const ids = addEvidenceSource(publisher, url, summary ?? title ?? 'retrieved article evidence');
+    const sourceUsage = [title, summary]
+      .filter(
+        (value, index, values): value is string =>
+          Boolean(value) && values.indexOf(value) === index,
+      )
+      .join(' — ');
+    const ids = addEvidenceSource(
+      publisher,
+      url,
+      sourceUsage || 'retrieved article evidence',
+    );
     if (!ids.length) return;
 
     addStructuredClaim({
@@ -3633,7 +3648,9 @@ export function assessFastReportEvidence(params: {
 
   if (isSportsWinnerMarket) {
     const numericWinnerEvidence = sources.some((source) => {
-      const evidence = `${source.name} ${source.url} ${source.usedFor || ''}`;
+      // URLs contain dates, IDs, and percent-encoded spaces; none are evidence.
+      // Only visible source titles/snippets may satisfy the numeric winner gate.
+      const evidence = `${source.name} ${source.usedFor || ''}`;
       const hasWinnerContext =
         /\b(winner odds|odds to win|outright odds|title odds|champion odds|who will win|win probability|winning probability|tournament predictions?|opta supercomputer)\b/i.test(
           evidence,
