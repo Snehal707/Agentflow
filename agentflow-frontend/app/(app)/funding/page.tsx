@@ -101,7 +101,7 @@ export default function FundsPage() {
   const executionWalletAddress = executionSummary?.userAgentWalletAddress ?? null;
   const dcwUsdcBalance = executionSummary?.balances.usdc.formatted ?? "0";
 
-  const { data: eoaUsdcRaw } = useReadContract({
+  const { data: eoaUsdcRaw, refetch: refetchEoaUsdc } = useReadContract({
     address: ARC_USDC_ADDRESS,
     abi: erc20Abi,
     functionName: "balanceOf",
@@ -143,6 +143,13 @@ export default function FundsPage() {
   useEffect(() => {
     void loadExecutionSummary();
   }, [loadExecutionSummary]);
+
+  const refreshBalances = useCallback(async () => {
+    await Promise.all([
+      loadExecutionSummary({ force: true }),
+      address ? refetchEoaUsdc() : Promise.resolve(),
+    ]);
+  }, [address, loadExecutionSummary, refetchEoaUsdc]);
 
   const ensureArcWallet = useCallback(async (): Promise<boolean> => {
     if (walletClient?.chain?.id === ARC_CHAIN_ID) {
@@ -217,7 +224,7 @@ export default function FundsPage() {
       setTxHash(hash);
       setMessage(`Sent ${amountNumber} USDC from your EOA to the DCW.`);
       setDepositAmount("");
-      await loadExecutionSummary({ force: true });
+      await refreshBalances();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Deposit to DCW failed.");
     } finally {
@@ -251,7 +258,7 @@ export default function FundsPage() {
       }
       setMessage(`Sent ${amountNumber} USDC from the DCW to your EOA.`);
       setWithdrawAmount("");
-      await loadExecutionSummary({ force: true });
+      await refreshBalances();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Withdraw to EOA failed.");
     } finally {
@@ -448,7 +455,7 @@ export default function FundsPage() {
                       </Link>
                       <button
                         type="button"
-                        onClick={() => void loadExecutionSummary({ force: true })}
+                        onClick={() => void refreshBalances()}
                         className="rounded-full border border-white/10 bg-[#121212] px-6 py-3 text-sm font-bold text-white/65 transition hover:border-[#f2ca50]/25 hover:text-[#f2ca50]"
                       >
                         Refresh balances
