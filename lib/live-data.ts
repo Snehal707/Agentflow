@@ -985,6 +985,38 @@ function fastResearchTopicAnchorGroups(task: string): string[][] {
   if (/\bindia\b|\bindian\b|\bindiaai\b/i.test(cleaned)) {
     groups.push(['india', 'indian', 'indiaai', 'meity', 'niti aayog', 'niti']);
   }
+  if (
+    /\b(?:climate|climatic|global warming|net[- ]zero|decarboni[sz]ation|greenhouse|emissions?)\b/i.test(
+      cleaned,
+    )
+  ) {
+    groups.push([
+      'climate',
+      'climatic',
+      'warming',
+      'heat',
+      'hottest',
+      'heatwave',
+      'heat wave',
+      'temperature',
+      'temperatures',
+      'emission',
+      'emissions',
+      'greenhouse',
+      'carbon',
+      'ipcc',
+      'flood',
+      'floods',
+      'drought',
+      'weather',
+      'net zero',
+      'decarbonisation',
+      'decarbonization',
+    ]);
+  }
+  if (/\beurope\b|\beuropean\b|\beu\b|\beurozone\b/i.test(cleaned)) {
+    groups.push(['europe', 'european', 'eu', 'eurozone', 'euro']);
+  }
 
   return groups;
 }

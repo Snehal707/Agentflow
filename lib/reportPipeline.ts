@@ -434,6 +434,20 @@ function articleMatchesPrimaryTopic(
     );
   }
 
+  const hasClimateTask =
+    /\b(?:climate|climatic|global warming|net[- ]zero|decarboni[sz]ation|greenhouse|emissions?)\b/i.test(
+      taskLower,
+    );
+  const hasEuropeTask = /\beurope\b|\beuropean\b|\beu\b|\beurozone\b/i.test(taskLower);
+  if (hasClimateTask && hasEuropeTask) {
+    return (
+      /\b(?:climate|climatic|warming|heat|hottest|heatwave|temperature|temperatures|emission|emissions|greenhouse|carbon|ipcc|flood|floods|drought|weather|net zero|decarbonisation|decarbonization)\b/i.test(
+        textLower,
+      ) &&
+      /\b(?:europe|european|eu|eurozone|euro)\b/i.test(textLower)
+    );
+  }
+
   if (shouldBypassPrimaryTopicSourceFilter(task, primaryTopicLabel)) {
     return true;
   }
