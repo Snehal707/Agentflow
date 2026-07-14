@@ -544,7 +544,7 @@ function isPredictionMarketOffTopicSource(task: string, text: string): boolean {
   if (
     /\bPrediction market category in AgentFlow:\s*Sports\b/i.test(task) &&
     /\b(world cup|fifa|winner|champion|title)\b/i.test(task) &&
-    (/\b(golden boot|golden glove|top scorer|top goalscorer|player of the tournament|most world cup appearances|women'?s world cup|u-?17|u-?20|under-17|under-20|half[- ]?time show|halftime show|quiz|red cards?|yellow cards?|disciplinary|goalkeeper profile|in profile|closing ceremony|match balls?|live match (?:blog|updates?)|live updates? on today'?s matches|player ratings?|box score|fcs football|college football|buck buchanan|2030 world cup)\b/i.test(
+    (/\b(golden boot|golden glove|top scorer|top goalscorer|player of the tournament|most (?:fifa )?world cup appearances|women'?s world cup|u-?17|u-?20|under-17|under-20|half[- ]?time show|halftime show|quiz|red cards?|yellow cards?|disciplinary|goalkeeper profile|in profile|closing ceremony|match balls?|live match (?:blog|updates?)|live updates? on today'?s matches|player ratings?|box score|fcs football|college football|buck buchanan|2030 world cup|quarter[- ]?final wins)\b/i.test(
       haystack,
     ) ||
       /\b(?:coach|manager|role|post|job)\b[^.\n]{0,50}\b(?:exit|exits|leaves|leaving|resigns|resigned|steps down)\b/i.test(
@@ -2664,7 +2664,12 @@ function buildFallbackSourcesFromLiveData(
     ? buildLiveDataSourceGrounding(liveData, task, primaryTopicLabel, research)
     : liveOnlyGrounding;
   const deduped = [...grounding.byUrl.values()]
-    .sort((left, right) => sourcePriority(right.url, right.name) - sourcePriority(left.url, left.name))
+    .sort(
+      (left, right) =>
+        predictionMarketDecisionEvidenceScore(task, right) -
+          predictionMarketDecisionEvidenceScore(task, left) ||
+        sourcePriority(right.url, right.name) - sourcePriority(left.url, left.name),
+    )
     .slice(0, 6);
 
   return deduped.map((entry, index) => ({
