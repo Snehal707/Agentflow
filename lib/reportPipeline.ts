@@ -544,9 +544,15 @@ function isPredictionMarketOffTopicSource(task: string, text: string): boolean {
   if (
     /\bPrediction market category in AgentFlow:\s*Sports\b/i.test(task) &&
     /\b(world cup|fifa|winner|champion|title)\b/i.test(task) &&
-    /\b(golden boot|golden glove|top scorer|top goalscorer|player of the tournament|most world cup appearances|women'?s world cup|u-?17|u-?20|under-17|under-20|half[- ]?time show|halftime show|quiz|red cards?|yellow cards?|disciplinary|goalkeeper profile|in profile|coach (?:exit|exits|leaves|leaving|resigns|resigned|steps down)|manager (?:exit|exits|leaves|leaving|resigns|resigned|steps down))\b/i.test(
+    (/\b(golden boot|golden glove|top scorer|top goalscorer|player of the tournament|most world cup appearances|women'?s world cup|u-?17|u-?20|under-17|under-20|half[- ]?time show|halftime show|quiz|red cards?|yellow cards?|disciplinary|goalkeeper profile|in profile|closing ceremony|match balls?|live match (?:blog|updates?)|player ratings?|box score)\b/i.test(
       haystack,
-    )
+    ) ||
+      /\b(?:coach|manager|role|post|job)\b[^.\n]{0,50}\b(?:exit|exits|leaves|leaving|resigns|resigned|steps down)\b/i.test(
+        haystack,
+      ) ||
+      /\b(?:exit|exits|leaves|leaving|left|resigns|resigned|steps down)\b[^.\n]{0,50}\b(?:coach|manager|role|post|job)\b/i.test(
+        haystack,
+      ))
   ) {
     return true;
   }
