@@ -10,6 +10,7 @@ import {
   shouldGatherCurrentEvents,
 } from '../lib/live-data';
 import { isLowValueSourceForTask } from '../lib/source-policy';
+import { mergeUnderstandingWithHeuristic, type MarketUnderstanding } from '../lib/market-understanding';
 
 const badWriterMarkdown = `# Iran-US Tensions Research Report
 
@@ -1087,6 +1088,42 @@ assert.equal(
   false,
   'Expected an authoritative sports probability model not to be dropped as generic forecast spam.',
 );
+
+const deterministicWorldCupUnderstanding: MarketUnderstanding = {
+  subject: 'FIFA World Cup 2026 winner',
+  underlying: null,
+  questionType: 'event_outcome',
+  resolutionDate: null,
+  searchQueries: ['FIFA World Cup 2026 winner odds'],
+  entity: {
+    canonicalName: 'FIFA World Cup 2026',
+    aliases: ['World Cup 2026'],
+    officialDomains: ['fifa.com', 'theanalyst.com'],
+    avoidTerms: ['wikipedia'],
+    ambiguity: 'low',
+    rationale: 'Known sports competition.',
+  },
+};
+const driftedWorldCupUnderstanding: MarketUnderstanding = {
+  ...deterministicWorldCupUnderstanding,
+  subject: 'World Cup brand contest',
+  searchQueries: ['World Cup brand contest'],
+  entity: {
+    canonicalName: 'World Cup brand contest',
+    aliases: ['World Cup'],
+    officialDomains: ['example.com'],
+    avoidTerms: ['fifa', 'football', 'soccer'],
+    ambiguity: 'low',
+    rationale: 'Incorrect model-produced entity.',
+  },
+};
+const mergedWorldCupUnderstanding = mergeUnderstandingWithHeuristic(
+  worldCupEvidenceTask,
+  driftedWorldCupUnderstanding,
+  deterministicWorldCupUnderstanding,
+);
+assert.equal(mergedWorldCupUnderstanding?.entity?.canonicalName, 'FIFA World Cup 2026');
+assert.deepEqual(mergedWorldCupUnderstanding?.entity?.avoidTerms, ['wikipedia']);
 
 const bitcoinMarketCapTask = `research the prediction market topic: Will Bitcoin Reach a $2 Trillion Market Cap Before December 31, 2026?
 Listed outcomes in AgentFlow: Yes / No.

@@ -299,6 +299,17 @@ function shouldPreferHeuristicEntity(
 
   if (currentOfficial === 0 && heuristicOfficial > 0) return true;
   if (currentAmbiguity === 'high' && heuristicAmbiguity !== 'high') return true;
+  if (
+    /\bPrediction market category in AgentFlow:\s*Sports\b/i.test(task) &&
+    /\b(world cup|fifa)\b/i.test(task) &&
+    /\bFIFA World Cup 2026\b/i.test(
+      `${heuristic.subject} ${heuristic.entity?.canonicalName || ''}`,
+    )
+  ) {
+    // This is a deterministic, globally recognized competition. Do not allow
+    // an LLM-produced entity contract to introduce homonyms or unstable avoid terms.
+    return true;
+  }
   if (/\b(xaut|tether gold)\b/i.test(task)) {
     const currentContract = [
       current.subject,
@@ -345,7 +356,7 @@ function shouldPreferHeuristicEntity(
   return false;
 }
 
-function mergeUnderstandingWithHeuristic(
+export function mergeUnderstandingWithHeuristic(
   task: string,
   current: MarketUnderstanding | null,
   heuristic: MarketUnderstanding | null,
