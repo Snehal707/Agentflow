@@ -462,10 +462,7 @@ function buildFastSourceDiagnostics(
   }
   if (/\b(world cup|fifa|winner|champions league|nba|nfl|mlb|nhl|tennis)\b/i.test(task)) {
     const hasProbabilityEvidence =
-      /\b(odds|probability|probabilities|favorite|favorites|implied|forecast|prediction)\b/i.test(
-        evidenceHaystack,
-      ) ||
-      /\b(oddschecker\.com|actionnetwork\.com|theanalyst\.com|covers\.com|draftkings\.com|fanduel\.com|vegasinsider\.com)\b/i.test(
+      /\b(winner odds|odds to win|outright odds|title odds|champion odds|who will win|win probability|winning probability|tournament predictions?|opta supercomputer)\b/i.test(
         evidenceHaystack,
       );
     if (!hasProbabilityEvidence) {
