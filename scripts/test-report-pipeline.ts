@@ -1031,6 +1031,41 @@ assert.match(
   'Expected URL-encoded spaces and tournament noise not to pass the winner-odds gate.',
 );
 
+const datedOddsUrlsWithoutVisibleNumbersAreNotWinnerEvidence = assessFastReportEvidence({
+  task: worldCupEvidenceTask,
+  research: null,
+  liveData: {
+    dynamic_sources: {
+      articles: [
+        {
+          title: 'World Cup winner odds update',
+          publisher: 'OddsChecker',
+          url: 'https://www.oddschecker.com/us/insight/soccer/20260709-2026-world-cup-winner-odds',
+          summary: 'France remains the favorite, but the visible snippet contains no price or probability.',
+        },
+        {
+          title: 'World Cup outright odds',
+          publisher: 'Fox Sports',
+          url: 'https://www.foxsports.com/stories/soccer/world-cup-2026-champion-odds',
+          summary: 'A current winner market overview without numeric values in the retrieved text.',
+        },
+        {
+          title: 'World Cup tournament predictions',
+          publisher: 'BBC News',
+          url: 'https://www.bbc.com/sport/football/articles/cjrgew3wv4xo',
+          summary: 'A qualitative view from the semifinalists.',
+        },
+      ],
+    },
+  },
+});
+assert.equal(datedOddsUrlsWithoutVisibleNumbersAreNotWinnerEvidence.ok, false);
+assert.match(
+  datedOddsUrlsWithoutVisibleNumbersAreNotWinnerEvidence.issues.join('\n'),
+  /numeric winner odds or probabilities/i,
+  'Expected URL dates and IDs never to count as visible numeric odds.',
+);
+
 const extractedSportsWinnerEvidence = extractSportsWinnerNumericEvidenceSnippet(`
 [Share](https://example.com/share?title=World%20Cup%202026%20predictions)
 Navigation and newsletter copy.

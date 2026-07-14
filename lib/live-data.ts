@@ -1553,6 +1553,10 @@ async function fetchPredictionMarketSportsAuthorityEvidence(
   if (/\bFIFA World Cup\b/i.test(competition)) {
     addUniqueQuery(
       fallbackUrls,
+      'https://theanalyst.com/articles/world-cup-2026-semi-final-predictions-opta-supercomputer',
+    );
+    addUniqueQuery(
+      fallbackUrls,
       'https://theanalyst.com/articles/world-cup-predictions-2026-quarter-finals-opta-supercomputer',
     );
     addUniqueQuery(fallbackUrls, 'https://www.foxsports.com/stories/soccer/world-cup-2026-champion-odds');
@@ -1654,7 +1658,12 @@ async function fetchPredictionMarketSportsAuthorityEvidence(
     }
   }
 
-  return selectPredictionMarketEvidenceWithHostDiversity(task, [...deduped.values()], 4);
+  const ranked = [...deduped.values()].sort(
+    (a, b) =>
+      predictionMarketEvidenceSortScore(b, task, understanding) -
+      predictionMarketEvidenceSortScore(a, task, understanding),
+  );
+  return selectPredictionMarketEvidenceWithHostDiversity(task, ranked, 4);
 }
 
 function mergePredictionMarketCurrentEventSnapshots(
