@@ -160,6 +160,8 @@ type CacheEntry<T> = {
 };
 
 const LIVE_DATA_FETCH_TIMEOUT_MS = 4_000;
+/** Google News article HTML is large; decode needs a longer budget than generic live fetches. */
+const GOOGLE_NEWS_DECODE_TIMEOUT_MS = 15_000;
 const FAST_GDELT_FETCH_TIMEOUT_MS = 2_000;
 const LIVE_DATA_CACHE_TTL_MS = 60_000;
 const EXPLICIT_RESEARCH_LIVE_DATA_CACHE_TTL_MS = 10 * 60_000;
@@ -5053,9 +5055,26 @@ function extractGoogleNewsDecodeParams(html: string): {
   return { id, timestamp, signature };
 }
 
+function extractDecodedGoogleNewsUrl(batchText: string): string | null {
+  const candidates = [
+    batchText.match(/garturlres\\+",\\+"(https?:\/\/[^\\"]+)/i)?.[1],
+    batchText.match(/\[\\"garturlres\\",\\"(.*?)\\",/i)?.[1],
+    batchText.match(/\["garturlres","(.*?)",/i)?.[1],
+    batchText.match(/garturlres.{0,24}(https?:\/\/[^\\"'\s]+)/i)?.[1],
+  ];
+  for (const candidate of candidates) {
+    const decodedUrl = candidate?.trim();
+    if (!decodedUrl || isGoogleNewsUrl(decodedUrl) || isGoogleConsentUrl(decodedUrl)) {
+      continue;
+    }
+    return decodedUrl;
+  }
+  return null;
+}
+
 async function decodeGoogleNewsArticleUrl(url: string): Promise<string | null> {
   try {
-    const articleHtml = await fetchTextWithTimeout(url, LIVE_DATA_FETCH_TIMEOUT_MS);
+    const articleHtml = await fetchTextWithTimeout(url, GOOGLE_NEWS_DECODE_TIMEOUT_MS);
     const params = extractGoogleNewsDecodeParams(articleHtml);
     if (!params) return null;
 
@@ -5072,21 +5091,15 @@ async function decodeGoogleNewsArticleUrl(url: string): Promise<string | null> {
         method: 'POST',
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
-          Referrer: 'https://news.google.com/',
+          Referer: 'https://news.google.com/',
           'User-Agent': 'Mozilla/5.0',
         },
         body: `f.req=${encodeURIComponent(JSON.stringify(requestPayload))}`,
-        signal: AbortSignal.timeout(LIVE_DATA_FETCH_TIMEOUT_MS),
+        signal: AbortSignal.timeout(GOOGLE_NEWS_DECODE_TIMEOUT_MS),
       },
     );
     const text = await decodeTextResponse(response);
-    const decodedUrl =
-      text.match(/\[\\"garturlres\\",\\"(.*?)\\",/i)?.[1]?.trim() ||
-      text.match(/\["garturlres","(.*?)",/i)?.[1]?.trim();
-    if (!decodedUrl || isGoogleNewsUrl(decodedUrl) || isGoogleConsentUrl(decodedUrl)) {
-      return null;
-    }
-    return decodedUrl;
+    return extractDecodedGoogleNewsUrl(text);
   } catch {
     return null;
   }
@@ -5862,10 +5875,10 @@ async function fetchGoogleNewsRssData(
   const topSnapshots = snapshots
     .filter(isUsableCurrentEventArticle)
     .sort((a, b) => currentEventRank(b) - currentEventRank(a))
-    .slice(0, 10);
+    .slice(0, 6);
   const resolvedSnapshots: GdeltArticleSnapshot[] = [];
   // Resolve in small batches so Google decode does not stampede under LIVE_DATA timeout.
-  const resolveBatchSize = 4;
+  const resolveBatchSize = 3;
   for (let offset = 0; offset < topSnapshots.length; offset += resolveBatchSize) {
     const batch = topSnapshots.slice(offset, offset + resolveBatchSize);
     const batchResolved = await Promise.all(
@@ -5901,7 +5914,7 @@ async function fetchGoogleNewsRssData(
     for (const snapshot of batchResolved) {
       if (snapshot) resolvedSnapshots.push(snapshot);
     }
-    if (resolvedSnapshots.length >= 8) break;
+    if (resolvedSnapshots.length >= 5) break;
   }
 
   if (options?.bypassCache) {
