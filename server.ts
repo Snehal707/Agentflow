@@ -7742,6 +7742,20 @@ function parseInvoiceRequest(
     };
   }
 
+  const amountFirst = trimmed.match(
+    new RegExp(
+      String.raw`(?:create|make|send)\s+(?:an?\s+)?invoice\s+(?:(?:of|for)\s+)?(\d+(?:\.\d+)?)\s*(?:usdc|usd)?\s+(?:to|for)\s+${handlePattern}(?:\s+(?:for\s+)?(.+))?$`,
+      'i',
+    ),
+  );
+  if (amountFirst) {
+    return {
+      vendorHandle: amountFirst[2].toLowerCase(),
+      amount: amountFirst[1],
+      description: amountFirst[3]?.trim() || 'Services rendered',
+    };
+  }
+
   const recipientFirst = trimmed.match(
     new RegExp(
       String.raw`(?:create|make|send)\s+(?:an?\s+)?invoice\s+for\s+${handlePattern}\s+(\d+(?:\.\d+)?)\s*(?:usdc|usd)?(?:\s+for\s+(.+))?$`,
@@ -13803,7 +13817,7 @@ function createPublicApp(): express.Express {
                 },
                 createInvoice: async (intentValue: AgentFlowIntent, walletAddress, sessionId) => {
                   const parsed =
-                    extractInvoiceRequestFromIntent(intentValue) ?? parseInvoiceRequest(intentValue.raw_message);
+                    parseInvoiceRequest(intentValue.raw_message) ?? extractInvoiceRequestFromIntent(intentValue);
                   if (!parsed) {
                     return {
                       handled: true,
@@ -14772,7 +14786,7 @@ function createPublicApp(): express.Express {
         walletCtx.walletAddress
       ) {
         const parsed =
-          extractInvoiceRequestFromIntent(routerResolvedIntent) ?? parseInvoiceRequest(message);
+          parseInvoiceRequest(message) ?? extractInvoiceRequestFromIntent(routerResolvedIntent);
         if (!parsed) {
           const responseText = [
             'Could not parse invoice details.',

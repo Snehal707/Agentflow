@@ -28,6 +28,8 @@ import {
   AgentFlowDomain,
   AgentFlowIntent,
   AgentFlowIntentName,
+  type RecipientSlot,
+  type SwapExecuteSlots,
 } from './types';
 
 const ROUTER_MODEL = 'nousresearch/hermes-4-70b';
@@ -805,6 +807,31 @@ function getIntentSlots(intent: AgentFlowIntent): Record<string, unknown> {
     : {};
 }
 
+function isRecipientSlot(value: unknown): value is RecipientSlot {
+  return Boolean(
+    value &&
+      typeof value === 'object' &&
+      !Array.isArray(value) &&
+      (typeof (value as { handle?: unknown }).handle === 'string' ||
+        typeof (value as { address?: unknown }).address === 'string'),
+  );
+}
+
+function isSwapExecuteIntent(intent: AgentFlowIntent): intent is AgentFlowIntent & {
+  domain: AgentFlowDomain.Swap;
+  intent: AgentFlowIntentName.SwapExecute;
+  slots: SwapExecuteSlots;
+} {
+  const slots = getIntentSlots(intent);
+  return Boolean(
+    intent.domain === AgentFlowDomain.Swap &&
+      intent.intent === AgentFlowIntentName.SwapExecute &&
+      hasPlainObjectSlot(slots, 'amount') &&
+      hasPlainObjectSlot(slots, 'token_in') &&
+      hasPlainObjectSlot(slots, 'token_out'),
+  );
+}
+
 function hasPlainObjectSlot(slots: Record<string, unknown>, key: string): boolean {
   return typeof slots[key] === 'object' && slots[key] !== null && !Array.isArray(slots[key]);
 }
@@ -1292,9 +1319,7 @@ function reconcileRouterResult(
   const heuristicSlots = getIntentSlots(heuristic ?? ({} as AgentFlowIntent));
   const heuristicRecipient =
     heuristic?.intent === AgentFlowIntentName.SwapExecute &&
-    heuristicSlots.recipient &&
-    typeof heuristicSlots.recipient === 'object' &&
-    heuristicSlots.recipient !== null
+    isRecipientSlot(heuristicSlots.recipient)
       ? heuristicSlots.recipient
       : null;
   const looksLikeSwapThenSend =
@@ -1310,26 +1335,25 @@ function reconcileRouterResult(
       });
       return heuristic!;
     }
-    const slots = getIntentSlots(intent);
-    const hasRecipientSlot =
-      slots.recipient && typeof slots.recipient === 'object' && slots.recipient !== null;
+    const hasRecipientSlot = isRecipientSlot(getIntentSlots(intent).recipient);
     if (!hasRecipientSlot) {
       console.warn('[INTENT_ROUTER_SWAP_SEND_RECIPIENT]', {
         raw_message: truncateForLog(message),
         recipient: heuristicRecipient,
       });
+      if (!isSwapExecuteIntent(intent)) {
+        return intent;
+      }
       return {
         ...intent,
         slots: {
-          ...slots,
+          ...intent.slots,
           recipient: heuristicRecipient,
         },
-      } as AgentFlowIntent;
+      };
     }
   } else if (intent.intent === AgentFlowIntentName.SwapExecute && looksLikeSwapThenSend) {
-    const slots = getIntentSlots(intent);
-    const hasRecipientSlot =
-      slots.recipient && typeof slots.recipient === 'object' && slots.recipient !== null;
+    const hasRecipientSlot = isRecipientSlot(getIntentSlots(intent).recipient);
     if (!hasRecipientSlot) {
       const sendRecipient = parseRecipient(message);
       if (sendRecipient) {
@@ -1337,13 +1361,16 @@ function reconcileRouterResult(
           raw_message: truncateForLog(message),
           recipient: sendRecipient,
         });
+        if (!isSwapExecuteIntent(intent)) {
+          return intent;
+        }
         return {
           ...intent,
           slots: {
-            ...slots,
+            ...intent.slots,
             recipient: sendRecipient,
           },
-        } as AgentFlowIntent;
+        };
       }
     }
   }
