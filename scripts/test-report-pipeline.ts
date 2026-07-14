@@ -3,7 +3,7 @@ import {
   collectPreferredReportSources,
   finalizeReportMarkdown,
 } from '../lib/reportPipeline';
-import { buildPrimaryFirecrawlQueryVariants } from '../lib/live-data';
+import { buildPrimaryFirecrawlQueryVariants, shouldGatherCurrentEvents } from '../lib/live-data';
 
 const badWriterMarkdown = `# Iran-US Tensions Research Report
 
@@ -122,6 +122,17 @@ const research = {
     },
   ],
 };
+
+assert.equal(
+  shouldGatherCurrentEvents('research on future of AI in India'),
+  true,
+  'Expected explicit fast research requests to gather live evidence.',
+);
+assert.equal(
+  shouldGatherCurrentEvents('research report on future of AI in India'),
+  true,
+  'Expected explicit fast research reports to gather live evidence.',
+);
 
 const analysis = {
   core_thesis:

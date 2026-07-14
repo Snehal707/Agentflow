@@ -238,7 +238,7 @@ function normalizeLiveDataSearchTask(task: string): string {
   if (/\bprediction\s+market\b/i.test(stripped)) {
     return cleanPredictionMarketResearchTaskForSearch(stripped);
   }
-  return stripped.replace(/\s+/g, ' ').trim();
+  return stripFirecrawlResearchScaffolding(stripped).replace(/\s+/g, ' ').trim();
 }
 
 function extractPredictionMarketListedOutcomes(task: string): string[] {
@@ -945,6 +945,114 @@ function filterLowValueEvidenceForTask(
       publisher: snapshot.publisher,
     }),
   );
+}
+
+function dynamicArticleToFirecrawlSnapshot(article: GdeltArticleSnapshot): FirecrawlArticleSnapshot | null {
+  const url = article.url?.trim() || article.article_url?.trim() || '';
+  const title = article.title?.trim() || '';
+  if (!url || !title) return null;
+  return {
+    title,
+    url,
+    publisher: article.publisher || article.domain || extractHostname(url),
+    seen_at: article.seen_at,
+    summary: article.description || title,
+  };
+}
+
+function fastResearchTopicAnchorGroups(task: string): string[][] {
+  const cleaned = stripFirecrawlResearchScaffolding(task).toLowerCase();
+  const groups: string[][] = [];
+
+  if (/\b(?:ai|artificial intelligence|machine learning|llm|llms)\b/i.test(cleaned)) {
+    groups.push([
+      'ai',
+      'artificial intelligence',
+      'machine learning',
+      'llm',
+      'llms',
+      'openai',
+      'deepmind',
+      'google research',
+      'microsoft research',
+      'anthropic',
+    ]);
+  }
+  if (/\bindia\b|\bindian\b|\bindiaai\b/i.test(cleaned)) {
+    groups.push(['india', 'indian', 'indiaai', 'meity', 'niti aayog', 'niti']);
+  }
+
+  return groups;
+}
+
+function taskKeywordOverlap(task: string, text: string): number {
+  const cleanedTask = stripFirecrawlResearchScaffolding(task)
+    .toLowerCase()
+    .replace(/[^\w\s-]/g, ' ');
+  const haystack = text.toLowerCase();
+  const stopwords = new Set([
+    ...RSS_MATCH_STOPWORDS,
+    ...GENERIC_QUERY_STOPWORDS,
+    'future',
+    'outlook',
+    'trend',
+    'trends',
+    'industry',
+    'market',
+    'markets',
+  ]);
+  const terms = [...new Set(
+    cleanedTask
+      .split(/\s+/)
+      .map((term) => term.trim())
+      .filter((term) => term.length >= 3 && !stopwords.has(term)),
+  )];
+  return terms.filter((term) => haystack.includes(term)).length;
+}
+
+function containsAnchorTerm(text: string, term: string): boolean {
+  const normalized = term.trim().toLowerCase();
+  if (!normalized) return false;
+  if (/\s/.test(normalized)) return text.includes(normalized);
+  return new RegExp(`\\b${escapeRegExp(normalized)}\\b`, 'i').test(text);
+}
+
+function filterFastResearchDynamicEvidence(
+  task: string,
+  snapshots: FirecrawlArticleSnapshot[],
+): FirecrawlArticleSnapshot[] {
+  const anchorGroups = fastResearchTopicAnchorGroups(task);
+  const filtered = filterLowValueEvidenceForTask(task, snapshots).filter((snapshot) => {
+    if (isLowValueSocialSourceUrl(snapshot.url) || isLowValueVideoUrl(snapshot.url)) return false;
+    if (isGoogleNewsUrl(snapshot.url) || isGoogleConsentUrl(snapshot.url)) return false;
+    const haystack = `${snapshot.title} ${snapshot.summary} ${snapshot.publisher || ''} ${snapshot.url}`.toLowerCase();
+    if (anchorGroups.length > 0) {
+      return anchorGroups.every((group) => group.some((term) => containsAnchorTerm(haystack, term)));
+    }
+    return taskKeywordOverlap(task, haystack) >= 2;
+  });
+
+  return selectFastResearchEvidenceWithHostDiversity(filtered, 6);
+}
+
+function selectFastResearchEvidenceWithHostDiversity(
+  snapshots: FirecrawlArticleSnapshot[],
+  limit: number,
+): FirecrawlArticleSnapshot[] {
+  const deduped = [...new Map(snapshots.map((snapshot) => [snapshot.url, snapshot])).values()];
+  const selected: FirecrawlArticleSnapshot[] = [];
+  const hostCounts = new Map<string, number>();
+
+  for (const snapshot of deduped) {
+    const host = normalizedHostnameFromUrl(parseSnapshotUrl(snapshot));
+    const count = host ? hostCounts.get(host) ?? 0 : 0;
+    if (host && count >= 2) continue;
+    selected.push(snapshot);
+    if (host) hostCounts.set(host, count + 1);
+    if (selected.length >= limit) break;
+  }
+
+  return selected;
 }
 
 function extractYoutubeChannelId(url: string): string | null {
@@ -3303,6 +3411,14 @@ function isBroadLongHorizonOverviewTask(task: string): boolean {
     /\b(outlook|ecosystem|economy|regulation|market outlook)\b/.test(cleanedTask);
 }
 
+function isExplicitExternalResearchTask(task: string): boolean {
+  const cleanedTask = stripExecutionContext(task).trim().toLowerCase();
+  if (!cleanedTask) return false;
+  return /\b(?:research|report|analysis|analy[sz]e|investigate|look into|deep dive)\b/i.test(
+    cleanedTask,
+  );
+}
+
 export function shouldGatherCurrentEvents(task: string): boolean {
   const cleanedTask = normalizeLiveDataSearchTask(task);
   if (isSportsPredictionMarketTask(task) || isSportsPredictionMarketTask(cleanedTask)) {
@@ -3310,6 +3426,9 @@ export function shouldGatherCurrentEvents(task: string): boolean {
   }
   if (isBroadLongHorizonOverviewTask(cleanedTask)) {
     return false;
+  }
+  if (isExplicitExternalResearchTask(task)) {
+    return true;
   }
   if (isBroadCurrentStateResearchTask(cleanedTask)) {
     return true;
@@ -6731,7 +6850,10 @@ export async function fetchLiveData(
     shouldGatherCurrentEvents(contextTask) ||
     isPredictionMarketTask;
   const shouldAlsoFetchFirecrawl =
-    shouldFetchCurrentEvents && (isCreatorAudienceMetricTask(sourceTask) || isPredictionMarketTask);
+    shouldFetchCurrentEvents &&
+    (isCreatorAudienceMetricTask(sourceTask) ||
+      isPredictionMarketTask ||
+      (researchDomain === 'general' && isExplicitExternalResearchTask(contextTask)));
   const firecrawlQuerySeed = predictionMarketUnderstanding
     ? buildPredictionMarketSearchSeed(contextTask, predictionMarketUnderstanding)
     : isPredictionMarketTask
@@ -6744,6 +6866,10 @@ export async function fetchLiveData(
     contextTask,
     predictionMarketUnderstanding,
   );
+  const currentEventsTask =
+    researchDomain === 'general' && isExplicitExternalResearchTask(contextTask)
+      ? `${sourceTask} latest`
+      : contextTask;
   const payload: Record<string, unknown> = {
     snapshot_at: snapshotAt,
     research_domain: researchDomain,
@@ -6795,7 +6921,7 @@ export async function fetchLiveData(
           researchDomain,
         ),
         shouldFetchCurrentEvents
-          ? fetchCurrentEventsData(contextTask, {
+          ? fetchCurrentEventsData(currentEventsTask, {
               bypassCache: bypassCurrentEventCache,
               understanding: predictionMarketUnderstanding,
             })
@@ -6932,7 +7058,7 @@ export async function fetchLiveData(
     }
   } else if (researchDomain === 'geopolitics') {
     const [currentEvents, wikipedia] = await Promise.allSettled([
-      fetchCurrentEventsData(contextTask, {
+      fetchCurrentEventsData(currentEventsTask, {
         bypassCache: bypassCurrentEventCache,
         understanding: predictionMarketUnderstanding,
       }),
@@ -7022,7 +7148,7 @@ export async function fetchLiveData(
       ).catch(() => [] as WikipediaPageSnapshot[]),
       (
         !identityLookup && shouldFetchCurrentEvents
-          ? fetchCurrentEventsData(contextTask, {
+          ? fetchCurrentEventsData(currentEventsTask, {
               bypassCache: bypassCurrentEventCache,
               understanding: predictionMarketUnderstanding,
             })
@@ -7097,6 +7223,27 @@ export async function fetchLiveData(
             predictionMarketUnderstanding,
           ),
           PREDICTION_MARKET_EVIDENCE_LIMIT,
+        );
+      }
+    }
+    if (
+      !isPredictionMarketTask &&
+      isExplicitExternalResearchTask(contextTask) &&
+      finalFirecrawlEvidence.length < 4
+    ) {
+      const dynamicRssEvidence = (await fetchDynamicSources(sourceTask).catch(
+        () => [] as GdeltArticleSnapshot[],
+      ))
+        .map(dynamicArticleToFirecrawlSnapshot)
+        .filter((snapshot): snapshot is FirecrawlArticleSnapshot => Boolean(snapshot));
+      const relevantDynamicRssEvidence = filterFastResearchDynamicEvidence(
+        contextTask,
+        dynamicRssEvidence,
+      );
+      if (relevantDynamicRssEvidence.length > 0) {
+        finalFirecrawlEvidence = selectFastResearchEvidenceWithHostDiversity(
+          [...finalFirecrawlEvidence, ...relevantDynamicRssEvidence],
+          6,
         );
       }
     }
