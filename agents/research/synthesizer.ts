@@ -97,7 +97,9 @@ export function enforceRetrievedSourceUrls(markdown: string, sources: Source[]):
       ].join('\n');
 
   const lines = markdown.trim().split(/\r?\n/);
-  const sourceHeaderIndex = lines.findIndex((line) => /^#{1,6}\s+sources\s*$/i.test(line.trim()));
+  const sourceHeaderIndex = lines.findIndex((line) =>
+    /^#{1,6}\s+(?:(?:\*\*|__)\s*)?sources\s*(?:(?:\*\*|__))?\s*$/i.test(line.trim()),
+  );
   if (sourceHeaderIndex < 0) {
     return `${markdown.trim()}\n\n${sourceSection}`;
   }

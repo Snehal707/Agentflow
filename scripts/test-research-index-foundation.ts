@@ -116,7 +116,7 @@ const bibliographySources: Source[] = [
   },
 ];
 const reportWithNameOnlySources = enforceRetrievedSourceUrls(
-  '# Arc report\n\n## Summary\nEvidence-backed summary.\n\n## Sources\n\n1. Circle Official Blog\n2. Example News',
+  '# Arc report\n\n## Summary\nEvidence-backed summary.\n\n### **Sources**\n\n1. Circle Official Blog\n2. Example News',
   bibliographySources,
 );
 assert.match(reportWithNameOnlySources, /\[Circle launches Arc public testnet\]\(<https:\/\/www\.circle\.com\/pressroom\/arc-public-testnet>\)/);
