@@ -9,6 +9,7 @@ import {
   extractSportsWinnerNumericEvidenceSnippet,
   shouldGatherCurrentEvents,
 } from '../lib/live-data';
+import { isLowValueSourceForTask } from '../lib/source-policy';
 
 const badWriterMarkdown = `# Iran-US Tensions Research Report
 
@@ -1034,6 +1035,17 @@ Goalkeeper saves reached 75% in the last match.
 assert.match(extractedSportsWinnerEvidence || '', /France a 28\.9% chance of winning/i);
 assert.match(extractedSportsWinnerEvidence || '', /Spain are favourites with a 31\.4% title probability/i);
 assert.doesNotMatch(extractedSportsWinnerEvidence || '', /World%20Cup|Goalkeeper saves/i);
+assert.equal(
+  isLowValueSourceForTask(worldCupEvidenceTask, {
+    domain: 'theanalyst.com',
+    publisher: 'The Analyst',
+    url: 'https://theanalyst.com/articles/world-cup-predictions-2026-quarter-finals-opta-supercomputer',
+    title: 'World Cup Predictions 2026: Opta Supercomputer Projections',
+    summary: extractedSportsWinnerEvidence || '',
+  }),
+  false,
+  'Expected an authoritative sports probability model not to be dropped as generic forecast spam.',
+);
 
 const bitcoinMarketCapTask = `research the prediction market topic: Will Bitcoin Reach a $2 Trillion Market Cap Before December 31, 2026?
 Listed outcomes in AgentFlow: Yes / No.

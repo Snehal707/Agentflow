@@ -210,6 +210,11 @@ export function isLowValueSourceForTask(task: string, source: SourceLike): boole
       ) {
         return true;
       }
+      // Do not let the generic forecast-spam rule below discard decision-grade
+      // prediction models and odds pages from approved sports authorities.
+      if (isAuthoritativeSportsOddsSource(url, source.publisher)) {
+        return false;
+      }
     }
     if (
       isArcNetworkResearchTask(task) &&
