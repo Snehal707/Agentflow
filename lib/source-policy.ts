@@ -133,7 +133,10 @@ export function isLowValueSourceForTask(task: string, source: SourceLike): boole
   ) {
     return true;
   }
-  if (/\bduckduckgo\b/.test(haystack) && /\blive data duckduckgo context\b/.test(haystack)) {
+  if (
+    /\bduckduckgo\b/.test(haystack) &&
+    /\blive[_\s-]*data[_\s-]*duckduckgo[_\s-]*context\b/.test(haystack)
+  ) {
     return true;
   }
 

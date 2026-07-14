@@ -96,6 +96,7 @@ type FinalizeParams = {
   research: Obj | null;
   analysis: Obj | null;
   liveData: Obj | null;
+  trustedResearchSources?: boolean;
 };
 
 type RawClaimState = {
@@ -1410,7 +1411,7 @@ function buildRawClaims(params: FinalizeParams): RawClaimState {
     params.liveData,
     params.task,
     primaryTopicLabel,
-    params.research,
+    params.trustedResearchSources ? params.research : null,
   );
   const framing = isGeopoliticalShippingReportTask(params.task)
     ? framingSignals(params.liveData)
@@ -2443,8 +2444,12 @@ function buildFallbackSourcesFromLiveData(
   task: string,
   primaryTopicLabel?: string | null,
   research?: Obj | null,
+  trustedResearchSources = false,
 ): NormalizedReportSource[] {
-  const grounding = buildLiveDataSourceGrounding(liveData, task, primaryTopicLabel, research);
+  const liveOnlyGrounding = buildLiveDataSourceGrounding(liveData, task, primaryTopicLabel);
+  const grounding = trustedResearchSources || !liveOnlyGrounding.hasEvidenceInventory
+    ? buildLiveDataSourceGrounding(liveData, task, primaryTopicLabel, research)
+    : liveOnlyGrounding;
   const deduped = [...grounding.byUrl.values()]
     .sort((left, right) => sourcePriority(right.url, right.name) - sourcePriority(left.url, left.name))
     .slice(0, 6);
@@ -3460,6 +3465,7 @@ export function finalizeReportMarkdown(params: FinalizeParams): {
     params.task,
     primaryTopicLabel,
     params.research,
+    params.trustedResearchSources === true,
   );
   const mergedSources = isPredictionMarketResearchTask(params.task)
     ? mergeNormalizedSources(state.sources, fallbackSources)

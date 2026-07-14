@@ -951,6 +951,7 @@ OpenAI introduced new voice models.
       ],
     },
   },
+  trustedResearchSources: true,
 });
 assert.match(structuredResearchSourceSurvivesGrounding.markdown, /reuters\.com\/world\/openai-latest-model-research-example/i);
 assert.ok(
@@ -1006,7 +1007,7 @@ assert.match(
   broadAiIndiaReportKeepsFreshLiveSources.markdown,
   /meity\.gov\.in\/indiaai-mission-compute-capacity-2026/i,
 );
-assert.match(
+assert.doesNotMatch(
   broadAiIndiaReportKeepsFreshLiveSources.markdown,
   /example\.com\/india-ai-background-2024/i,
 );
@@ -1152,7 +1153,7 @@ assert.match(
   broadAiIndiaReportKeepsFreshSourcesOverModelFallbacks.markdown,
   /deepmind\.google\/blog\/empowering-indias-next-generation-of-innovators-with-atl-saathi/i,
 );
-assert.match(
+assert.doesNotMatch(
   broadAiIndiaReportKeepsFreshSourcesOverModelFallbacks.markdown,
   /indiaai\.gov\.in\/article\/future-of-ai-in-india/i,
 );
@@ -1206,12 +1207,23 @@ Fast report with mixed source quality.`,
         source_name: 'IndiaAI',
         source_url: 'https://indiaai.gov.in/article/future-of-ai-in-india',
       },
+      {
+        claim: 'A search snippet mentioned AI startup funding.',
+        support: 'LIVE_DATA DuckDuckGo context',
+        source_name: 'Tracxn',
+        source_url: 'https://tracxn.com/d/sectors/artificial-intelligence/__example',
+      },
     ],
     sources: [
       {
         name: 'DuckDuckGo',
         url: 'https://duckduckgo.com/?q=future+of+AI+in+India',
         used_for: 'LIVE DATA duckduckgo context',
+      },
+      {
+        name: 'Tracxn',
+        url: 'https://tracxn.com/d/sectors/artificial-intelligence/__example',
+        used_for: 'LIVE_DATA DuckDuckGo context',
       },
       {
         name: 'IndiaAI',
@@ -1227,6 +1239,8 @@ Fast report with mixed source quality.`,
 });
 assert.doesNotMatch(duckDuckGoSearchContextIsNotFinalSource.markdown, /duckduckgo\.com/i);
 assert.doesNotMatch(duckDuckGoSearchContextIsNotFinalSource.markdown, /\bDuckDuckGo\b/i);
+assert.doesNotMatch(duckDuckGoSearchContextIsNotFinalSource.markdown, /tracxn\.com/i);
+assert.doesNotMatch(duckDuckGoSearchContextIsNotFinalSource.markdown, /\bTracxn\b/i);
 assert.match(
   duckDuckGoSearchContextIsNotFinalSource.markdown,
   /indiaai\.gov\.in\/article\/future-of-ai-in-india/i,

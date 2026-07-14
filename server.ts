@@ -16511,6 +16511,7 @@ function createPublicApp(): express.Express {
         research: parsedResearch,
         analysis: parsedAnalysis,
         liveData: parsedLiveData,
+        trustedResearchSources: !!directStructuredResearch,
       });
       const finalMarkdown = ensureWalletContextInReport(
         finalizedReport.markdown,
