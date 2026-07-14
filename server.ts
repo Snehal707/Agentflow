@@ -1035,7 +1035,8 @@ function parseLiveDataPayload(liveData: string): Record<string, unknown> | null 
 function researchLiveDataReuseKey(task: string): string {
   const normalized = task.trim().toLowerCase().replace(/\s+/g, ' ');
   const hash = createHash('sha256').update(normalized).digest('hex');
-  return `research:live-data:${hash}`;
+  // v2: invalidate stale cached payloads from before Google News RSS publisher promotion.
+  return `research:live-data:v2:${hash}`;
 }
 
 function shouldUsePersistentResearchLiveDataCache(task: string): boolean {

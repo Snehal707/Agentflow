@@ -1500,6 +1500,72 @@ assert.match(
   /Source URLs were not available/i,
 );
 
+const aiChinaKeepsPublisherSourcesDespiteFutureTopic = finalizeReportMarkdown({
+  task: 'research on future of AI in china',
+  writerMarkdown: `## Overview
+
+China AI investment is rising.
+
+## Sources
+
+- Placeholder`,
+  research: {
+    topic: 'Future of AI in China',
+    sources: [{ name: 'Invented Journal', used_for: 'Model fallback without live URL' }],
+  },
+  analysis: null,
+  liveData: {
+    snapshot_at: '2026-07-14T12:00:00.000Z',
+    research_domain: 'general',
+    current_events: {
+      articles: [
+        {
+          title: 'China June exports growth set to cool, but AI demand underpins overall strength',
+          publisher: 'Reuters',
+          domain: 'reuters.com',
+          url: 'https://www.reuters.com/world/china/china-june-exports-growth-set-cool-ai-demand-underpins-overall-strength-2026-07-13/',
+          seen_at: '2026-07-13T07:00:00.000Z',
+        },
+      ],
+    },
+    dynamic_sources: {
+      source: 'Google News RSS (resolved publisher URLs)',
+      articles: [
+        {
+          title: 'China June exports growth set to cool, but AI demand underpins overall strength',
+          publisher: 'Reuters',
+          url: 'https://www.reuters.com/world/china/china-june-exports-growth-set-cool-ai-demand-underpins-overall-strength-2026-07-13/',
+          summary: 'AI demand underpins China export strength.',
+          seen_at: '2026-07-13T07:00:00.000Z',
+        },
+        {
+          title: 'China exports in June rise as AI boom lifts trade',
+          publisher: 'CNBC',
+          url: 'https://www.cnbc.com/2026/07/14/china-june-trade-data-exports-imports.html',
+          summary: 'AI boom lifts China trade.',
+          seen_at: '2026-07-14T07:00:00.000Z',
+        },
+      ],
+    },
+  },
+});
+assert.match(
+  aiChinaKeepsPublisherSourcesDespiteFutureTopic.markdown,
+  /reuters\.com\/world\/china\/china-june-exports-growth-set-cool-ai-demand-underpins-overall-strength-2026-07-13/i,
+);
+assert.match(
+  aiChinaKeepsPublisherSourcesDespiteFutureTopic.markdown,
+  /cnbc\.com\/2026\/07\/14\/china-june-trade-data-exports-imports/i,
+);
+assert.doesNotMatch(
+  aiChinaKeepsPublisherSourcesDespiteFutureTopic.markdown,
+  /Source URLs were not available/i,
+);
+assert.doesNotMatch(
+  aiChinaKeepsPublisherSourcesDespiteFutureTopic.markdown,
+  /openai\.com\/index\/deutsche-telekom/i,
+);
+
 console.log('Before example:');
 console.log(badWriterMarkdown.split('\n').slice(0, 12).join('\n'));
 console.log('\nAfter example:');

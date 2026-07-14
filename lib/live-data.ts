@@ -985,6 +985,23 @@ function fastResearchTopicAnchorGroups(task: string): string[][] {
   if (/\bindia\b|\bindian\b|\bindiaai\b/i.test(cleaned)) {
     groups.push(['india', 'indian', 'indiaai', 'meity', 'niti aayog', 'niti']);
   }
+  if (/\bchina\b|\bchinese\b|\bprc\b/i.test(cleaned)) {
+    groups.push([
+      'china',
+      'chinese',
+      'prc',
+      'beijing',
+      'shanghai',
+      'shenzhen',
+      'hangzhou',
+      'huawei',
+      'baidu',
+      'alibaba',
+      'tencent',
+      'bytedance',
+      'sensetime',
+    ]);
+  }
   if (
     /\b(?:climate|climatic|global warming|net[- ]zero|decarboni[sz]ation|greenhouse|emissions?)\b/i.test(
       cleaned,
@@ -1116,7 +1133,9 @@ function mergeCurrentEventPublisherEvidence(
   const publisherEvidence = collectPublisherEvidenceFromCurrentEvents(currentEvents);
   if (publisherEvidence.length === 0) return existing;
 
-  const combined = [...existing, ...publisherEvidence];
+  // Put resolved Google News publisher URLs first so geography-specific RSS is not
+  // crowded out by generic registry feeds (OpenAI/arXiv/etc.).
+  const combined = [...publisherEvidence, ...existing];
   if (isExplicitExternalResearchTask(task) && !/\bprediction market\b/i.test(task)) {
     return selectFastResearchEvidenceWithHostDiversity(
       filterFastResearchDynamicEvidence(task, combined),
@@ -7470,12 +7489,10 @@ export async function fetchLiveData(
         finalFirecrawlEvidence,
       );
     }
-    if (
-      !isPredictionMarketTask &&
-      isExplicitExternalResearchTask(contextTask) &&
-      finalFirecrawlEvidence.length < 4
-    ) {
-      // Prefer already-fetched Google News RSS publisher URLs when Firecrawl search is thin.
+    if (!isPredictionMarketTask && isExplicitExternalResearchTask(contextTask)) {
+      // Always merge resolved Google News publisher URLs for explicit research.
+      // Do not wait until Firecrawl/registry evidence is thin — those feeds are often
+      // off-topic lab blogs that would otherwise block China/AI (etc.) news from Sources.
       finalFirecrawlEvidence = mergeCurrentEventPublisherEvidence(
         contextTask,
         currentEvents,

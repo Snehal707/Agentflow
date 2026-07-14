@@ -384,10 +384,44 @@ function inferPrimaryTopicLabel(task: string, research: Obj | null): string | nu
   );
   if (exactEntity) return exactEntity;
 
-  const capitalized = task.match(/\b[A-Z][a-zA-Z0-9.-]{2,}\b/);
-  if (capitalized?.[0]) return capitalized[0];
+  // Prefer concrete geography / subject tokens over report-title chrome like "Future".
+  const geoOrSubject = taskLower.match(
+    /\b(china|chinese|india|indian|europe|european|japan|japanes|korea|korean|openai|anthropic|bitcoin|ethereum|solana|xrp|dogecoin|litecoin|cardano|avalanche|chainlink|ipcc)\b/i,
+  );
+  if (geoOrSubject?.[0]) return geoOrSubject[0];
 
-  const token = taskLower.match(/\b(bitcoin|ethereum|solana|xrp|dogecoin|litecoin|cardano|avalanche|chainlink|openai|anthropic|ipcc)\b/i);
+  const genericTitleWords = new Set([
+    'future',
+    'outlook',
+    'research',
+    'report',
+    'analysis',
+    'overview',
+    'summary',
+    'update',
+    'updates',
+    'latest',
+    'current',
+    'market',
+    'markets',
+    'industry',
+    'trend',
+    'trends',
+    'deep',
+    'dive',
+    'agentflow',
+  ]);
+  const capitalizedMatches = [...task.matchAll(/\b[A-Z][a-zA-Z0-9.-]{2,}\b/g)].map(
+    (match) => match[0],
+  );
+  const capitalized = capitalizedMatches.find(
+    (value) => !genericTitleWords.has(value.toLowerCase()),
+  );
+  if (capitalized) return capitalized;
+
+  const token = taskLower.match(
+    /\b(bitcoin|ethereum|solana|xrp|dogecoin|litecoin|cardano|avalanche|chainlink|openai|anthropic|ipcc)\b/i,
+  );
   return token?.[0] ?? null;
 }
 
@@ -431,6 +465,16 @@ function articleMatchesPrimaryTopic(
         textLower,
       ) &&
       /\b(?:india|indian|indiaai|meity|niti aayog|niti)\b/i.test(textLower)
+    );
+  }
+
+  const hasChinaTask = /\bchina\b|\bchinese\b|\bprc\b/i.test(taskLower);
+  if (hasAiTask && hasChinaTask) {
+    return (
+      /\b(?:ai|artificial intelligence|machine learning|llm|llms|deepmind|openai|google research|microsoft research|anthropic|baidu|alibaba|tencent|huawei|senseTime|sensetime)\b/i.test(
+        textLower,
+      ) &&
+      /\b(?:china|chinese|prc|beijing|shanghai|shenzhen)\b/i.test(textLower)
     );
   }
 
@@ -3551,7 +3595,7 @@ export function finalizeReportMarkdown(params: FinalizeParams): {
   claims: NormalizedClaim[];
 } {
   const state = buildFinalState(params);
-  const primaryTopicLabel = inferPrimaryTopicLabel(state.topic, params.research);
+  const primaryTopicLabel = inferPrimaryTopicLabel(params.task, params.research);
   const fallbackSources = buildFallbackSourcesFromLiveData(
     params.liveData,
     params.task,
