@@ -5,6 +5,7 @@ const researchRequests = [
   "Make research report on the bitcoin's last 24h transactions",
   'research bitcoin transaction volume over the last 24h',
   'write a report on recent bitcoin transactions',
+  'make a research report on Ethereum vs bitcoin',
 ];
 
 for (const message of researchRequests) {

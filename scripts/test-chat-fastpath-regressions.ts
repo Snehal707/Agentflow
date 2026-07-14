@@ -55,6 +55,11 @@ const cases: Case[] = [
     forbidden: /Portfolio|Prediction market positions|vault positions/i,
   },
   {
+    message: 'make a research report on Ethereum vs bitcoin',
+    expected: /research|report|Running research|Sources/i,
+    forbidden: /Source chain locked|bridge from|How much.*bridge|Bridge Agent/i,
+  },
+  {
     message: 'how to check portfolio?',
     expected: /do you want me to run the portfolio check now/i,
     forbidden: /Wallet tokens|Gateway reserve|Prediction market positions/i,

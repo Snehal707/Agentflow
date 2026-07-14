@@ -2492,6 +2492,9 @@ function buildBridgeSourceChainFollowupReply(
   history: BrainConversationMessage[] = [],
 ): string | null {
   const normalized = message.trim().toLowerCase();
+  if (isExplicitResearchRequest(message)) {
+    return null;
+  }
   if (!/\bwhich chain should i use\b|\bwhat chain should i use\b|\bwhich source chain\b/i.test(normalized)) {
     return null;
   }
@@ -2565,6 +2568,9 @@ function buildStandaloneWorkflowClarification(message: string): string | null {
   const trimmed = message.trim();
   const normalized = trimmed.toLowerCase();
   if (!trimmed) {
+    return null;
+  }
+  if (isExplicitResearchRequest(trimmed)) {
     return null;
   }
 
@@ -13356,6 +13362,9 @@ function createPublicApp(): express.Express {
 
       async function tryHandleIntentRouterLayer(): Promise<boolean> {
         if (!INTENT_ROUTER_ENABLED) {
+          return false;
+        }
+        if (shouldHandleAsResearchRequest(message, historyForBrain)) {
           return false;
         }
         if (
