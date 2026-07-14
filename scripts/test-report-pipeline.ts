@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import {
+  assessFastReportEvidence,
   collectPreferredReportSources,
   finalizeReportMarkdown,
 } from '../lib/reportPipeline';
@@ -873,6 +874,155 @@ France, Argentina, and Brazil remain strong teams.
 assert.match(
   worldCupPredmarketRequiresProbabilityEvidence.validationIssues.join('\n'),
   /odds or probability evidence/i,
+);
+
+const worldCupEvidenceTask = `research the prediction market topic: Who Will Win the FIFA World Cup 2026?
+Listed outcomes in AgentFlow: France / England / Argentina / Spain / Other.
+Prediction market category in AgentFlow: Sports.`;
+const thinWorldCupEvidence = assessFastReportEvidence({
+  task: worldCupEvidenceTask,
+  research: null,
+  liveData: {
+    snapshot_at: '2026-07-14T00:00:00.000Z',
+    dynamic_sources: {
+      articles: [
+        {
+          title: 'World Cup 2026 schedule and teams',
+          publisher: 'FIFA',
+          url: 'https://www.fifa.com/en/tournaments/mens/worldcup/canadamexicousa2026/schedule',
+          summary: 'Official tournament schedule.',
+        },
+        {
+          title: 'World Cup semifinal schedule',
+          publisher: 'BBC News',
+          url: 'https://www.bbc.com/sport/football/world-cup-2026-semifinal-schedule',
+          summary: 'Remaining fixtures and kickoff times.',
+        },
+        {
+          title: 'World Cup teams remaining',
+          publisher: 'Sporting News',
+          url: 'https://www.sportingnews.com/us/soccer/news/world-cup-2026-teams-remaining/example',
+          summary: 'Tournament bracket background.',
+        },
+      ],
+    },
+  },
+});
+assert.equal(thinWorldCupEvidence.ok, false);
+assert.match(
+  thinWorldCupEvidence.issues.join('\n'),
+  /odds or probability evidence/i,
+  'Expected schedule-only World Cup sources to stop before paid agents.',
+);
+
+const decisionGradeWorldCupEvidence = assessFastReportEvidence({
+  task: worldCupEvidenceTask,
+  research: null,
+  liveData: {
+    snapshot_at: '2026-07-14T00:00:00.000Z',
+    dynamic_sources: {
+      articles: [
+        {
+          title: 'World Cup 2026 winner odds entering the semifinals',
+          publisher: 'OddsChecker',
+          url: 'https://www.oddschecker.com/us/insight/soccer/20260713-2026-fifa-world-cup-winner-odds',
+          summary: 'Current outright prices and implied contender probabilities.',
+        },
+        {
+          title: 'World Cup prediction model and team probabilities',
+          publisher: 'The Analyst',
+          url: 'https://theanalyst.com/articles/world-cup-2026-predictions-semifinals',
+          summary: 'Opta model probabilities for the remaining teams.',
+        },
+        {
+          title: 'World Cup 2026 official semifinal schedule',
+          publisher: 'FIFA',
+          url: 'https://www.fifa.com/en/tournaments/mens/worldcup/canadamexicousa2026/schedule',
+          summary: 'Official remaining fixtures and final date.',
+        },
+      ],
+    },
+  },
+});
+assert.equal(
+  decisionGradeWorldCupEvidence.ok,
+  true,
+  `Expected decision-grade World Cup evidence, got: ${decisionGradeWorldCupEvidence.issues.join('; ')}`,
+);
+
+const bitcoinMarketCapTask = `research the prediction market topic: Will Bitcoin Reach a $2 Trillion Market Cap Before December 31, 2026?
+Listed outcomes in AgentFlow: Yes / No.
+Prediction market category in AgentFlow: Crypto.`;
+const thinBitcoinMarketCapEvidence = assessFastReportEvidence({
+  task: bitcoinMarketCapTask,
+  research: null,
+  liveData: {
+    snapshot_at: '2026-07-14T00:00:00.000Z',
+    coingecko: {
+      assets: [{ coinId: 'bitcoin' }],
+    },
+    dynamic_sources: {
+      articles: [
+        {
+          title: 'Bitcoin market update',
+          publisher: 'CoinDesk',
+          url: 'https://www.coindesk.com/markets/2026/07/14/bitcoin-market-update/',
+          summary: 'Current Bitcoin market coverage.',
+        },
+        {
+          title: 'Bitcoin institutional flows',
+          publisher: 'Reuters',
+          url: 'https://www.reuters.com/technology/bitcoin-institutional-flows-2026-07-14/',
+          summary: 'Current institutional demand context.',
+        },
+      ],
+    },
+  },
+});
+assert.equal(thinBitcoinMarketCapEvidence.ok, false);
+assert.match(
+  thinBitcoinMarketCapEvidence.issues.join('\n'),
+  /current numeric price and market-cap snapshot/i,
+  'Expected Bitcoin target research without the numeric baseline to stop before paid agents.',
+);
+
+const decisionGradeBitcoinMarketCapEvidence = assessFastReportEvidence({
+  task: bitcoinMarketCapTask,
+  research: null,
+  liveData: {
+    snapshot_at: '2026-07-14T00:00:00.000Z',
+    coingecko: {
+      assets: [
+        {
+          coinId: 'bitcoin',
+          price_usd: 65432,
+          market_cap_usd: 1_302_000_000_000,
+          last_updated_at: '2026-07-14T00:00:00.000Z',
+        },
+      ],
+    },
+    dynamic_sources: {
+      articles: [
+        {
+          title: 'Bitcoin ETF flows and current market outlook',
+          publisher: 'Reuters',
+          url: 'https://www.reuters.com/technology/bitcoin-etf-flows-2026-07-14/',
+          summary: 'Current institutional demand and macro context.',
+        },
+        {
+          title: 'Bitcoin market-cap outlook',
+          publisher: 'CoinDesk',
+          url: 'https://www.coindesk.com/markets/2026/07/14/bitcoin-market-cap-outlook/',
+          summary: 'Current Bitcoin market drivers and risks.',
+        },
+      ],
+    },
+  },
+});
+assert.equal(
+  decisionGradeBitcoinMarketCapEvidence.ok,
+  true,
+  `Expected decision-grade Bitcoin evidence, got: ${decisionGradeBitcoinMarketCapEvidence.issues.join('; ')}`,
 );
 
 const worldCupPredmarketDoesNotTreatSourceUrlSlugAsFutureDate = finalizeReportMarkdown({

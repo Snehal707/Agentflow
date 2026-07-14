@@ -109,7 +109,7 @@ import {
   buildWriterModelInput,
 } from './lib/reportInputs';
 import {
-  collectPreferredReportSources,
+  assessFastReportEvidence,
   finalizeReportMarkdown,
 } from './lib/reportPipeline';
 import { maybeImproveFastReport } from './lib/fast-report-supervisor';
@@ -16374,24 +16374,15 @@ function createPublicApp(): express.Express {
       const parsedLiveData = researchResult.data.liveData ?? null;
       const actualSources = summarizeLiveDataSourceNames(parsedLiveData, task);
       if (reasoningMode === 'fast') {
-        const preferredSources = collectPreferredReportSources({
+        const evidenceAssessment = assessFastReportEvidence({
           task,
           research: parsedResearch,
           liveData: parsedLiveData,
         });
-        const sourceDomains = new Set(
-          preferredSources.flatMap((source) => {
-            try {
-              return [new URL(source.url).hostname.replace(/^www\./i, '').toLowerCase()];
-            } catch {
-              return [];
-            }
-          }),
-        );
-        if (preferredSources.length < 2 || sourceDomains.size < 2) {
+        if (!evidenceAssessment.ok) {
           throw new Error(
-            'Live retrieval did not establish at least two independent public source domains. ' +
-              'The report stopped before the Analyst and Writer stages to avoid charging for an inadequately sourced result. Please retry or use deep research.',
+            `Live retrieval did not establish decision-grade evidence: ${evidenceAssessment.issues.join(' ')} ` +
+              'The report stopped before the Analyst and Writer stages to avoid charging for an inadequately sourced result. Please retry after retrieval recovers or use deep research.',
           );
         }
       }
