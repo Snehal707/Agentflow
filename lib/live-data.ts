@@ -3568,11 +3568,13 @@ export function shouldGatherCurrentEvents(task: string): boolean {
   if (isSportsPredictionMarketTask(task) || isSportsPredictionMarketTask(cleanedTask)) {
     return true;
   }
-  if (isBroadLongHorizonOverviewTask(cleanedTask)) {
-    return false;
-  }
+  // Explicit research (including "climate outlook", "AI future") must still pull Google News /
+  // current events so Sources can ground — do not treat long-horizon wording as a hard skip.
   if (isExplicitExternalResearchTask(task)) {
     return true;
+  }
+  if (isBroadLongHorizonOverviewTask(cleanedTask)) {
+    return false;
   }
   if (isBroadCurrentStateResearchTask(cleanedTask)) {
     return true;
