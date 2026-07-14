@@ -1543,6 +1543,10 @@ async function fetchPredictionMarketSportsAuthorityEvidence(
 
   const fallbackUrls: string[] = [];
   if (/\bFIFA World Cup\b/i.test(competition)) {
+    addUniqueQuery(
+      fallbackUrls,
+      'https://theanalyst.com/articles/world-cup-predictions-2026-quarter-finals-opta-supercomputer',
+    );
     addUniqueQuery(fallbackUrls, 'https://www.foxsports.com/stories/soccer/world-cup-2026-champion-odds');
     addUniqueQuery(
       fallbackUrls,
@@ -1554,16 +1558,14 @@ async function fetchPredictionMarketSportsAuthorityEvidence(
       fallbackUrls,
       'https://theanalyst.com/articles/fifa-world-cup-2026-groups-predictions-previews',
     );
-    addUniqueQuery(
-      fallbackUrls,
-      'https://theanalyst.com/articles/world-cup-predictions-2026-quarter-finals-opta-supercomputer',
-    );
     addUniqueQuery(fallbackUrls, 'https://www.covers.com/world-cup/odds');
     addUniqueQuery(fallbackUrls, 'https://www.cbssports.com/betting/news/world-cup-odds/');
   }
 
-  const fallbackSnapshots = await Promise.all(
-    fallbackUrls.slice(0, 7).map(async (url) => {
+  const fallbackSnapshots = await mapWithConcurrency(
+    fallbackUrls.slice(0, 5),
+    2,
+    async (url) => {
       try {
         const markdown = await fetchUrlViaFirecrawl(url);
         const summary = isSportsWinnerPredictionMarketTask(task, understanding)
@@ -1587,7 +1589,7 @@ async function fetchPredictionMarketSportsAuthorityEvidence(
       } catch {
         return null;
       }
-    }),
+    },
   );
   if (process.env.RETR_DEBUG && fallbackUrls.length > 0) {
     const kept = fallbackSnapshots.filter(Boolean) as FirecrawlArticleSnapshot[];
@@ -1598,8 +1600,10 @@ async function fetchPredictionMarketSportsAuthorityEvidence(
     );
   }
 
-  const groups = await Promise.all(
-    queries.slice(0, 6).map(async (query) => {
+  const groups = await mapWithConcurrency(
+    queries.slice(0, 4),
+    2,
+    async (query) => {
       try {
         const [firecrawlResults, searxngResults] = await Promise.allSettled([
           searchFirecrawlNews(query, 4, { recency: 'all' }),
@@ -1620,7 +1624,7 @@ async function fetchPredictionMarketSportsAuthorityEvidence(
       } catch {
         return [] as FirecrawlArticleSnapshot[];
       }
-    }),
+    },
   );
 
   const deduped = new Map<string, FirecrawlArticleSnapshot>();
@@ -2318,6 +2322,27 @@ function buildPredictionMarketSourceDiagnostics(
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  mapper: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+  const workers = Array.from(
+    { length: Math.min(Math.max(1, concurrency), items.length) },
+    async () => {
+      while (nextIndex < items.length) {
+        const index = nextIndex;
+        nextIndex += 1;
+        results[index] = await mapper(items[index], index);
+      }
+    },
+  );
+  await Promise.all(workers);
+  return results;
 }
 
 function isArcNetworkTask(task: string): boolean {
@@ -4955,7 +4980,7 @@ async function fetchFirecrawlSearchSnapshots(
     return score;
   };
   const isPredictionMarketQuery = /\bprediction market\b/i.test(task);
-  const maxQueries = Math.min(uniqueQueries.length, isPredictionMarketQuery ? 9 : 5);
+  const maxQueries = Math.min(uniqueQueries.length, isPredictionMarketQuery ? 5 : 5);
   const sortedQueries = uniqueQueries.slice().sort((a, b) => scoreQuery(b) - scoreQuery(a));
 
   // Guarantee broad subject queries are actually searched. site:-scoped queries score highly but
@@ -5089,8 +5114,10 @@ async function fetchFirecrawlSearchSnapshots(
     attempt: 'primary' | 'retry',
     bypassCacheForAttempt = false,
   ): Promise<FirecrawlArticleSnapshot[][]> =>
-    Promise.all(
-      selectedQueries.map((query) => fetchSnapshotsForQuery(query, attempt, bypassCacheForAttempt)),
+    mapWithConcurrency(
+      selectedQueries,
+      2,
+      (query) => fetchSnapshotsForQuery(query, attempt, bypassCacheForAttempt),
     );
   const countRelevantSnapshots = (groups: FirecrawlArticleSnapshot[][]): number => {
     const seen = new Set<string>();
@@ -7557,6 +7584,16 @@ export async function fetchLiveData(
   } else {
     const identityLookup = isSimpleIdentityLookup(sourceTask);
     const lookupTask = identityLookup ? normalizeIdentityLookupQuery(sourceTask) : sourceTask;
+    // A single self-hosted Firecrawl worker is easily starved by broad discovery.
+    // For sports winner markets, fetch the targeted odds/model evidence first so
+    // the decision-grade page cannot sit behind a burst of generic search jobs.
+    const preloadedSportsAuthorityEvidence =
+      isPredictionMarketTask && extractPredictionMarketCategory(contextTask) === 'sports'
+        ? await fetchPredictionMarketSportsAuthorityEvidence(
+            contextTask,
+            predictionMarketUnderstanding,
+          ).catch(() => [] as FirecrawlArticleSnapshot[])
+        : [];
     const [firecrawlEvidence, registryArticleEvidence, sportsAuthorityEvidence, officialSearchEvidence, officialFallbackEvidence, wikipedia, currentEvents] = await Promise.all([
       (
         shouldFetchCurrentEvents && !shouldAlsoFetchFirecrawl
@@ -7573,9 +7610,7 @@ export async function fetchLiveData(
           ).catch(() => [] as FirecrawlArticleSnapshot[])
         : Promise.resolve([] as FirecrawlArticleSnapshot[]),
       isPredictionMarketTask
-        ? fetchPredictionMarketSportsAuthorityEvidence(contextTask, predictionMarketUnderstanding).catch(
-            () => [] as FirecrawlArticleSnapshot[],
-          )
+        ? Promise.resolve(preloadedSportsAuthorityEvidence)
         : Promise.resolve([] as FirecrawlArticleSnapshot[]),
       isPredictionMarketTask
         ? fetchPredictionMarketOfficialSearchEvidence(
