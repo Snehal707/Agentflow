@@ -293,10 +293,10 @@ export async function searchFirecrawlNews(
             ? {}
             : { tbs: options?.recency === 'year' ? 'qdr:y' : options?.recency === 'month' ? 'qdr:m' : 'qdr:w' }),
           timeout: 30_000,
-          scrapeOptions: {
-            formats: ['markdown'],
-            onlyMainContent: true,
-          },
+          // Keep discovery metadata-only. Asking self-hosted Firecrawl to
+          // scrape every search hit made otherwise healthy searches exceed
+          // the 20-second client budget. The retrieval pipeline separately
+          // scrapes only the small, ranked set of pages it actually retains.
         }),
       },
       FIRECRAWL_FETCH_TIMEOUT_MS,

@@ -22,6 +22,14 @@ export type NormalizedReportSource = {
   accessedAt?: string;
 };
 
+export type FastReportEvidenceAssessment = {
+  ok: boolean;
+  sources: NormalizedReportSource[];
+  distinctDomains: string[];
+  requiredDistinctDomains: number;
+  issues: string[];
+};
+
 export type NormalizedClaim = {
   topic: string;
   claim_id: string;
@@ -864,8 +872,8 @@ function buildLiveDataSourceGrounding(
     pushGroundedSource(grounding, task, {
       name: asString(article?.publisher) ?? asString(article?.title) ?? 'Current event source',
       usedFor:
-        asString(article?.summary) ??
         asString(article?.title) ??
+        asString(article?.summary) ??
         'Current event article snapshot',
       url,
       trustedLiveData: true,
@@ -892,8 +900,8 @@ function buildLiveDataSourceGrounding(
     pushGroundedSource(grounding, task, {
       name: asString(article?.publisher) ?? asString(article?.domain) ?? asString(article?.title) ?? 'Current event source',
       usedFor:
-        asString(article?.summary) ??
         asString(article?.title) ??
+        asString(article?.summary) ??
         'Current event article evidence',
       url,
       trustedLiveData: true,
@@ -921,8 +929,8 @@ function buildLiveDataSourceGrounding(
     pushGroundedSource(grounding, task, {
       name: asString(article?.publisher) ?? asString(article?.title) ?? 'Dynamic source',
       usedFor:
-        asString(article?.summary) ??
         asString(article?.title) ??
+        asString(article?.summary) ??
         'Live Data article snapshot',
       url,
       trustedLiveData: true,
@@ -2566,7 +2574,33 @@ function buildSourcesSection(
   fallbackAccessDate?: string,
   task?: string,
 ): string {
-  const dedupedSources = mergeNormalizedSources(sources, [], 6);
+  const orderedSources = mergeNormalizedSources(sources, [], 24);
+  const dedupedSources: NormalizedReportSource[] = [];
+  const selectedUrls = new Set<string>();
+  const hostCounts = new Map<string, number>();
+
+  // Prefer publisher diversity in the visible bibliography. A second article
+  // from a publisher is useful, but six links from two publishers made thin
+  // retrieval look broader than it really was.
+  for (const source of orderedSources) {
+    const host = sourceHostname(source.url) || source.name.toLowerCase();
+    if (hostCounts.has(host)) continue;
+    dedupedSources.push(source);
+    selectedUrls.add(source.url);
+    hostCounts.set(host, 1);
+    if (dedupedSources.length >= 6) break;
+  }
+  if (dedupedSources.length < 6) {
+    for (const source of orderedSources) {
+      if (selectedUrls.has(source.url)) continue;
+      const host = sourceHostname(source.url) || source.name.toLowerCase();
+      if ((hostCounts.get(host) ?? 0) >= 2) continue;
+      dedupedSources.push(source);
+      selectedUrls.add(source.url);
+      hostCounts.set(host, (hostCounts.get(host) ?? 0) + 1);
+      if (dedupedSources.length >= 6) break;
+    }
+  }
   return dedupedSources.length
     ? dedupedSources
         .map((source) => {
@@ -3450,6 +3484,89 @@ export function collectPreferredReportSources(params: {
     analysis: null,
     liveData: params.liveData,
   }).sources;
+}
+
+function hasCurrentBitcoinMarketCapSnapshot(liveData: Obj | null): boolean {
+  const assets = asArray(asObject(liveData?.coingecko)?.assets);
+  return assets.some((entry) => {
+    const asset = asObject(entry);
+    const coinId = asString(asset?.coinId)?.toLowerCase();
+    const price = Number(asset?.price_usd);
+    const marketCap = Number(asset?.market_cap_usd);
+    return (
+      coinId === 'bitcoin' &&
+      Number.isFinite(price) &&
+      price > 0 &&
+      Number.isFinite(marketCap) &&
+      marketCap > 0
+    );
+  });
+}
+
+export function assessFastReportEvidence(params: {
+  task: string;
+  research: Obj | null;
+  liveData: Obj | null;
+}): FastReportEvidenceAssessment {
+  const sources = collectPreferredReportSources(params);
+  const distinctDomains = [
+    ...new Set(sources.map((source) => sourceHostname(source.url)).filter(Boolean)),
+  ];
+  const isPredictionMarket = isPredictionMarketResearchTask(params.task);
+  const isSportsWinnerMarket =
+    isPredictionMarket &&
+    /\b(world cup|fifa|winner|champions league|nba|nfl|mlb|nhl|tennis)\b/i.test(params.task);
+  const isBitcoinMarketCapMarket =
+    isPredictionMarket &&
+    /\b(bitcoin|btc)\b/i.test(params.task) &&
+    /\b(market cap|market capitalization|valuation)\b/i.test(params.task);
+  const diagnostics = asObject(params.liveData?.source_diagnostics);
+  const diagnosticsMinimum = Number(diagnostics?.required_distinct_sources);
+  const requiredDistinctDomains = Math.max(
+    2,
+    isSportsWinnerMarket || isBitcoinMarketCapMarket ? 3 : 0,
+    Number.isFinite(diagnosticsMinimum) ? diagnosticsMinimum : 0,
+  );
+  const issues: string[] = [];
+
+  if (sources.length < requiredDistinctDomains || distinctDomains.length < requiredDistinctDomains) {
+    issues.push(
+      `Only ${distinctDomains.length} independent source domain(s) survived relevance filtering; ${requiredDistinctDomains} are required.`,
+    );
+  }
+
+  if (isPredictionMarket) {
+    issues.push(...predictionMarketValidationIssues(params.task, '', sources));
+    issues.push(...predictionMarketEntityResolutionIssues(params.task, '', params.liveData, sources));
+  }
+
+  if (isBitcoinMarketCapMarket) {
+    if (!hasCurrentBitcoinMarketCapSnapshot(params.liveData)) {
+      issues.push(
+        'Bitcoin market-cap research lacks a current numeric price and market-cap snapshot.',
+      );
+    }
+    const hasIndependentCurrentContext = sources.some((source) => {
+      const host = sourceHostname(source.url);
+      return Boolean(
+        host &&
+          !/\b(coingecko\.com|coinmarketcap\.com|wikipedia\.org|bitcoin\.org)\b/i.test(host),
+      );
+    });
+    if (!hasIndependentCurrentContext) {
+      issues.push(
+        'Bitcoin market-cap research lacks independent current market or catalyst coverage.',
+      );
+    }
+  }
+
+  return {
+    ok: issues.length === 0,
+    sources,
+    distinctDomains,
+    requiredDistinctDomains,
+    issues: [...new Set(issues)],
+  };
 }
 
 export function validateReportMarkdown(

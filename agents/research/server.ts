@@ -281,7 +281,10 @@ function buildFastPredictionMarketBrief(
     preferred_source_types: [...preferredSourceTypes].slice(0, 6),
     must_answer: [...mustAnswer].slice(0, 8),
     avoid_drift: [...avoidDrift].slice(0, 6),
-    minimum_source_diversity: Math.max(category === 'sports' ? 3 : 2, entity?.ambiguity === 'high' ? 3 : 0),
+    minimum_source_diversity: Math.max(
+      category === 'sports' || questionType === 'price_target' ? 3 : 2,
+      entity?.ambiguity === 'high' ? 3 : 0,
+    ),
     max_query_variants: entity?.ambiguity === 'high' || category === 'sports' ? 10 : 7,
     target_source_count: entity?.ambiguity === 'high' || category === 'sports' ? 10 : 7,
     sub_questions: [...subQuestions].slice(0, 6),
@@ -308,15 +311,19 @@ function suppressStructuredApiHintForTask(task: string, sourceName: 'coingecko' 
 function collectFastLiveDataSourceHints(liveData: Record<string, unknown>, task = ''): Array<{
   name: string;
   url: string;
+  evidenceText: string;
 }> {
-  const sources: Array<{ name: string; url: string }> = [];
-  const addSource = (name: unknown, url: unknown) => {
+  const sources: Array<{ name: string; url: string; evidenceText: string }> = [];
+  const addSource = (name: unknown, url: unknown, evidence: unknown = '') => {
     if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) return;
     const label =
       typeof name === 'string' && name.trim()
         ? name.trim()
         : sourceHostname(url) || 'Source';
-    sources.push({ name: label, url });
+    const evidenceText = [label, url, typeof evidence === 'string' ? evidence : '']
+      .filter(Boolean)
+      .join(' ');
+    sources.push({ name: label, url, evidenceText });
   };
 
   const currentEvents =
@@ -327,7 +334,11 @@ function collectFastLiveDataSourceHints(liveData: Record<string, unknown>, task 
     ? (currentEvents?.article_snapshots as Array<Record<string, unknown>>)
     : [];
   for (const snapshot of eventSnapshots) {
-    addSource(snapshot.publisher, snapshot.url);
+    addSource(
+      snapshot.publisher ?? snapshot.title,
+      snapshot.url,
+      `${snapshot.title ?? ''} ${snapshot.summary ?? ''}`,
+    );
   }
 
   const dynamicSources =
@@ -338,7 +349,11 @@ function collectFastLiveDataSourceHints(liveData: Record<string, unknown>, task 
     ? (dynamicSources?.articles as Array<Record<string, unknown>>)
     : [];
   for (const article of dynamicArticles) {
-    addSource(article.publisher ?? article.title, article.url);
+    addSource(
+      article.publisher ?? article.title,
+      article.url,
+      `${article.title ?? ''} ${article.summary ?? ''}`,
+    );
   }
 
   const wikipedia =
@@ -419,6 +434,7 @@ function buildFastSourceDiagnostics(
     domains.length - highReliabilityDomains.length - mediumReliabilityDomains.length,
   );
   const reasons: string[] = [];
+  const evidenceHaystack = sources.map((source) => source.evidenceText).join(' \n ');
 
   if (domains.length < brief.minimum_source_diversity) {
     reasons.push(
@@ -442,6 +458,41 @@ function buildFastSourceDiagnostics(
     );
     if (!hasGoldEvidence) {
       reasons.push('The retrieved source set lacks direct gold-market evidence for XAUT.');
+    }
+  }
+  if (/\b(world cup|fifa|winner|champions league|nba|nfl|mlb|nhl|tennis)\b/i.test(task)) {
+    const hasProbabilityEvidence =
+      /\b(odds|probability|probabilities|favorite|favorites|implied|forecast|prediction)\b/i.test(
+        evidenceHaystack,
+      ) ||
+      /\b(oddschecker\.com|actionnetwork\.com|theanalyst\.com|covers\.com|draftkings\.com|fanduel\.com|vegasinsider\.com)\b/i.test(
+        evidenceHaystack,
+      );
+    if (!hasProbabilityEvidence) {
+      reasons.push('The retrieved sports source set lacks outright odds or probability evidence.');
+    }
+  }
+  if (
+    /\b(bitcoin|btc)\b/i.test(task) &&
+    /\b(market cap|market capitalization|valuation)\b/i.test(task)
+  ) {
+    const coingecko =
+      liveData.coingecko && typeof liveData.coingecko === 'object'
+        ? (liveData.coingecko as Record<string, unknown>)
+        : null;
+    const assets = Array.isArray(coingecko?.assets)
+      ? (coingecko?.assets as Array<Record<string, unknown>>)
+      : [];
+    const hasCurrentMarketCap = assets.some(
+      (asset) =>
+        asset.coinId === 'bitcoin' &&
+        Number.isFinite(Number(asset.price_usd)) &&
+        Number(asset.price_usd) > 0 &&
+        Number.isFinite(Number(asset.market_cap_usd)) &&
+        Number(asset.market_cap_usd) > 0,
+    );
+    if (!hasCurrentMarketCap) {
+      reasons.push('The retrieved Bitcoin evidence lacks a current numeric price and market-cap snapshot.');
     }
   }
 
