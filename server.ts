@@ -1,6 +1,6 @@
 import './lib/loadEnv';
 import express, { NextFunction, Request, Response } from 'express';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { getAddress, isAddress, type Address } from 'viem';
@@ -637,6 +637,9 @@ const LIVE_DATA_TIMEOUT_MS_CURRENT_EVENTS = Number(
 const LIVE_DATA_TIMEOUT_MS_PREDICTION_MARKET = Number(
   process.env.RESEARCH_LIVE_DATA_TIMEOUT_MS_PREDICTION_MARKET || 180_000,
 );
+const RESEARCH_LIVE_DATA_REUSE_TTL_SECONDS = Number(
+  process.env.RESEARCH_LIVE_DATA_REUSE_TTL_SECONDS || 60 * 60 * 24 * 7,
+);
 const SSE_HEARTBEAT_MS = Number(process.env.SSE_HEARTBEAT_MS || 15_000);
 const AGENT_JSON_LIMIT = process.env.AGENT_JSON_LIMIT?.trim() || '20mb';
 
@@ -1026,6 +1029,66 @@ function parseLiveDataPayload(liveData: string): Record<string, unknown> | null 
       : null;
   } catch {
     return null;
+  }
+}
+
+function researchLiveDataReuseKey(task: string): string {
+  const normalized = task.trim().toLowerCase().replace(/\s+/g, ' ');
+  const hash = createHash('sha256').update(normalized).digest('hex');
+  return `research:live-data:${hash}`;
+}
+
+function shouldUsePersistentResearchLiveDataCache(task: string): boolean {
+  return (
+    isExplicitResearchRequest(task) &&
+    !looksLikePredictionMarketResearch(task) &&
+    !/\bprediction market\b/i.test(task)
+  );
+}
+
+function liveDataArticleEvidenceCount(payload: Record<string, unknown> | null): number {
+  if (!payload) return 0;
+  const dynamicSources = recordValue(payload.dynamic_sources);
+  const currentEvents = recordValue(payload.current_events);
+  return (
+    arrayValue(dynamicSources?.articles).length +
+    arrayValue(currentEvents?.article_snapshots).length +
+    arrayValue(currentEvents?.articles).length
+  );
+}
+
+function hasReusableResearchLiveDataEvidence(payload: Record<string, unknown> | null): boolean {
+  return liveDataArticleEvidenceCount(payload) > 0;
+}
+
+async function loadReusableResearchLiveData(task: string): Promise<string | null> {
+  if (!shouldUsePersistentResearchLiveDataCache(task)) return null;
+  try {
+    const raw = await getRedis().get(researchLiveDataReuseKey(task));
+    const liveData = typeof raw === 'string' ? raw.trim() : '';
+    if (!liveData) return null;
+    if (!hasReusableResearchLiveDataEvidence(parseLiveDataPayload(liveData))) return null;
+    return liveData;
+  } catch (error) {
+    console.warn('[Research] reusable live-data load failed:', getErrorMessage(error));
+    return null;
+  }
+}
+
+async function storeReusableResearchLiveData(task: string, liveData: string): Promise<void> {
+  if (!shouldUsePersistentResearchLiveDataCache(task)) return;
+  const trimmed = liveData.trim();
+  if (!trimmed) return;
+  if (!hasReusableResearchLiveDataEvidence(parseLiveDataPayload(trimmed))) return;
+  try {
+    await getRedis().set(
+      researchLiveDataReuseKey(task),
+      trimmed,
+      'EX',
+      RESEARCH_LIVE_DATA_REUSE_TTL_SECONDS,
+    );
+  } catch (error) {
+    console.warn('[Research] reusable live-data store failed:', getErrorMessage(error));
   }
 }
 
@@ -16632,6 +16695,16 @@ async function start(): Promise<void> {
       );
     } catch (liveDataError) {
       console.warn('[Research] Live data enrichment skipped:', getErrorMessage(liveDataError));
+    }
+    const freshLiveDataPayload = parseLiveDataPayload(liveData);
+    if (hasReusableResearchLiveDataEvidence(freshLiveDataPayload)) {
+      await storeReusableResearchLiveData(task, liveData);
+    } else {
+      const reusableLiveData = await loadReusableResearchLiveData(task);
+      if (reusableLiveData) {
+        console.warn('[Research] Reusing last good live-data payload for explicit research query.');
+        liveData = reusableLiveData;
+      }
     }
     const asOf = new Date().toISOString();
     if (!liveData.trim() && requiresLiveEvidence(task)) {
