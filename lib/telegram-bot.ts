@@ -800,7 +800,9 @@ function formatTelegramPlainText(text: string): string {
   return text
     .replace(/^#{1,6}\s+/gm, '')
     .replace(/^\s*-\s+(?=[A-Z])/gm, '')
-    .replace(/\[([^\]\n]+)\]\((https?:\/\/[^)\s]+)\)/g, '$1')
+    // Keep the URL visibly — Telegram has no Markdown parse mode here, and
+    // dropping the href left Sources as bare hostnames / "likes" blurbs.
+    .replace(/\[([^\]\n]+)\]\((https?:\/\/[^)\s]+)\)/g, '$1 ($2)')
     .replace(/\*\*([^*\n]+)\*\*/g, '$1')
     .replace(/__([^_\n]+)__/g, '$1')
     .replace(/`([^`\n]+)`/g, '$1')

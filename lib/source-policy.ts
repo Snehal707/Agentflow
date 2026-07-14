@@ -82,17 +82,12 @@ export function isOfficialCreatorPlatformUrl(url: string): boolean {
 export function isLowValueSocialSourceUrl(url: string): boolean {
   const normalized = url.toLowerCase();
 
+  // Treat Facebook/Instagram hosts as low-value for research citation, not only
+  // individual posts. Page-root hits (e.g. facebook.com/Future) were sliding into
+  // report Sources after live-data fallback merging.
   if (
-    (/^https?:\/\/(?:m\.)?(?:www\.)?facebook\.com\//.test(normalized) ||
-      /^https?:\/\/(?:www\.)?fb\.com\//.test(normalized)) &&
-    /\/groups\/|\/posts\/|\/permalink\.php|\/story\.php|\/photo\.php/.test(normalized)
-  ) {
-    return true;
-  }
-
-  if (
-    /^https?:\/\/(?:www\.)?instagram\.com\//.test(normalized) &&
-    /\/(?:p|reel|reels|tv|stories)\//.test(normalized)
+    /^https?:\/\/(?:m\.)?(?:www\.)?(?:facebook\.com|fb\.com)(?:\/|$)/.test(normalized) ||
+    /^https?:\/\/(?:www\.)?instagram\.com(?:\/|$)/.test(normalized)
   ) {
     return true;
   }

@@ -1004,6 +1004,70 @@ assert.doesNotMatch(
   /Source URLs were not available/i,
 );
 
+const broadAiIndiaReportDropsSocialPageFallback = finalizeReportMarkdown({
+  task: 'research on future of AI in India',
+  writerMarkdown: `## Overview
+
+India is expanding AI investment.
+
+## Sources
+
+- Policy source`,
+  research: {
+    topic: 'Future of AI in India',
+    sources: [
+      {
+        name: 'IndiaAI',
+        url: 'https://indiaai.gov.in/article/national-ai-strategy',
+        used_for: 'National AI programme overview',
+      },
+    ],
+  },
+  analysis: null,
+  liveData: {
+    snapshot_at: '2026-07-14T00:00:00.000Z',
+    dynamic_sources: {
+      articles: [
+        {
+          title: 'Future. 9,970,013 likes · 9,032 talking about this. OFFICIAL PAGE FOR FUTURE',
+          publisher: 'facebook.com',
+          url: 'https://www.facebook.com/Future',
+          summary: 'Future. 9,970,013 likes · 9,032 talking about this. OFFICIAL PAGE FOR FUTURE',
+          seen_at: '2026-07-14T00:00:00.000Z',
+        },
+        {
+          title: 'AI India Instagram profile',
+          publisher: 'instagram.com',
+          url: 'https://www.instagram.com/indiaai/',
+          summary: 'Social profile metadata',
+          seen_at: '2026-07-14T00:00:00.000Z',
+        },
+        {
+          title: 'IndiaAI Mission expands compute capacity for startups',
+          publisher: 'Ministry of Electronics and IT',
+          url: 'https://www.meity.gov.in/indiaai-mission-compute-capacity-2026',
+          summary: 'India expanded public AI compute access for startups and researchers.',
+          seen_at: '2026-07-13T00:00:00.000Z',
+        },
+      ],
+    },
+  },
+});
+assert.match(
+  broadAiIndiaReportDropsSocialPageFallback.markdown,
+  /indiaai\.gov\.in\/article\/national-ai-strategy/i,
+);
+assert.match(
+  broadAiIndiaReportDropsSocialPageFallback.markdown,
+  /meity\.gov\.in\/indiaai-mission-compute-capacity-2026/i,
+);
+assert.doesNotMatch(broadAiIndiaReportDropsSocialPageFallback.markdown, /facebook\.com/i);
+assert.doesNotMatch(broadAiIndiaReportDropsSocialPageFallback.markdown, /instagram\.com/i);
+assert.doesNotMatch(
+  broadAiIndiaReportDropsSocialPageFallback.markdown,
+  /Source URLs were not available/i,
+);
+
 const sourceOnlyResearchPayloadStillRendersSources = finalizeReportMarkdown({
   task: 'research future of AI in India',
   writerMarkdown: `## Overview
