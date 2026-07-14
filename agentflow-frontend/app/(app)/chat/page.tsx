@@ -653,7 +653,7 @@ const metaConversationPattern =
   /\b(i thought|i assumed|i guess|i was wrong|my bad|sorry|you were right|you only|i didn't mean|i did not mean)\b/i;
 
 const explicitResearchIntentPattern =
-  /^(research|analyze|analyse|compare|summarize|summarise|brief|report on|look into)\b|\b(can you|could you|please|help me)\s+(research|analyze|analyse|compare|summarize|summarise|brief|look into)\b|\b(latest news|latest developments|news on|news about|market outlook|macro outlook|forecast|thesis)\b|\bhow does .* affect (me|my portfolio|stablecoin holders?|holders?)\b|\bwhat('s| is) the latest\b/i;
+  /^(research|analyze|analyse|compare|summarize|summarise|brief|report on|look into)\b|\b(?:make|create|write|prepare|generate)\s+(?:a\s+|an\s+)?(?:research\s+)?report(?:\s+(?:on|about|of|for)\b)?|\bresearch\s+report\b|\breport\s+(?:on|about|of)\b|\b(can you|could you|please|help me)\s+(research|analyze|analyse|compare|summarize|summarise|brief|look into)\b|\b(latest news|latest developments|news on|news about|market outlook|macro outlook|forecast|thesis)\b|\bhow does .* affect (me|my portfolio|stablecoin holders?|holders?)\b|\bwhat('s| is) the latest\b/i;
 
 function normalizePromptForIntent(prompt: string): string {
   return prompt
@@ -1163,15 +1163,6 @@ function inferPromptIntent(prompt: string, fallbackTab: PromptTab): ChatIntent {
   }
 
   if (
-    explicitBridgeActionPattern.test(normalized) ||
-    (hasBridgeIntentFraming(prompt) && Boolean(detectBridgeSource(prompt))) ||
-    isBareBridgeSourceReply(prompt) ||
-    /\b(sepolia|base sepolia|ethereum sepolia)\b/.test(normalized)
-  ) {
-    return "Bridge";
-  }
-
-  if (
     explicitSwapActionPattern.test(normalized) ||
     (mentionsStablecoin && /\b(buy|sell)\b/.test(normalized))
   ) {
@@ -1180,6 +1171,15 @@ function inferPromptIntent(prompt: string, fallbackTab: PromptTab): ChatIntent {
 
   if (explicitResearchIntentPattern.test(normalized)) {
     return "Research";
+  }
+
+  if (
+    explicitBridgeActionPattern.test(normalized) ||
+    (hasBridgeIntentFraming(prompt) && Boolean(detectBridgeSource(prompt))) ||
+    isBareBridgeSourceReply(prompt) ||
+    /\b(sepolia|base sepolia|ethereum sepolia)\b/.test(normalized)
+  ) {
+    return "Bridge";
   }
 
   if (
@@ -4970,7 +4970,8 @@ function ChatPageInner() {
       ? "Vision"
       : inferredIntent;
     const normalizedEffectiveInput = normalizePromptForIntent(effectiveInput);
-    const promptBridgeSource = detectBridgeSource(effectiveInput);
+    const explicitResearchPrompt = explicitResearchIntentPattern.test(normalizedEffectiveInput);
+    const promptBridgeSource = explicitResearchPrompt ? null : detectBridgeSource(effectiveInput);
     const bridgeFundedChainsQuickAction = isBridgeFundedChainsQuickAction({
       prompt: decodedQuickAction.prompt,
       actionId: decodedQuickAction.actionId,
