@@ -16376,7 +16376,10 @@ function createPublicApp(): express.Express {
       if (reasoningMode === 'fast') {
         const evidenceAssessment = assessFastReportEvidence({
           task,
-          research: parsedResearch,
+          // The payment gate must evaluate raw retrieval only. The Research LLM's
+          // draft source list can be incomplete or malformed and must not displace
+          // verified live sources before Analyst/Writer are paid.
+          research: null,
           liveData: parsedLiveData,
         });
         if (!evidenceAssessment.ok) {
