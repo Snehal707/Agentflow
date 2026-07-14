@@ -27,10 +27,7 @@ import {
 import { buildInternalCapabilityContext } from '../../lib/internal-capability-retrieval';
 import { resolveAgentPrivateKey } from '../../lib/agentPrivateKey';
 import { resolveAgentSellerAddress } from '../../lib/agentSellerAddress';
-import {
-  detectPortfolioImpactIntent,
-  stripPortfolioImpactPhrasing,
-} from '../../lib/portfolio-impact-intent';
+import { parseResearchRequest } from '../../lib/portfolio-impact-intent';
 import { inferResearchReasoningMode } from '../../lib/researchMode';
 import { getFacilitatorBaseUrl } from '../../lib/facilitator-url';
 import {
@@ -38,6 +35,12 @@ import {
   type CounterpartyRiskAssessment,
 } from '../../lib/counterparty-risk';
 import { detectProtocolQueryShape } from '../../lib/protocol-query-shape';
+import {
+  getLocalEvidenceIndexHealth,
+  indexFastResearchEvidence,
+  mergeLocalEvidenceIntoLiveData,
+  searchLocalEvidence,
+} from '../../lib/local-evidence-index';
 import { searchResearchMemory } from '../../lib/research-memory';
 import { sourceHostname } from '../../lib/source-policy';
 import {
@@ -813,11 +816,12 @@ const runHandler = async (req: express.Request, res: express.Response) => {
   const timingTrace: TimingTracePoint[] = [];
   try {
     const rawTask = (req.body?.task as string) ?? (req.query.task as string) ?? '';
-    const portfolioImpact =
-      req.body?.portfolioImpact === true ||
-      req.query.portfolioImpact === 'true' ||
-      detectPortfolioImpactIntent(rawTask);
-    const task = portfolioImpact ? stripPortfolioImpactPhrasing(rawTask) : rawTask;
+    const parsedRequest = parseResearchRequest(rawTask, {
+      portfolioImpact:
+        req.body?.portfolioImpact === true || req.query.portfolioImpact === 'true',
+    });
+    const portfolioImpact = parsedRequest.portfolioImpact;
+    const task = parsedRequest.researchTask;
     const timingTraceId =
       typeof req.body?.timingTraceId === 'string' && req.body.timingTraceId.trim()
         ? req.body.timingTraceId.trim()
@@ -1012,6 +1016,11 @@ const runHandler = async (req: express.Request, res: express.Response) => {
       });
       console.warn(`[Research ${requestId}] Live data enrichment skipped:`, getErrorMessage(liveDataError));
     }
+    let liveDataPayload = parseLiveDataPayload(liveData);
+    liveDataPayload = await mergeLocalEvidenceIntoLiveData(task, liveDataPayload);
+    if (liveDataPayload) {
+      liveData = JSON.stringify(liveDataPayload);
+    }
     const asOf = new Date().toISOString();
     if (!liveData.trim() && requiresLiveEvidence(task)) {
       pushTimingTrace(timingTrace, traceStart, 'return_sparse_evidence');
@@ -1027,7 +1036,6 @@ const runHandler = async (req: express.Request, res: express.Response) => {
       });
     }
 
-    let liveDataPayload = parseLiveDataPayload(liveData);
     let fastResearchBrief: ResearchBrief | null = null;
     if (liveDataPayload && /\bprediction market\b/i.test(task)) {
       const researchBrief = buildFastPredictionMarketBrief(task, marketUnderstanding);
@@ -1142,6 +1150,11 @@ const runHandler = async (req: express.Request, res: express.Response) => {
     }).catch((error) => {
       console.warn('[research-memory] fast persist skipped:', getErrorMessage(error));
     });
+    void indexFastResearchEvidence(task, liveDataPayload).then((count) => {
+      if (count > 0) console.log(`[research-index] fast evidence queued documents=${count}`);
+    }).catch((error) => {
+      console.warn('[research-index] fast persist skipped:', getErrorMessage(error));
+    });
   } catch (err) {
     const message = getErrorMessage(err);
     const statusCode = message.includes('timed out') ? 504 : 500;
@@ -1156,6 +1169,28 @@ const runHandler = async (req: express.Request, res: express.Response) => {
 
 app.get('/run', internalKeyMiddleware, guardPayment, runHandler);
 app.post('/run', internalKeyMiddleware, guardPayment, runHandler);
+
+app.get('/index/health', internalKeyMiddleware, async (_req: Request, res: Response) => {
+  const health = await getLocalEvidenceIndexHealth();
+  return res.status(health.healthy ? 200 : health.enabled ? 503 : 200).json(health);
+});
+
+app.get('/index/search', internalKeyMiddleware, async (req: Request, res: Response) => {
+  const query = typeof req.query.query === 'string' ? req.query.query.trim() : '';
+  if (!query) return res.status(400).json({ error: 'query is required' });
+  try {
+    const results = await searchLocalEvidence(query, {
+      limit: Number.parseInt(String(req.query.limit || '10'), 10) || 10,
+      includeExpired: req.query.includeExpired === 'true',
+    });
+    return res.json({ query, count: results.length, results });
+  } catch (error) {
+    return res.status(503).json({
+      error: 'local evidence search failed',
+      details: getErrorMessage(error),
+    });
+  }
+});
 
 app.get('/memory/search', internalKeyMiddleware, async (req: Request, res: Response) => {
   try {

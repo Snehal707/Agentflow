@@ -1093,7 +1093,10 @@ function createSourceRegistry(task: string) {
         return [];
       }
 
-      const key = name.toLowerCase();
+      // A publisher can support a report with several distinct articles. Deduplicate by
+      // canonical URL, not publisher name, or a later Reuters/AP article can silently
+      // replace the exact article attached to a structured claim.
+      const key = sourceUrlKey(rawUrl);
       const existingId = byKey.get(key);
       if (existingId) {
         const previous = byId.get(existingId)!;
@@ -1117,9 +1120,15 @@ function createSourceRegistry(task: string) {
         return [existingId];
       }
 
-      const id =
-        key.replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') ||
-        `source-${byId.size + 1}`;
+      const baseId =
+        name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') ||
+        'source';
+      let id = baseId;
+      let suffix = 2;
+      while (byId.has(id)) {
+        id = `${baseId}-${suffix}`;
+        suffix += 1;
+      }
       byId.set(id, {
         id,
         name,
@@ -3430,11 +3439,12 @@ function predictionMarketEntityResolutionIssues(
 }
 
 export function collectPreferredReportSources(params: {
+  task?: string;
   research: Obj | null;
   liveData: Obj | null;
 }): NormalizedReportSource[] {
   return buildFinalState({
-    task: asString(params.research?.topic) || 'AgentFlow',
+    task: asString(params.task) || asString(params.research?.topic) || 'AgentFlow',
     writerMarkdown: '',
     research: params.research,
     analysis: null,

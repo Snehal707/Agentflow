@@ -2484,6 +2484,10 @@ function buildForecastingFirecrawlVariants(baseQuery: string, intent: Forecastin
   }
   addUniqueQuery(variants, `${entityQuery} growth potential`);
 
+  for (const researchVariant of buildBroadResearchFirecrawlVariants(entityQuery)) {
+    addUniqueQuery(variants, researchVariant);
+  }
+
   if (/\bbitcoin\b/.test(lowerEntity)) {
     addUniqueQuery(variants, 'bitcoin halving cycle analysis');
   }
@@ -2494,6 +2498,27 @@ function buildForecastingFirecrawlVariants(baseQuery: string, intent: Forecastin
     addUniqueQuery(variants, 'site:kitco.com gold price forecast');
     addUniqueQuery(variants, 'site:lbma.org.uk gold market');
     addUniqueQuery(variants, 'site:reuters.com gold prices');
+  }
+
+  return variants;
+}
+
+function buildBroadResearchFirecrawlVariants(baseQuery: string): string[] {
+  const variants: string[] = [];
+  const coreQuery = buildForecastingEntityQuery(baseQuery)
+    .replace(/\b(?:latest|current|report|research|analysis|overview|summary|update|updates)\b/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!coreQuery) return variants;
+
+  addUniqueQuery(variants, `${coreQuery} latest news`);
+  addUniqueQuery(variants, `${coreQuery} policy regulation report`);
+  addUniqueQuery(variants, `${coreQuery} industry investment adoption analysis`);
+  addUniqueQuery(variants, `${coreQuery} research innovation report`);
+
+  if (/\b(?:ai|artificial intelligence|machine learning|llm|llms)\b/i.test(coreQuery)) {
+    addUniqueQuery(variants, `${coreQuery} AI models companies latest news`);
+    addUniqueQuery(variants, `${coreQuery} chips compute infrastructure report`);
   }
 
   return variants;
@@ -2608,6 +2633,16 @@ function buildCurrentStateFirecrawlVariants(baseQuery: string): string[] {
   }
   for (const query of buildStablecoinPolicyFirecrawlVariants(baseQuery)) {
     addUniqueQuery(variants, query);
+  }
+  if (
+    /\b(?:future|outlook|landscape|ecosystem|industry|trend|trends|report|research|analysis)\b/i.test(
+      baseQuery,
+    ) ||
+    /\b(?:ai|artificial intelligence|machine learning|llm|llms)\b/i.test(baseQuery)
+  ) {
+    for (const query of buildBroadResearchFirecrawlVariants(baseQuery)) {
+      addUniqueQuery(variants, query);
+    }
   }
 
   return variants;
@@ -3409,6 +3444,10 @@ function extractGeopoliticalEntities(task: string): string[] {
 
 function normalizeCurrentEventQuery(task: string): string {
   return task
+    .replace(
+      /\s+(?:and|then)\s+(?:make|write|create|generate|prepare|give)(?:\s+(?:me|us))?(?:\s+a)?\s+(?:latest\s+)?(?:research\s+)?report\s+(?:on|about|of)\s+[\s\S]*$/i,
+      ' ',
+    )
     .replace(/^\s*(make|write|create|generate|prepare|give)(?:\s+(?:me|us))?(?:\s+a)?\s+/i, '')
     .replace(/^\s*(research report|report|analysis|assessment|brief)\s+(?:on|of)\s+/i, '')
     .replace(/\bresearch report\b/gi, ' ')
@@ -3626,6 +3665,12 @@ export function shouldGatherCurrentEvents(task: string): boolean {
   // Explicit research (including "climate outlook", "AI future") must still pull Google News /
   // current events so Sources can ground — do not treat long-horizon wording as a hard skip.
   if (isExplicitExternalResearchTask(task)) {
+    return true;
+  }
+  if (
+    detectForecastingIntent(cleanedTask).forecasting ||
+    /\b(?:outlook|future|forecast|landscape|trends?)\b/i.test(cleanedTask)
+  ) {
     return true;
   }
   if (isBroadLongHorizonOverviewTask(cleanedTask)) {
@@ -4887,7 +4932,9 @@ async function fetchFirecrawlSearchSnapshots(
         searchSearxng(query, 6, {
           timeoutMs: 15_000,
           categories:
-            forecastingIntent.forecasting || /\bprediction market\b/i.test(task)
+            forecastingIntent.forecasting ||
+            /\bprediction market\b/i.test(task) ||
+            shouldGatherCurrentEvents(task)
               ? ['news']
               : undefined,
         }),

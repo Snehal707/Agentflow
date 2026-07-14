@@ -1,4 +1,5 @@
 import { fetchLiveData } from '../../lib/live-data';
+import { searchLocalEvidence } from '../../lib/local-evidence-index';
 import {
   asksForCommunityEvidence,
   isCreatorAudienceMetricTask,
@@ -32,6 +33,26 @@ export async function retrieveSources(
   const deduped = Array.from(new Set(queries.map((query) => query.trim()).filter(Boolean)));
   const collected: Source[] = [];
   const seenUrls = new Set<string>();
+
+  const localEvidenceSources = await retrieveLocalEvidenceSources(brief, deduped, seenUrls);
+  collected.push(...localEvidenceSources);
+  const localCoverageTarget = brief.scope === 'broad' ? 6 : 3;
+  const localCoverageSatisfied =
+    localEvidenceSources.length >= localCoverageTarget &&
+    distinctDomainCount(localEvidenceSources) >= brief.minimum_source_diversity &&
+    localEvidenceSources.some((source) => source.reliability !== 'low');
+  if (localEvidenceSources.length > 0) {
+    console.log(
+      `[research-index] local_first hits=${localEvidenceSources.length} domains=${distinctDomainCount(localEvidenceSources)} coverage_satisfied=${localCoverageSatisfied}`,
+    );
+  }
+  if (localCoverageSatisfied) {
+    onProgress?.({
+      fetched: Math.min(collected.length, DEEP_TOTAL_SOURCE_LIMIT),
+      total: deduped.length,
+    });
+    return finalizeRetrievedSources(collected, brief);
+  }
 
   const primarySearchSources = await retrievePrimaryHybridSearchSources(brief, deduped, seenUrls);
   collected.push(...primarySearchSources);
@@ -85,6 +106,10 @@ export async function retrieveSources(
     collected.push(...fallbackSources);
   }
 
+  return finalizeRetrievedSources(collected, brief);
+}
+
+function finalizeRetrievedSources(collected: Source[], brief: ResearchBrief): Source[] {
   const gateResult = applyEntityRelevanceGate(collected, brief);
   if (gateResult.gateMetadata.applied) {
     console.log(
@@ -118,6 +143,39 @@ export async function retrieveSources(
     .filter(limitPerDomain(2))
     .slice(0, DEEP_TOTAL_SOURCE_LIMIT),
   );
+}
+
+async function retrieveLocalEvidenceSources(
+  brief: ResearchBrief,
+  queries: string[],
+  seenUrls: Set<string>,
+): Promise<Source[]> {
+  const searchQuery = [brief.query, ...queries.slice(0, 2)].join(' ');
+  const hits = await searchLocalEvidence(searchQuery, { limit: 20 }).catch((error) => {
+    console.warn(
+      '[research-index] local search skipped:',
+      error instanceof Error ? error.message : String(error),
+    );
+    return [];
+  });
+  const sources: Source[] = [];
+  for (const hit of hits) {
+    const source: Source = {
+      url: hit.url,
+      title: hit.title,
+      date: hit.published_at || hit.fetched_at,
+      snippet: hit.content.slice(0, 1_500),
+      domain: hit.domain,
+      reliability: hit.reliability,
+    };
+    if (!source.url || seenUrls.has(source.url)) continue;
+    if (isAvoidedDomain(source.domain, brief.domains_avoid)) continue;
+    if (isLowValueSearchSource(source, brief)) continue;
+    if (!isRelevantToBrief(source, brief) && !isPrioritySource(source, brief)) continue;
+    seenUrls.add(source.url);
+    sources.push(source);
+  }
+  return sources;
 }
 
 async function retrievePrimaryHybridSearchSources(

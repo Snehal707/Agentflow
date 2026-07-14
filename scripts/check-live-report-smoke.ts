@@ -1,10 +1,13 @@
 import * as prompts from '../lib/agentPrompts';
+import { writeFile } from 'node:fs/promises';
 import { callHermesDeep, callHermesFast } from '../lib/hermes';
 import { fetchLiveData } from '../lib/live-data';
 import { finalizeReportMarkdown } from '../lib/reportPipeline';
 import { buildAnalystModelInput, buildWriterModelInput } from '../lib/reportInputs';
 
-const task = 'Iran-US Tensions and Global Shipping Routes Impact Report';
+const task =
+  process.env.LIVE_REPORT_SMOKE_TASK?.trim() ||
+  'Iran-US Tensions and Global Shipping Routes Impact Report';
 
 function safeParseObject(value: string): Record<string, unknown> {
   const cleaned = value.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
@@ -111,20 +114,24 @@ ${task}
     finalReport.markdown.match(/## Current Status\n\n([\s\S]*?)\n\n## Reported Developments/i)?.[1] ??
     '';
 
-  console.log(
-    JSON.stringify(
-      {
+  const output = {
+        task,
         framingSignals: (liveData.current_events as { framing_signals?: unknown } | undefined)
           ?.framing_signals,
         validationIssues: finalReport.validationIssues,
         executiveSummary,
         currentStatus,
         sources: finalReport.sources,
-      },
-      null,
-      2,
-    ),
-  );
+        liveData,
+        research,
+        analysis,
+        markdown: finalReport.markdown,
+      };
+  const rendered = `${JSON.stringify(output, null, 2)}\n`;
+  if (process.env.LIVE_REPORT_SMOKE_OUTPUT?.trim()) {
+    await writeFile(process.env.LIVE_REPORT_SMOKE_OUTPUT.trim(), rendered, 'utf8');
+  }
+  console.log(rendered);
 }
 
 main().catch((error) => {

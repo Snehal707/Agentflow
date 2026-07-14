@@ -133,6 +133,98 @@ assert.equal(
   true,
   'Expected explicit fast research reports to gather live evidence.',
 );
+assert.equal(
+  shouldGatherCurrentEvents('China open-source AI models outlook'),
+  true,
+  'Expected outlook-shaped paid research tasks to gather current source evidence even without the word research.',
+);
+
+const repeatedAiChinaReportQueries = buildPrimaryFirecrawlQueryVariants(
+  'research on future of AI in china and make a latest report on future of AI',
+  'research on future of AI in china and make a latest report on future of AI',
+);
+assert.ok(
+  repeatedAiChinaReportQueries.every((query) => !/and make a|make a on future/i.test(query)),
+  'Expected repeated report instructions to be removed from live search queries.',
+);
+assert.ok(
+  repeatedAiChinaReportQueries.some((query) => /AI in china.*latest news/i.test(query)),
+  'Expected broad AI outlook requests to include a subject-scoped latest-news query.',
+);
+assert.ok(
+  repeatedAiChinaReportQueries.some((query) => /AI in china.*policy regulation report/i.test(query)),
+  'Expected broad AI outlook requests to search policy and regulation evidence.',
+);
+assert.ok(
+  repeatedAiChinaReportQueries.some((query) => /AI in china.*chips compute infrastructure report/i.test(query)),
+  'Expected broad AI outlook requests to search compute and chip evidence.',
+);
+
+const genericAiModelOutlookQueries = buildPrimaryFirecrawlQueryVariants(
+  'China open-source AI models outlook',
+  'China open-source AI models outlook',
+);
+
+const multipleArticlesFromSamePublisher = finalizeReportMarkdown({
+  task: 'research China AI policy and model development',
+  writerMarkdown: `## Summary
+
+China AI policy and model development both have recent source support.
+
+## Sources`,
+  research: {
+    topic: 'China AI policy and model development',
+    recent_developments: [
+      {
+        event: 'China announced a new AI policy initiative.',
+        source_name: 'Reuters',
+        source_url: 'https://www.reuters.com/world/china/china-ai-policy-example-2026-07-01/',
+        date_or_period: '2026-07-01',
+      },
+      {
+        event: 'A Chinese lab released a new AI model.',
+        source_name: 'Reuters',
+        source_url: 'https://www.reuters.com/technology/china-ai-model-example-2026-07-02/',
+        date_or_period: '2026-07-02',
+      },
+    ],
+  },
+  analysis: null,
+  liveData: {
+    dynamic_sources: {
+      articles: [
+        {
+          title: 'China AI policy initiative',
+          publisher: 'Reuters',
+          url: 'https://www.reuters.com/world/china/china-ai-policy-example-2026-07-01/',
+          summary: 'China announced a new AI policy initiative.',
+          seen_at: '2026-07-01',
+        },
+        {
+          title: 'Chinese lab releases AI model',
+          publisher: 'Reuters',
+          url: 'https://www.reuters.com/technology/china-ai-model-example-2026-07-02/',
+          summary: 'A Chinese lab released a new AI model.',
+          seen_at: '2026-07-02',
+        },
+      ],
+    },
+  },
+});
+assert.match(
+  multipleArticlesFromSamePublisher.markdown,
+  /china-ai-policy-example-2026-07-01/,
+  'Expected the first Reuters article URL to survive source normalization.',
+);
+assert.match(
+  multipleArticlesFromSamePublisher.markdown,
+  /china-ai-model-example-2026-07-02/,
+  'Expected a second distinct Reuters article URL to survive source normalization.',
+);
+assert.ok(
+  genericAiModelOutlookQueries.some((query) => /AI models.*latest news/i.test(query)),
+  'Expected generic AI-model research to generate live model/company news queries.',
+);
 
 const analysis = {
   core_thesis:

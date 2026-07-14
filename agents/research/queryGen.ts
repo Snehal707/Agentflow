@@ -164,7 +164,10 @@ function cleanResearchQuery(value: string): string {
     .replace(/\b(?:summarize|summary|briefly|in one short paragraph|one short paragraph)\b/gi, ' ')
     .replace(/[?.,:;()]/g, ' ')
     .replace(/\s+/g, ' ')
-    .trim();
+    .trim()
+    // Leading "Future" is frequently resolved as the rapper by general web engines.
+    // Keep the forecasting intent but move the subject to the front of the query.
+    .replace(/^(?:the\s+)?future\s+of\s+(.+)$/i, '$1 future outlook');
 }
 
 function extractComparisonParts(
