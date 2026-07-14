@@ -544,7 +544,7 @@ function isPredictionMarketOffTopicSource(task: string, text: string): boolean {
   if (
     /\bPrediction market category in AgentFlow:\s*Sports\b/i.test(task) &&
     /\b(world cup|fifa|winner|champion|title)\b/i.test(task) &&
-    (/\b(golden boot|golden glove|top scorer|top goalscorer|player of the tournament|most (?:fifa )?world cup appearances|women'?s world cup|u-?17|u-?20|under-17|under-20|half[- ]?time show|halftime show|quiz|red cards?|yellow cards?|disciplinary|goalkeeper profile|in profile|closing ceremony|match balls?|live match (?:blog|updates?)|live updates? on today'?s matches|player ratings?|box score|fcs football|college football|buck buchanan|2030 world cup|quarter[- ]?final wins)\b/i.test(
+    (/\b(golden boot|golden glove|top scorer|top goalscorer|player of the tournament|most (?:fifa )?world cup appearances|women'?s world cup|u-?17|u-?20|under-17|under-20|half[- ]?time show|halftime show|quiz|red cards?|yellow cards?|disciplinary|goalkeeper profile|in profile|closing ceremony|match balls?|new ball|live match (?:blog|updates?)|live updates? on today'?s matches|player ratings?|box score|fcs football|college football|buck buchanan|2030 world cup|quarter[- ]?final wins)\b/i.test(
       haystack,
     ) ||
       /\b(?:coach|manager|role|post|job)\b[^.\n]{0,50}\b(?:exit|exits|leaves|leaving|resigns|resigned|steps down)\b/i.test(
@@ -2717,6 +2717,18 @@ function mergeNormalizedSources(
 ): NormalizedReportSource[] {
   const merged = new Map<string, NormalizedReportSource>();
   const directSourceNames = new Set<string>();
+  const preferredUsage = (
+    source: Pick<NormalizedReportSource, 'name' | 'url'>,
+    left: string | undefined,
+    right: string | undefined,
+  ): string | undefined => {
+    if (!left) return right;
+    if (!right) return left;
+    const leftScore = predictionMarketDecisionEvidenceScore(task, { ...source, usedFor: left });
+    const rightScore = predictionMarketDecisionEvidenceScore(task, { ...source, usedFor: right });
+    if (rightScore !== leftScore) return rightScore > leftScore ? right : left;
+    return right.length > left.length ? right : left;
+  };
   for (const source of [...primary, ...supplemental]) {
     const key = normalizeUrl(source.url) || source.name.toLowerCase();
     if (!key) continue;
@@ -2737,7 +2749,7 @@ function mergeNormalizedSources(
     ) {
       merged.set(key, {
         ...source,
-        usedFor: source.usedFor ?? existing.usedFor,
+        usedFor: preferredUsage(source, source.usedFor, existing.usedFor),
         publishedAt: source.publishedAt ?? existing.publishedAt,
         accessedAt: source.accessedAt ?? existing.accessedAt,
       });
@@ -2745,7 +2757,7 @@ function mergeNormalizedSources(
     }
     merged.set(key, {
       ...existing,
-      usedFor: existing.usedFor ?? source.usedFor,
+      usedFor: preferredUsage(existing, existing.usedFor, source.usedFor),
       publishedAt: existing.publishedAt ?? source.publishedAt,
       accessedAt: existing.accessedAt ?? source.accessedAt,
     });
