@@ -70,8 +70,9 @@ const LIVE_DATA_TIMEOUT_MS_CURRENT_EVENTS = Number(
   process.env.RESEARCH_LIVE_DATA_TIMEOUT_MS_CURRENT_EVENTS || 60_000,
 );
 const LIVE_DATA_TIMEOUT_MS_PREDICTION_MARKET = Number(
-  process.env.RESEARCH_LIVE_DATA_TIMEOUT_MS_PREDICTION_MARKET || 180_000,
+  process.env.RESEARCH_LIVE_DATA_TIMEOUT_MS_PREDICTION_MARKET || 75_000,
 );
+const FAST_HERMES_TIMEOUT_MS = Number(process.env.RESEARCH_FAST_HERMES_TIMEOUT_MS || 45_000);
 const RESEARCH_TIMING_TRACE = /^(1|true|yes|on)$/i.test(
   String(process.env.RESEARCH_TIMING_TRACE || '').trim(),
 );
@@ -1133,8 +1134,10 @@ const runHandler = async (req: express.Request, res: express.Response) => {
     pushTimingTrace(timingTrace, traceStart, 'before_call_hermes_fast');
     const result = await withTimeout(
       callHermesFast(RESEARCH_SYSTEM_PROMPT, userMessage),
-      HERMES_TIMEOUT_MS,
-      `Hermes timed out after ${HERMES_TIMEOUT_MS / 1000}s`,
+      reasoningMode === 'deep' ? HERMES_TIMEOUT_MS : FAST_HERMES_TIMEOUT_MS,
+      `Hermes timed out after ${
+        (reasoningMode === 'deep' ? HERMES_TIMEOUT_MS : FAST_HERMES_TIMEOUT_MS) / 1000
+      }s`,
     );
     pushTimingTrace(timingTrace, traceStart, 'after_call_hermes_fast', {
       resultChars: result.length,

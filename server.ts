@@ -641,7 +641,10 @@ const LIVE_DATA_TIMEOUT_MS_CURRENT_EVENTS = Number(
   process.env.RESEARCH_LIVE_DATA_TIMEOUT_MS_CURRENT_EVENTS || 60_000,
 );
 const LIVE_DATA_TIMEOUT_MS_PREDICTION_MARKET = Number(
-  process.env.RESEARCH_LIVE_DATA_TIMEOUT_MS_PREDICTION_MARKET || 180_000,
+  process.env.RESEARCH_LIVE_DATA_TIMEOUT_MS_PREDICTION_MARKET || 75_000,
+);
+const RESEARCH_FAST_HERMES_TIMEOUT_MS = Number(
+  process.env.RESEARCH_FAST_HERMES_TIMEOUT_MS || 45_000,
 );
 const RESEARCH_LIVE_DATA_REUSE_TTL_SECONDS = Number(
   process.env.RESEARCH_LIVE_DATA_REUSE_TTL_SECONDS || 60 * 60 * 24 * 7,
@@ -16090,6 +16093,7 @@ function createPublicApp(): express.Express {
 
   app.post('/run', async (req, res) => {
     let activePipelineRunCounted = false;
+    let activePipelineStep: 'research' | 'analyst' | 'writer' | undefined;
     const timingTraceStart = Date.now();
     const pipelineTimingTrace: PipelineTimingTracePoint[] = [];
     const rawTask = (req.body?.task as string | undefined) ?? '';
@@ -16207,6 +16211,7 @@ function createPublicApp(): express.Express {
       const pipelineRequestId = `pipeline_${randomUUID()}`;
 
       // Research step
+      activePipelineStep = 'research';
       sendEvent({
         type: 'step_start',
         step: 'research',
@@ -16263,6 +16268,9 @@ function createPublicApp(): express.Express {
         chainId: CHAIN_ID,
         requestId: `${pipelineRequestId}:research`,
         idempotencyKey: `${pipelineRequestId}:research`,
+        // A timed-out research execution is expensive work, not a safe transport retry.
+        // Replaying it caused retry storms and left the client stream open for minutes.
+        maxAttempts: 1,
       });
       pushPipelineTimingTrace(pipelineTimingTrace, timingTraceStart, 'after_research_agent_response', {
         status: researchResult.status,
@@ -16402,6 +16410,7 @@ function createPublicApp(): express.Express {
       });
 
       // Analyst step
+      activePipelineStep = 'analyst';
       sendEvent({
         type: 'step_start',
         step: 'analyst',
@@ -16492,6 +16501,7 @@ function createPublicApp(): express.Express {
       }
 
       // Writer step
+      activePipelineStep = 'writer';
       sendEvent({
         type: 'step_start',
         step: 'writer',
@@ -16651,6 +16661,7 @@ function createPublicApp(): express.Express {
         liveData: parsedLiveData,
         sources: finalizedReport.sources,
       });
+      activePipelineStep = undefined;
 
       await sendGAEvent('pipeline_complete', {
         wallet_address: payerAddress,
@@ -16662,6 +16673,7 @@ function createPublicApp(): express.Express {
       sendEvent({
         type: 'error',
         message: getErrorMessage(e),
+        ...(activePipelineStep ? { step: activePipelineStep } : {}),
       });
     } finally {
       if (RESEARCH_TIMING_TRACE && timingTraceId) {
@@ -16812,7 +16824,14 @@ async function start(): Promise<void> {
             ...(walletContext && portfolioImpact ? { wallet_context: walletContext } : {}),
           },
       reasoningMode,
-      result: await callHermesFast(RESEARCH_SYSTEM_PROMPT, userMessage),
+      result: await withTimeout(
+        callHermesFast(RESEARCH_SYSTEM_PROMPT, userMessage),
+        reasoningMode === 'deep' ? RESEARCH_AGENT_TIMEOUT_MS : RESEARCH_FAST_HERMES_TIMEOUT_MS,
+        `Research Hermes timed out after ${
+          (reasoningMode === 'deep' ? RESEARCH_AGENT_TIMEOUT_MS : RESEARCH_FAST_HERMES_TIMEOUT_MS) /
+          1000
+        }s`,
+      ),
     };
   },
   );
