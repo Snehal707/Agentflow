@@ -3569,7 +3569,11 @@ function isTimeSensitiveTask(task: string): boolean {
 
 function shouldBypassCurrentEventCaches(task: string): boolean {
   const cleanedTask = stripExecutionContext(task);
-  return detectResearchDomain(cleanedTask) === 'geopolitics' || isTimeSensitiveTask(cleanedTask);
+  return (
+    detectResearchDomain(cleanedTask) === 'geopolitics' ||
+    isTimeSensitiveTask(cleanedTask) ||
+    isExplicitExternalResearchTask(cleanedTask)
+  );
 }
 
 function isRecentCurrentEvent(article: GdeltArticleSnapshot): boolean {
@@ -6831,7 +6835,8 @@ export async function fetchLiveData(
   const isPredictionMarketTask = /\bprediction market\b/i.test(contextTask);
   const sourceTask = normalizeLiveDataSearchTask(task);
   const normalizedTask = sourceTask.trim().toLowerCase();
-  const bypassCurrentEventCache = shouldBypassCurrentEventCaches(sourceTask);
+  const bypassCurrentEventCache =
+    shouldBypassCurrentEventCaches(contextTask) || shouldBypassCurrentEventCaches(sourceTask);
   const useLiveDataCache = !bypassCurrentEventCache && !isPredictionMarketTask;
   const cached = useLiveDataCache ? getCacheValue(liveDataCache.get(normalizedTask)) : null;
   if (cached) {
