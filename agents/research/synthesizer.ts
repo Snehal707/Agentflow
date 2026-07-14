@@ -63,5 +63,60 @@ Rules:
 - Keep the report specific and evidence-led, but do not over-compress deep mode into a short memo.`;
 
   const userMessage = JSON.stringify(input, null, 2);
-  return callHermesDeep(systemPrompt, userMessage);
+  const synthesized = await callHermesDeep(systemPrompt, userMessage);
+  return enforceRetrievedSourceUrls(synthesized, input.sources);
+}
+
+/**
+ * The model writes the narrative, but the retrieved source objects are the
+ * authority for the final bibliography. Rebuilding this section
+ * deterministically prevents a valid retrieval set from becoming an
+ * uncited publisher-name list during synthesis.
+ */
+export function enforceRetrievedSourceUrls(markdown: string, sources: Source[]): string {
+  const uniqueSources = [...new Map(
+    sources
+      .filter((source) => /^https?:\/\//i.test(source.url.trim()))
+      .map((source) => [source.url.trim(), source] as const),
+  ).values()];
+  const sourceSection = uniqueSources.length > 0
+    ? [
+        '## Sources',
+        '',
+        ...uniqueSources.map((source, index) => {
+          const label = escapeMarkdownLabel(source.title.trim() || source.domain.trim() || source.url);
+          const url = source.url.trim().replace(/</g, '%3C').replace(/>/g, '%3E');
+          const date = source.date.trim() ? ` — ${source.date.trim()}` : '';
+          return `${index + 1}. [${label}](<${url}>)${date}`;
+        }),
+      ].join('\n')
+    : [
+        '## Sources',
+        '',
+        '- No retrievable public source URLs were available for this report.',
+      ].join('\n');
+
+  const lines = markdown.trim().split(/\r?\n/);
+  const sourceHeaderIndex = lines.findIndex((line) => /^#{1,6}\s+sources\s*$/i.test(line.trim()));
+  if (sourceHeaderIndex < 0) {
+    return `${markdown.trim()}\n\n${sourceSection}`;
+  }
+
+  const sourceDepth = lines[sourceHeaderIndex].trim().match(/^#+/)?.[0].length ?? 2;
+  let nextSectionIndex = lines.length;
+  for (let index = sourceHeaderIndex + 1; index < lines.length; index += 1) {
+    const heading = lines[index].trim().match(/^(#+)\s+/);
+    if (heading && heading[1].length <= sourceDepth) {
+      nextSectionIndex = index;
+      break;
+    }
+  }
+
+  const before = lines.slice(0, sourceHeaderIndex).join('\n').trimEnd();
+  const after = lines.slice(nextSectionIndex).join('\n').trimStart();
+  return [before, sourceSection, after].filter(Boolean).join('\n\n');
+}
+
+function escapeMarkdownLabel(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/([\[\]])/g, '\\$1');
 }

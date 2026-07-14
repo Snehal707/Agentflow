@@ -12,11 +12,12 @@ import {
 } from '../lib/local-evidence-index';
 import { buildResearchQueries } from '../agents/research/queryGen';
 import { retrieveSources } from '../agents/research/retriever';
+import { enforceRetrievedSourceUrls } from '../agents/research/synthesizer';
 import {
   deriveAllowedEntities,
   hasNamedEntityAndStrongNarrowingSignal,
 } from '../agents/research/entityDetection';
-import type { ResearchBrief } from '../agents/research/types';
+import type { ResearchBrief, Source } from '../agents/research/types';
 
 const portfolioCases = [
   {
@@ -95,6 +96,36 @@ assert.equal(
   true,
   'comparison language should still force entity-aware narrow scope',
 );
+
+const bibliographySources: Source[] = [
+  {
+    title: 'Circle launches Arc public testnet',
+    url: 'https://www.circle.com/pressroom/arc-public-testnet',
+    date: '2025-10-28',
+    snippet: 'Official launch evidence.',
+    domain: 'circle.com',
+    reliability: 'high',
+  },
+  {
+    title: 'Arc roadmap [analysis]',
+    url: 'https://example.com/arc-roadmap_(2026)',
+    date: '',
+    snippet: 'Roadmap analysis.',
+    domain: 'example.com',
+    reliability: 'medium',
+  },
+];
+const reportWithNameOnlySources = enforceRetrievedSourceUrls(
+  '# Arc report\n\n## Summary\nEvidence-backed summary.\n\n## Sources\n\n1. Circle Official Blog\n2. Example News',
+  bibliographySources,
+);
+assert.match(reportWithNameOnlySources, /\[Circle launches Arc public testnet\]\(<https:\/\/www\.circle\.com\/pressroom\/arc-public-testnet>\)/);
+assert.match(reportWithNameOnlySources, /https:\/\/example\.com\/arc-roadmap_\(2026\)/);
+assert.doesNotMatch(reportWithNameOnlySources, /1\. Circle Official Blog/);
+assert.equal((reportWithNameOnlySources.match(/^## Sources$/gm) ?? []).length, 1);
+
+const reportWithoutSources = enforceRetrievedSourceUrls('# Arc report\n\n## Summary\nText.', bibliographySources);
+assert.match(reportWithoutSources, /## Sources[\s\S]+https:\/\/www\.circle\.com/);
 
 const requests: Array<{ method: string; url: string; authorization: string; body: unknown }> = [];
 const now = Date.now();
