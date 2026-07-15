@@ -2428,7 +2428,10 @@ function buildResearchQueryVariants(task: string): string[] {
 
 const FIRECRAWL_SCAFFOLDING_PREFIXES: RegExp[] = [
   /^\s*(?:make|write|create|generate|prepare|give)(?:\s+(?:me|us))?(?:\s+a)?\s+research\s+on\s+/i,
+  /^\s*(?:make|write|create|generate|prepare|give|do)(?:\s+(?:me|us))?(?:\s+a)?\s+research\s+(?:on|about|into|for)\s+/i,
+  /^\s*(?:make|write|create|generate|prepare|give|do)(?:\s+(?:me|us))?(?:\s+a)?\s+(?:research\s+)?report\s+(?:on|about|of|for)\s+/i,
   /^\s*research\s+on\s+/i,
+  /^\s*research\s+(?:about|into|for)\s+/i,
   /^\s*research\s+/i,
   /^\s*tell\s+me\s+about\s+/i,
   /^\s*what\s+is\s+/i,

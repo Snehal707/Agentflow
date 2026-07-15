@@ -204,6 +204,19 @@ assert.equal(
   'Expected one-token entity research topics like SpaceX to keep matching article evidence.',
 );
 
+const syntheticFuelQueries = buildPrimaryFirecrawlQueryVariants(
+  'do research on synthetic fuels aviation',
+  'do research on synthetic fuels aviation',
+);
+assert.ok(
+  syntheticFuelQueries.every((query) => !/^do\s+/i.test(query) && !/\bdo on\b/i.test(query)),
+  'Expected generic "do research on" scaffolding to be removed from fast live-search queries.',
+);
+assert.ok(
+  syntheticFuelQueries.some((query) => /^synthetic fuels aviation\b/i.test(query)),
+  'Expected the actual synthetic-fuels subject to lead fast live-search queries.',
+);
+
 const multipleArticlesFromSamePublisher = finalizeReportMarkdown({
   task: 'research China AI policy and model development',
   writerMarkdown: `## Summary
