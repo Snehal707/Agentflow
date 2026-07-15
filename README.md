@@ -178,6 +178,46 @@ sequenceDiagram
   Orch-->>Entry: SSE report (+ receipt / step events)
 ```
 
+#### Research source architecture
+
+Source quality is layered. Do not debug final Sources by looking only at `finalizeReportMarkdown`; trace the whole path: live data -> research -> analyst -> writer -> finalizer -> chat `/run` consumer.
+
+```mermaid
+flowchart LR
+  Chat["/chat explicit research"] --> Run["API POST /run\nserver.ts"]
+  Tool["research tool"] --> Run
+  Queue["research queue worker"] --> Run
+
+  Run --> R["Research agent\nagents/research/server.ts"]
+  R --> Plan["buildResearchBrief\nquery_strategy: direct / light / standard"]
+  Plan --> Live["live retrieval\nFirecrawl + SearXNG"]
+  Plan --> Enrich["deterministic enrichers\nCoinGecko / DefiLlama / Wikipedia / adapters"]
+  Plan --> Memory["local evidence index\nresearch memory"]
+
+  Live --> Merge["merge, dedupe, relevance filters"]
+  Enrich --> Merge
+  Memory --> Merge
+
+  Merge --> Gate{"fast evidence gate\nassessFastReportEvidence"}
+  Gate -->|"ordinary research continues"| A["Analyst agent"]
+  Gate -->|"prediction-market evidence OK"| A
+  Gate -->|"prediction-market evidence too weak"| Stop["stop before paid Analyst/Writer"]
+
+  A --> W["Writer agent"]
+  W --> Final["finalizeReportMarkdown\ngrounding, filters, validation, repair"]
+  Final --> Store["last-report cache\nresearch memory"]
+  Final --> SSE["SSE report to chat"]
+```
+
+Current behavior on `pvt/main`:
+
+- Explicit research/report prompts bypass Hermes Agent and enter `/run`; this prevents the chat brain from inventing citations.
+- Live retrieval is Firecrawl + SearXNG plus deterministic enrichers and task-specific adapters. Local research memory / evidence-index paths can supplement weak live retrieval.
+- Ordinary fast research does **not** abort just because the first live retrieval pass has fewer than two source domains; Analyst/Writer/finalizer continue and the report must caveat sparse evidence.
+- Prediction-market research keeps stricter pre-Analyst evidence gates because bad sources can produce a wrong market decision. Sports winner markets need source-backed odds/probabilities; price/market-cap markets need numeric market snapshots and independent context.
+- Final Sources are rebuilt from grounded live/research evidence, not copied blindly from writer markdown. The finalizer filters low-value/circular/tooling sources, validates dates/domains, repairs where possible, and may omit unsupported citations.
+- Timeout/retry protection prevents Firecrawl or x402 retry storms from blocking the stack; failed retrieval paths should degrade through the remaining layers instead of spinning forever.
+
 Inside the research agent (before analyst/writer):
 
 - **fast / deep modes** still apply at the research agent (`agents/research/server.ts` / `deepPipeline`) after `/run` passes `reasoningMode`.
