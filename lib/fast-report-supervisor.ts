@@ -266,6 +266,7 @@ function buildReviewInstructions(): string {
     'Return JSON only.',
     'Do not use tools.',
     'Be strict about real problems only: topic drift, unsupported claims, missing core sections, misleading confidence, bad source handling.',
+    'When portfolio_impact is true and wallet_context_available is true, treat a missing or generic portfolio-impact section as a high-severity issue. The section must connect the researched event to actual wallet exposure and a concrete transmission channel.',
     'Do not nitpick style unless it harms usefulness.',
     'Schema:',
     '{',
@@ -286,11 +287,20 @@ function buildReviewInstructions(): string {
 }
 
 function buildReviewPrompt(input: FastReportSupervisorInput): string {
+  const writerInput = safeParseObject(input.writerInput);
+  const portfolioImpact =
+    input.liveData?.portfolio_impact === true || writerInput?.portfolio_impact === true;
+  const walletContextAvailable =
+    Boolean(input.liveData?.wallet_context && typeof input.liveData.wallet_context === 'object') ||
+    writerInput?.wallet_context_available === true;
+
   return JSON.stringify(
     {
       task: input.task,
+      portfolio_impact: portfolioImpact,
+      wallet_context_available: walletContextAvailable,
       sourceDiagnostics: getSourceDiagnostics(input.liveData),
-      research: input.research ?? safeParseObject(input.writerInput),
+      research: input.research ?? writerInput,
       analysis: input.analysis ?? null,
       report: input.draftReport,
     },
@@ -304,6 +314,7 @@ function buildRewriteInstructions(): string {
     'Revise this AgentFlow fast report using the review guidance.',
     'Keep it fast and compact.',
     'Fix only substantive issues: topic drift, unsupported claims, uncertainty framing, missing key sections, weak sources.',
+    'If original_writer_input.portfolio_impact is true and wallet_context_available is true, preserve or add a concise event-specific portfolio-impact section. Each impact bullet must connect an actual holding or exposure from liveData.wallet_context to a source-backed event finding and a concrete transmission channel. Do not replace it with generic BTC/ETH or generic stablecoin commentary.',
     'Do not invent any new evidence.',
     'Keep markdown clean and human.',
     'Return markdown only.',

@@ -9465,23 +9465,23 @@ function ensureWalletContextInReport(
     );
 
   // Preserve the writer's event-to-holding reasoning when a real wallet snapshot was
-  // supplied. The former implementation always deleted that analysis and replaced it
-  // with a generic exposure template, which broke personalized-report alignment.
+  // supplied. Do not append the deterministic exposure template here: it is useful
+  // as private model context, but it is generic by design and can make event-based
+  // portfolio reports look detached from the researched event.
   if (hasUsableWalletContext && hasExistingImpactSection) {
-    if (/^#{2,3}\s+Verified Portfolio Context\b/im.test(markdown)) {
-      return markdown;
-    }
-    const verifiedContext = section.replace(/^## Your Portfolio Impact/m, '## Verified Portfolio Context');
-    const sourcesIndex = markdown.search(/^##\s+Sources\b/im);
-    if (sourcesIndex >= 0) {
-      return `${markdown.slice(0, sourcesIndex).trim()}\n\n${verifiedContext}\n\n${markdown.slice(sourcesIndex).trim()}`;
-    }
-    return `${markdown.trim()}\n\n${verifiedContext}`;
+    return markdown;
+  }
+
+  // If a usable wallet snapshot exists but the writer did not produce an
+  // event-specific portfolio section, avoid fabricating one from generic exposure
+  // rules. The prompts/supervisor should force the writer to add the aligned section.
+  if (hasUsableWalletContext) {
+    return markdown;
   }
 
   // If no wallet snapshot exists, remove any model-generated personalized section so
-  // the report cannot invent holdings. Otherwise use the deterministic section only as
-  // a fallback when the writer did not produce event-specific portfolio analysis.
+  // the report cannot invent holdings, then add a deterministic unavailable-context
+  // note rather than pretending the report is personalized.
   const cleanedMarkdown = stripExistingPortfolioImpactSection(markdown);
 
   const sourcesIndex = cleanedMarkdown.search(/^##\s+Sources\b/im);

@@ -52,6 +52,8 @@ import { clearPendingAction, executeTool, loadPendingAction } from './tool-execu
 import { extractAgentpayRemark } from './agentpay-remark';
 import { generateInvoiceNumber } from './invoice-number';
 import { getPreferredAgentpayPaymentLinkHandle } from './agentpay-registry';
+import { incrementDailyUsageCap } from './usageCaps';
+import { CHAT_DAILY_LIMIT_DEFAULT } from './usageLimits';
 import {
   formatNanopaymentRequestLine,
   formatX402NanopaymentFeeLine,
@@ -774,6 +776,48 @@ async function getLinkedWalletRow(
 ): Promise<{ wallet_address: string } | null> {
   const row = await getUserByTelegram(chatId);
   return row?.wallet_address ? row : null;
+}
+
+async function hasTelegramPendingConfirmation(chatId: number, text: string): Promise<boolean> {
+  if (!isTelegramAffirmativeReply(text) && !isTelegramNegativeReply(text)) {
+    return false;
+  }
+
+  const sessionId = telegramSessionId(chatId);
+  const redis = getRedis();
+  const [telegramPending, sharedToolPending, agentpayPending] = await Promise.all([
+    redis.get(pendingKey(chatId)).catch(() => null),
+    loadPendingAction(sessionId).catch(() => null),
+    redisPendingExists((key) => redis.get(key), 'agentpay:pending:', sessionId).catch(() => false),
+  ]);
+
+  return Boolean(telegramPending || sharedToolPending || agentpayPending);
+}
+
+async function enforceTelegramChatMessageCap(input: {
+  chatId: number;
+  text: string;
+  walletAddress: string;
+}): Promise<string | null> {
+  const walletAddress = isAddress(input.walletAddress)
+    ? getAddress(input.walletAddress)
+    : input.walletAddress;
+  const shouldSkipChatMessageCap = await hasTelegramPendingConfirmation(input.chatId, input.text);
+  if (shouldSkipChatMessageCap) {
+    return null;
+  }
+
+  const chatDailyLimit = Number(process.env.CHAT_DAILY_LIMIT || CHAT_DAILY_LIMIT_DEFAULT);
+  const usageCap = await incrementDailyUsageCap({
+    scope: 'chat_messages',
+    walletAddress,
+    limit: chatDailyLimit,
+  });
+  if (usageCap.allowed) {
+    return null;
+  }
+
+  return `You've reached your daily message limit of ${usageCap.limit}. Confirmation replies do not count, but new chat messages are capped until tomorrow.`;
 }
 
 async function sendTelegramLinkRequired(
@@ -2922,8 +2966,18 @@ export async function startTelegramBot(): Promise<void> {
 
   bot.onText(/^\/help(?:@\w+)?$/i, async (msg) => {
     const chatIdStr = String(msg.chat.id);
-    if (!(await getLinkedWalletRow(chatIdStr))) {
+    const row = await getLinkedWalletRow(chatIdStr);
+    if (!row) {
       await sendTelegramLinkRequired(bot, msg.chat.id);
+      return;
+    }
+    const capReply = await enforceTelegramChatMessageCap({
+      chatId: msg.chat.id,
+      text: msg.text ?? '/help',
+      walletAddress: row.wallet_address,
+    });
+    if (capReply) {
+      await send(bot, msg.chat.id, capReply);
       return;
     }
     await send(
@@ -2992,6 +3046,15 @@ export async function startTelegramBot(): Promise<void> {
       await sendTelegramLinkRequired(bot, msg.chat.id);
       return;
     }
+    const capReply = await enforceTelegramChatMessageCap({
+      chatId: msg.chat.id,
+      text: msg.text ?? '/balance',
+      walletAddress: row.wallet_address,
+    });
+    if (capReply) {
+      await send(bot, msg.chat.id, capReply);
+      return;
+    }
     try {
       const execBal = await readExecutionUsdcBalance(row.wallet_address);
       const gwFunding = await getOrCreateGatewayFundingWallet(row.wallet_address);
@@ -3017,6 +3080,15 @@ export async function startTelegramBot(): Promise<void> {
       await sendTelegramLinkRequired(bot, msg.chat.id);
       return;
     }
+    const capReply = await enforceTelegramChatMessageCap({
+      chatId: msg.chat.id,
+      text: msg.text ?? '/portfolio',
+      walletAddress: row.wallet_address,
+    });
+    if (capReply) {
+      await send(bot, msg.chat.id, capReply);
+      return;
+    }
     try {
       const snap = await buildPortfolioSnapshot(row.wallet_address);
       await send(bot, msg.chat.id, formatPortfolioTelegram(snap));
@@ -3031,6 +3103,15 @@ export async function startTelegramBot(): Promise<void> {
     const row = await getLinkedWalletRow(chatIdStr);
     if (!row) {
       await sendTelegramLinkRequired(bot, chatId);
+      return;
+    }
+    const capReply = await enforceTelegramChatMessageCap({
+      chatId,
+      text: msg.text ?? '/swap',
+      walletAddress: row.wallet_address,
+    });
+    if (capReply) {
+      await send(bot, chatId, capReply);
       return;
     }
     const amount = Number(match?.[1]);
@@ -3049,6 +3130,15 @@ export async function startTelegramBot(): Promise<void> {
     const row = await getLinkedWalletRow(chatIdStr);
     if (!row) {
       await sendTelegramLinkRequired(bot, chatId);
+      return;
+    }
+    const capReply = await enforceTelegramChatMessageCap({
+      chatId,
+      text: msg.text ?? '/vault',
+      walletAddress: row.wallet_address,
+    });
+    if (capReply) {
+      await send(bot, chatId, capReply);
       return;
     }
     const action = (match?.[1] ?? '').toLowerCase() as 'deposit' | 'withdraw';
@@ -3191,6 +3281,16 @@ export async function startTelegramBot(): Promise<void> {
     const row = await getUserByTelegram(chatId);
     if (!row) {
       await sendTelegramLinkRequired(bot, msg.chat.id);
+      return;
+    }
+
+    const capReply = await enforceTelegramChatMessageCap({
+      chatId: msg.chat.id,
+      text,
+      walletAddress: row.wallet_address,
+    });
+    if (capReply) {
+      await send(bot, msg.chat.id, capReply);
       return;
     }
 
