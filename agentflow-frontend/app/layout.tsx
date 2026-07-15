@@ -3,9 +3,18 @@ import { GoogleAnalytics } from "@/components/GoogleAnalytics";
 import "./globals.css";
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://www.agentflow.one"),
   title: "AgentFlow | AI agents that research, decide, and execute on Arc",
   description:
     "One chat runs an economy of paid agents for research, DeFi, prediction markets, and payments, with previews, USDC settlement, and onchain reputation.",
+  icons: {
+    icon: [
+      { url: "/favicon.ico", sizes: "any" },
+      { url: "/icon.png", type: "image/png", sizes: "32x32" },
+    ],
+    apple: [{ url: "/apple-icon.png", sizes: "180x180", type: "image/png" }],
+    shortcut: "/favicon.ico",
+  },
   openGraph: {
     title: "AgentFlow | AI agents that research, decide, and execute on Arc",
     description:
@@ -13,12 +22,14 @@ export const metadata: Metadata = {
     url: "https://www.agentflow.one/",
     siteName: "AgentFlow",
     type: "website",
+    images: [{ url: "/agentflow-logo-square.png", width: 512, height: 512, alt: "AgentFlow" }],
   },
   twitter: {
     card: "summary",
     title: "AgentFlow | AI agents that research, decide, and execute on Arc",
     description:
       "One chat runs an economy of paid agents for research, DeFi, prediction markets, and payments, with previews, USDC settlement, and onchain reputation.",
+    images: ["/agentflow-logo-square.png"],
   },
 };
 
