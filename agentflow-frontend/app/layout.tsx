@@ -10,6 +10,7 @@ export const metadata: Metadata = {
   icons: {
     icon: [
       { url: "/favicon.ico", sizes: "any" },
+      { url: "/favicon.svg", type: "image/svg+xml" },
       { url: "/icon.png", type: "image/png", sizes: "32x32" },
     ],
     apple: [{ url: "/apple-icon.png", sizes: "180x180", type: "image/png" }],
@@ -22,14 +23,14 @@ export const metadata: Metadata = {
     url: "https://www.agentflow.one/",
     siteName: "AgentFlow",
     type: "website",
-    images: [{ url: "/agentflow-logo-square.png", width: 512, height: 512, alt: "AgentFlow" }],
+    images: [{ url: "/media-kit/agentflow-logo-badge.svg", width: 256, height: 256, alt: "AgentFlow" }],
   },
   twitter: {
     card: "summary",
     title: "AgentFlow | AI agents that research, decide, and execute on Arc",
     description:
       "One chat runs an economy of paid agents for research, DeFi, prediction markets, and payments, with previews, USDC settlement, and onchain reputation.",
-    images: ["/agentflow-logo-square.png"],
+    images: ["/media-kit/agentflow-logo-badge.svg"],
   },
 };
 
