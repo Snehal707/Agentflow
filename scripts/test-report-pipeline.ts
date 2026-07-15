@@ -7,6 +7,7 @@ import {
 import {
   buildPrimaryFirecrawlQueryVariants,
   extractSportsWinnerNumericEvidenceSnippet,
+  filterFastResearchDynamicEvidence,
   shouldGatherCurrentEvents,
 } from '../lib/live-data';
 import { isLowValueSourceForTask } from '../lib/source-policy';
@@ -170,6 +171,37 @@ assert.ok(
 const genericAiModelOutlookQueries = buildPrimaryFirecrawlQueryVariants(
   'China open-source AI models outlook',
   'China open-source AI models outlook',
+);
+
+const spaceXQueries = buildPrimaryFirecrawlQueryVariants(
+  'research on space x',
+  'research on space x',
+);
+assert.ok(
+  spaceXQueries.some((query) => /\bSpaceX\b/i.test(query)),
+  'Expected split Space X wording to normalize to SpaceX in fast live-search queries.',
+);
+
+const spaceXFilteredEvidence = filterFastResearchDynamicEvidence('research on space x', [
+  {
+    title: 'NASA SpaceX CRS-34 Dragon returns packed with space station science',
+    url: 'https://www.nasa.gov/missions/station/iss-research/nasas-spacex-crs-34-dragon-returns-packed-with-space-station-science/',
+    publisher: 'NASA',
+    summary: 'NASA reported details from a SpaceX Dragon cargo mission.',
+    seen_at: '2026-07-14T00:00:00.000Z',
+  },
+  {
+    title: 'SpaceX stumbles',
+    url: 'https://www.ft.com/content/37bf4703-f441-4adf-bd68-9131299c4171',
+    publisher: 'Financial Times',
+    summary: 'Financial Times coverage of SpaceX launch and business developments.',
+    seen_at: '2026-07-13T00:00:00.000Z',
+  },
+]);
+assert.equal(
+  spaceXFilteredEvidence.length,
+  2,
+  'Expected one-token entity research topics like SpaceX to keep matching article evidence.',
 );
 
 const multipleArticlesFromSamePublisher = finalizeReportMarkdown({

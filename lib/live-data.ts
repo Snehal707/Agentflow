@@ -1064,11 +1064,10 @@ function fastResearchTopicAnchorGroups(task: string): string[][] {
   return groups;
 }
 
-function taskKeywordOverlap(task: string, text: string): number {
+function fastResearchMeaningfulTerms(task: string): string[] {
   const cleanedTask = stripFirecrawlResearchScaffolding(task)
     .toLowerCase()
     .replace(/[^\w\s-]/g, ' ');
-  const haystack = text.toLowerCase();
   const stopwords = new Set([
     ...RSS_MATCH_STOPWORDS,
     ...GENERIC_QUERY_STOPWORDS,
@@ -1080,12 +1079,17 @@ function taskKeywordOverlap(task: string, text: string): number {
     'market',
     'markets',
   ]);
-  const terms = [...new Set(
+  return [...new Set(
     cleanedTask
       .split(/\s+/)
       .map((term) => term.trim())
       .filter((term) => term.length >= 3 && !stopwords.has(term)),
   )];
+}
+
+function taskKeywordOverlap(task: string, text: string): number {
+  const haystack = text.toLowerCase();
+  const terms = fastResearchMeaningfulTerms(task);
   return terms.filter((term) => haystack.includes(term)).length;
 }
 
@@ -1096,11 +1100,13 @@ function containsAnchorTerm(text: string, term: string): boolean {
   return new RegExp(`\\b${escapeRegExp(normalized)}\\b`, 'i').test(text);
 }
 
-function filterFastResearchDynamicEvidence(
+export function filterFastResearchDynamicEvidence(
   task: string,
   snapshots: FirecrawlArticleSnapshot[],
 ): FirecrawlArticleSnapshot[] {
   const anchorGroups = fastResearchTopicAnchorGroups(task);
+  const meaningfulTerms = fastResearchMeaningfulTerms(task);
+  const minimumOverlap = meaningfulTerms.length <= 1 ? meaningfulTerms.length : 2;
   const filtered = filterLowValueEvidenceForTask(task, snapshots).filter((snapshot) => {
     if (isLowValueSocialSourceUrl(snapshot.url) || isLowValueVideoUrl(snapshot.url)) return false;
     if (isGoogleNewsUrl(snapshot.url) || isGoogleConsentUrl(snapshot.url)) return false;
@@ -1108,7 +1114,8 @@ function filterFastResearchDynamicEvidence(
     if (anchorGroups.length > 0) {
       return anchorGroups.every((group) => group.some((term) => containsAnchorTerm(haystack, term)));
     }
-    return taskKeywordOverlap(task, haystack) >= 2;
+    if (minimumOverlap === 0) return true;
+    return taskKeywordOverlap(task, haystack) >= minimumOverlap;
   });
 
   return selectFastResearchEvidenceWithHostDiversity(filtered, 6);
@@ -2440,6 +2447,11 @@ const FIRECRAWL_SYMBOL_EXPANSIONS: Array<{ pattern: RegExp; replacement: string 
   { pattern: /\bxrp\b/gi, replacement: 'ripple' },
 ];
 
+const FIRECRAWL_ENTITY_NORMALIZATIONS: Array<{ pattern: RegExp; replacement: string }> = [
+  { pattern: /\bspace\s+x\b/gi, replacement: 'SpaceX' },
+  { pattern: /\bopen\s+ai\b/gi, replacement: 'OpenAI' },
+];
+
 export type ForecastingIntent = {
   forecasting: boolean;
   horizonLabel?: string;
@@ -2450,6 +2462,9 @@ function stripFirecrawlResearchScaffolding(task: string): string {
   let stripped = stripExecutionContext(task);
   for (const pattern of FIRECRAWL_SCAFFOLDING_PREFIXES) {
     stripped = stripped.replace(pattern, '');
+  }
+  for (const rule of FIRECRAWL_ENTITY_NORMALIZATIONS) {
+    stripped = stripped.replace(rule.pattern, rule.replacement);
   }
   return stripped.replace(/\s+/g, ' ').trim();
 }
