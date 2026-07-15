@@ -9,9 +9,11 @@ export const metadata: Metadata = {
     "One chat runs an economy of paid agents for research, DeFi, prediction markets, and payments, with previews, USDC settlement, and onchain reputation.",
   icons: {
     icon: [
-      { url: "/favicon.ico", sizes: "any" },
+      // Google Search requires a square favicon that is a multiple of 48px.
+      { url: "/icon-48.png", type: "image/png", sizes: "48x48" },
+      { url: "/icon-96.png", type: "image/png", sizes: "96x96" },
       { url: "/favicon.svg", type: "image/svg+xml" },
-      { url: "/icon.png", type: "image/png", sizes: "32x32" },
+      { url: "/favicon.ico", sizes: "any" },
     ],
     apple: [{ url: "/apple-icon.png", sizes: "180x180", type: "image/png" }],
     shortcut: "/favicon.ico",

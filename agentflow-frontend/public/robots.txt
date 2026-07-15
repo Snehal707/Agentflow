@@ -1,0 +1,11 @@
+User-agent: *
+Allow: /
+
+# Favicon and brand assets must stay crawlable for Google Search results.
+Allow: /favicon.ico
+Allow: /favicon.svg
+Allow: /icon-48.png
+Allow: /icon-96.png
+Allow: /icon.png
+Allow: /apple-icon.png
+Allow: /media-kit/
