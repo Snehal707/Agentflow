@@ -3674,11 +3674,13 @@ export function assessFastReportEvidence(params: {
     /\b(market cap|market capitalization|valuation)\b/i.test(params.task);
   const diagnostics = asObject(params.liveData?.source_diagnostics);
   const diagnosticsMinimum = Number(diagnostics?.required_distinct_sources);
-  const requiredDistinctDomains = Math.max(
-    2,
-    isSportsWinnerMarket || isBitcoinMarketCapMarket ? 3 : 0,
-    Number.isFinite(diagnosticsMinimum) ? diagnosticsMinimum : 0,
-  );
+  const requiredDistinctDomains = isPredictionMarket
+    ? Math.max(
+        2,
+        isSportsWinnerMarket || isBitcoinMarketCapMarket ? 3 : 0,
+        Number.isFinite(diagnosticsMinimum) ? diagnosticsMinimum : 0,
+      )
+    : 0;
   const issues: string[] = [];
 
   if (sources.length < requiredDistinctDomains || distinctDomains.length < requiredDistinctDomains) {

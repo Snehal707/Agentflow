@@ -885,6 +885,23 @@ assert.match(
 const worldCupEvidenceTask = `research the prediction market topic: Who Will Win the FIFA World Cup 2026?
 Listed outcomes in AgentFlow: France / England / Argentina / Spain / Other.
 Prediction market category in AgentFlow: Sports.`;
+const normalFastResearchCanProceedWithSparseSources = assessFastReportEvidence({
+  task: 'research on space x',
+  research: null,
+  liveData: {
+    snapshot_at: '2026-07-15T00:00:00.000Z',
+    dynamic_sources: {
+      articles: [],
+    },
+  },
+});
+assert.equal(
+  normalFastResearchCanProceedWithSparseSources.ok,
+  true,
+  'Expected ordinary fast research to continue through Analyst/Writer even when the first live retrieval pass is sparse.',
+);
+assert.equal(normalFastResearchCanProceedWithSparseSources.requiredDistinctDomains, 0);
+
 const thinWorldCupEvidence = assessFastReportEvidence({
   task: worldCupEvidenceTask,
   research: null,
