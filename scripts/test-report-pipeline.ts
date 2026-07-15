@@ -273,6 +273,45 @@ assert.match(
   /china-ai-model-example-2026-07-02/,
   'Expected a second distinct Reuters article URL to survive source normalization.',
 );
+
+const htmlSourcesDisclosureReport = finalizeReportMarkdown({
+  task: 'research on synthetic biology startups',
+  writerMarkdown: `## Summary
+
+Synthetic biology startups have current source-backed momentum.
+
+</details> <details> <summary>Sources</summary>
+
+- Internal writer source list that should be replaced.
+
+</details>`,
+  research: null,
+  analysis: null,
+  liveData: {
+    dynamic_sources: {
+      articles: [
+        {
+          title: 'Synthetic biology startup raises new funding',
+          publisher: 'Bio News',
+          url: 'https://example.com/synthetic-biology-startup-funding',
+          summary: 'A synthetic biology startup raised new funding.',
+          seen_at: '2026-07-15',
+        },
+      ],
+    },
+  },
+});
+assert.doesNotMatch(
+  htmlSourcesDisclosureReport.markdown,
+  /<\/?details\b|<\/?summary\b/i,
+  'Expected HTML details/summary source disclosure tags to be stripped from final reports.',
+);
+assert.match(
+  htmlSourcesDisclosureReport.markdown,
+  /## Sources[\s\S]*synthetic-biology-startup-funding/,
+  'Expected canonical markdown Sources section to replace writer HTML source disclosure.',
+);
+
 assert.ok(
   genericAiModelOutlookQueries.some((query) => /AI models.*latest news/i.test(query)),
   'Expected generic AI-model research to generate live model/company news queries.',

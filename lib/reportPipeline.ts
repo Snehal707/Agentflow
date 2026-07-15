@@ -2800,11 +2800,12 @@ function isReportSectionHeadingLine(line: string): boolean {
 }
 
 function replaceSourcesSection(markdown: string, renderedSources: string): string {
-  const lines = markdown.replace(/\r\n/g, '\n').split('\n');
+  const markdownWithoutHtmlSourceDisclosures = stripHtmlSourceDisclosures(markdown);
+  const lines = markdownWithoutHtmlSourceDisclosures.replace(/\r\n/g, '\n').split('\n');
   const hasSourcesHeading = lines.some((line) => isSourcesHeadingLine(line));
 
   if (!hasSourcesHeading) {
-    return `${markdown.trim()}\n\n## Sources\n\n${renderedSources}`.trim();
+    return `${markdownWithoutHtmlSourceDisclosures.trim()}\n\n## Sources\n\n${renderedSources}`.trim();
   }
 
   // Strip EVERY existing Sources section (heading + its body up to the next report
@@ -2830,13 +2831,29 @@ function replaceSourcesSection(markdown: string, renderedSources: string): strin
   return `${body}\n\n## Sources\n\n${renderedSources}`.trim();
 }
 
+function stripHtmlSourceDisclosures(markdown: string): string {
+  return markdown
+    .replace(
+      /<\/details>\s*<details\b[^>]*>\s*<summary>\s*Sources\s*<\/summary>[\s\S]*?<\/details>/gi,
+      '',
+    )
+    .replace(
+      /<details\b[^>]*>\s*<summary>\s*Sources\s*<\/summary>[\s\S]*?<\/details>/gi,
+      '',
+    )
+    .replace(/<\/?summary\b[^>]*>/gi, '')
+    .replace(/<\/?details\b[^>]*>/gi, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 function sanitizeWriterMarkdown(markdown: string): string {
   const normalized = repairMojibake(markdown).replace(/\r\n/g, '\n').trim();
   if (!normalized || /writer agent returned no markdown output/i.test(normalized)) {
     return '';
   }
 
-  const withoutBlockedQuotes = normalized
+  const withoutBlockedQuotes = stripHtmlSourceDisclosures(normalized)
     .replace(/^research the prediction market topic:[^\n]*$/gim, '')
     .replace(/^listed outcomes in agentflow:[^\n]*$/gim, '')
     .replace(/^prediction market category in agentflow:[^\n]*$/gim, '')
