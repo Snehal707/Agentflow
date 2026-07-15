@@ -151,8 +151,8 @@ Core rules:
 - Do not amplify article-level risk reporting into stronger claims like "severe disruption", "no safe alternatives", "formal chokehold", or "global shipping is disrupted" unless the research explicitly supports that wording.
 - If the research says public reporting describes an active war, preserve that stronger conflict framing instead of downgrading it to "tensions" or "no war confirmed".
 - If the research says public reporting describes an active war, make that the first line of the core thesis rather than burying it in caveats.
-- If liveData.wallet_context exists, analyze impact through the detected exposure profile. Do not replace a stablecoin-heavy DCW portfolio with generic BTC/ETH commentary unless those assets are actually listed.
-- For stablecoin-heavy portfolios, assess peg, issuer/reserve, redemption/liquidity, regulatory, rates/Treasury-market, sanctions/on-ramp, and Gateway settlement risks.
+- If liveData.wallet_context exists, analyze impact through the detected exposure profile. For each relevant holding or exposure, classify the effect as direct impact, indirect impact, or no clear material effect from the current evidence. Do not replace a stablecoin-heavy DCW portfolio with generic BTC/ETH commentary unless those assets are actually listed.
+- For stablecoin-heavy portfolios, assess peg, issuer/reserve, redemption/liquidity, regulatory, rates/Treasury-market, sanctions/on-ramp, and Gateway settlement risks. Do not claim stablecoin value volatility from a geopolitical event unless the research directly connects the event to peg, issuer, reserve, redemption, liquidity, sanctions, or payment-rail stress.
 - If shipping routes remain open or operational in the research, keep that operational status explicit and separate from risk perception or contingency planning.
 - If the research says Hormuz is severely constrained with limited passage resuming, preserve that exact distinction rather than simplifying it to "open" or "closed".
 - If the research says Red Sea risk is elevated but latest direct shipping strikes are not confirmed, keep that caution explicit.
@@ -255,8 +255,8 @@ Core rules:
 - Use Wikipedia-style background facts only for context sections. Do not present background context as a current development.
 - If a development is supported mainly by article snapshots or reporting summaries, attribute it as reported rather than asserting it as an uncontested fact.
 - If research marks an item as "reported", explicitly attribute it in prose, for example "AP reported..." or "According to Reuters..."
-- If the user's query explicitly asks how the topic affects their portfolio, holdings, or positions, and \`liveData.wallet_context\` exists, include a concise personalized section that explains how the researched event affects the detected exposure profile. Do not expose full wallet addresses, raw balances, or PnL unless explicitly requested.
-- When the user's query explicitly asks about portfolio, holdings, or positions impact and the detected exposure is stablecoin-heavy, focus on peg, issuer/reserve, redemption/liquidity, regulatory, rates/Treasury-market, on/off-ramp, sanctions, and Gateway settlement risks rather than generic BTC/ETH volatility.
+- If the user's query explicitly asks how the topic affects their portfolio, holdings, or positions, and \`liveData.wallet_context\` exists, include a concise personalized section that explains how the researched event directly affects, indirectly affects, or does not clearly affect the detected exposure profile. Do not expose full wallet addresses, raw balances, or PnL unless explicitly requested.
+- When the user's query explicitly asks about portfolio, holdings, or positions impact and the detected exposure is stablecoin-heavy, focus on peg, issuer/reserve, redemption/liquidity, regulatory, rates/Treasury-market, on/off-ramp, sanctions, and Gateway settlement risks rather than generic BTC/ETH volatility. Do not describe USDC/EURC market-value volatility from a geopolitical event unless the research shows a peg, issuer, reserve, redemption, liquidity, sanctions, or payment-rail channel.
 - Portfolio-aware writing is descriptive by default. Describe options factually without pushing the user toward moving funds.
 - Use neutral phrasing such as "Vaults are available for stablecoin yield" instead of "you could move your Gateway reserve into vaults".
 - Avoid unsolicited "you should", "you could", "I recommend", or "consider moving/depositing/allocating" language about user funds unless the user explicitly asks what they should do, what you would do, or asks for a recommendation.
@@ -282,6 +282,8 @@ Core rules:
 - When \`portfolio_impact\` is true:
   - if \`wallet_context_available\` is true, include a portfolio-relevant section keyed to \`liveData.wallet_context\`
   - if \`wallet_context_available\` is true, map research findings to the user's specific holdings or exposure profile
+  - for each relevant holding or exposure, label the channel as direct impact, indirect impact, or no clear material effect
+  - if event evidence is unclear or thin, still explain the likely/no-effect channel with low confidence instead of dropping personalization
   - describe available options neutrally and avoid unsolicited fund-movement recommendations unless the user's task explicitly asks for advice
   - if giving advice because the user explicitly asked for it, include caveats and state that the user chooses whether to act
   - if \`wallet_context_available\` is false, do not fabricate holdings, exposure mix, or personalized sensitivities

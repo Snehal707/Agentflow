@@ -12,6 +12,7 @@ import {
 } from '../lib/live-data';
 import { isLowValueSourceForTask } from '../lib/source-policy';
 import { mergeUnderstandingWithHeuristic, type MarketUnderstanding } from '../lib/market-understanding';
+import { buildAnalystModelInput, buildWriterModelInput } from '../lib/reportInputs';
 
 const badWriterMarkdown = `# Iran-US Tensions Research Report
 
@@ -145,6 +146,43 @@ assert.equal(
   shouldGatherCurrentEvents('China open-source AI models outlook'),
   true,
   'Expected outlook-shaped paid research tasks to gather current source evidence even without the word research.',
+);
+
+const portfolioLiveData = {
+  portfolio_impact: true,
+  wallet_context: {
+    source: 'agentflow_portfolio_snapshot',
+    holdings: [{ symbol: 'USDC', name: 'USD Coin', kind: 'stablecoin', usd_value: 100 }],
+    positions: [{ name: 'Circle Gateway', protocol: 'Circle Gateway', kind: 'payment_liquidity', usd_value: 50 }],
+  },
+};
+const analystPortfolioInput = buildAnalystModelInput({
+  task: 'Middle East shipping routes impact on my portfolio',
+  researchText: '{}',
+  liveData: portfolioLiveData,
+  portfolioImpact: true,
+});
+const writerPortfolioInput = buildWriterModelInput({
+  task: 'Middle East shipping routes impact on my portfolio',
+  researchText: '{}',
+  analysisText: '{}',
+  liveData: portfolioLiveData,
+  portfolioImpact: true,
+});
+assert.match(
+  analystPortfolioInput,
+  /direct, indirect, or no clear material effect/i,
+  'Expected analyst input to require direct/indirect/no-effect portfolio classification.',
+);
+assert.match(
+  writerPortfolioInput,
+  /impact label: direct, indirect, or no clear material effect/i,
+  'Expected writer input to require direct/indirect/no-effect portfolio labels.',
+);
+assert.match(
+  writerPortfolioInput,
+  /may affect or may not affect each relevant exposure/i,
+  'Expected writer input to personalize even when event evidence is thin.',
 );
 
 const repeatedAiChinaReportQueries = buildPrimaryFirecrawlQueryVariants(
