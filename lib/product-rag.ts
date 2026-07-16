@@ -1,4 +1,5 @@
 import { AGENTFLOW_FOUNDER_BRIEF } from './agentflow-copy';
+import { formatAgentFlowCapabilityReply } from './agentflowProduct';
 
 export type ProductKnowledgeDoc = {
   id: string;
@@ -221,8 +222,9 @@ export const PRODUCT_KNOWLEDGE: ProductKnowledgeDoc[] = [
   {
     id: 'prediction-markets',
     title: 'Prediction markets',
-    summary: 'AgentFlow supports prediction market trading on Arc via natural language chat.',
+    summary: 'AgentFlow supports prediction market trading through AchMarket on Arc via natural language chat.',
     facts: [
+      'AchMarket is the currently integrated prediction-market execution provider.',
       'Browse live prediction markets and see current outcome probabilities.',
       'Buy outcome shares with USDC using natural language like "bet 5 USDC on yes".',
       'Sell shares, redeem winnings on resolved markets, and refund cancelled markets.',
@@ -247,9 +249,10 @@ export const PRODUCT_KNOWLEDGE: ProductKnowledgeDoc[] = [
   {
     id: 'vault',
     title: 'Vault and yield',
-    summary: 'AgentFlow supports depositing USDC into yield-bearing vaults on Arc.',
+    summary: 'AgentFlow supports the Lunex USDC Vault and Lunex EURC Vault on Arc.',
     facts: [
-      'Deposit USDC into vaults to earn yield.',
+      'The supported in-chat vault providers are the Lunex USDC Vault and Lunex EURC Vault.',
+      'Deposit USDC or EURC into the matching Lunex vault to earn yield.',
       'Withdraw from vaults anytime.',
       'Say "show vaults" to see available options.',
       'Say "deposit 100 USDC in vault" to get a preview, then confirm with YES.',
@@ -857,8 +860,7 @@ export function answerProductQuestion(query: string): ProductRagAnswer | null {
 
   if (isCapabilityQuestion(query)) {
     return {
-      answer:
-        'I can help with DeFi and payments on Arc. You can swap tokens, bridge USDC from any EVM chain, deposit into vaults, trade prediction markets, send and request payments via registered AgentPay .arc handles or wallet addresses, schedule recurring payments, run batch payroll, create invoices, research any topic, and analyze images or voice notes.\n\nWhat do you want to do?',
+      answer: formatAgentFlowCapabilityReply(),
       sources,
       confidence,
     };

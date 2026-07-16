@@ -64,6 +64,8 @@ export function shouldHandleAsAgentFlowCapabilityQuestion(
 
   const line = normalizedMulti.replace(/\s+/g, ' ').trim();
   const anchored = [
+    /^what\s+can\s+do\??[!.\s]*$/i,
+    /^what\s+can\s+u\s+do(?:\s+(?:here|for\s+me|today|right\s+now))?\??[!.\s]*$/i,
     /^what\s+can\s+agentflow\s+do(?:\s+(?:today|right\s+now))?\??[!.\s]*$/i,
     /^what\s+does\s+agentflow\s+do\??[!.\s]*$/i,
     /^what\s+is\s+agentflow\??[!.\s]*$/i,

@@ -24,6 +24,11 @@ import {
   AGENTFLOW_FOUNDER_FACT,
   AGENTFLOW_FOUNDER_SHORT,
 } from './agentflow-copy';
+import {
+  buildHermesCorrectionReply,
+  isAgentFlowCapabilityQuestionVariant,
+  validateHermesResponseGrounding,
+} from './hermes-response-grounding';
 
 const HERMES_API_URL = (process.env.AGENTFLOW_HERMES_URL || 'http://localhost:8000').replace(
   /\/+$/,
@@ -37,7 +42,9 @@ const HERMES_API_KEY = (
 ).trim();
 
 const BRAIN_MAX_TOOL_CALLS_PER_TURN = 5;
-const BRAIN_ALLOWED_TOOLSETS = ['agentflow_brain', 'skills'] as const;
+// Product actions route deterministically before this fallback. Keeping the
+// global Hermes skill catalog out prevents unrelated CLI/web3 context leakage.
+const BRAIN_ALLOWED_TOOLSETS = ['agentflow_brain'] as const;
 const BRAIN_ALLOWED_TOOL_NAMES = new Set([
   'session_search',
   'clarify',
@@ -362,12 +369,17 @@ export type BrainStreamChunk =
   | { type: 'delta'; delta: string }
   | {
       type: 'guard';
-      guard: 'turn_cap_hit' | 'stale_state_blocked' | 'unexpected_tool_blocked';
+      guard:
+        | 'turn_cap_hit'
+        | 'stale_state_blocked'
+        | 'unexpected_tool_blocked'
+        | 'hallucination_blocked';
       reason: string;
       toolsCalled: number;
       toolsStarted?: string[];
       assertedState?: string;
       requiredTool?: 'get_balance' | 'get_portfolio';
+      replacement?: string;
     };
 
 type BrainToolResult = {
@@ -1235,6 +1247,9 @@ function deterministicAgentFlowBrainReply(
   const trimmed = userMessage.trim();
   if (!trimmed) return null;
 
+  const correctionReply = buildHermesCorrectionReply(trimmed);
+  if (correctionReply) return correctionReply;
+
   if (/^(?:hey|hi|hello)\s+how\s+are\s+you\b/i.test(trimmed)) {
     return "I'm good - here and ready to help.";
   }
@@ -1271,7 +1286,7 @@ function deterministicAgentFlowBrainReply(
     return AGENTFLOW_FOUNDER_SHORT;
   }
 
-  if (/^what can you do (?:here|for me)?\??$/i.test(trimmed)) {
+  if (isAgentFlowCapabilityQuestionVariant(trimmed)) {
     return buildCapabilityReply();
   }
 
@@ -1764,6 +1779,27 @@ export async function* runAgentBrain(
           }
         }
         completedText = validateAgentFlowBrainReply(message, completedText, toolsStarted);
+        const groundingDecision = validateHermesResponseGrounding(
+          message,
+          completedText,
+          toolsStarted,
+        );
+        if (!groundingDecision.ok) {
+          console.warn('[HERMES_HALLUCINATION_BLOCKED]', {
+            session_id: resolvedSessionId,
+            reason: groundingDecision.reason,
+            tools_called: toolsStarted.length,
+          });
+          yield {
+            type: 'guard',
+            guard: 'hallucination_blocked',
+            reason: groundingDecision.reason,
+            replacement: groundingDecision.replacement,
+            toolsCalled: toolsStarted.length,
+            toolsStarted: [...toolsStarted],
+          };
+          return;
+        }
         const staleStateTool = requiredStateToolForStaleAnswer(
           message,
           completedText,
