@@ -9,23 +9,23 @@ import {
   buildCurrentEventQueries,
   extractSportsWinnerNumericEvidenceSnippet,
   filterFastResearchDynamicEvidence,
+  selectPredictionMarketEvidenceWithHostDiversity,
   shouldGatherCurrentEvents,
 } from '../lib/live-data';
 import { isLowValueSourceForTask } from '../lib/source-policy';
 import { mergeUnderstandingWithHeuristic, type MarketUnderstanding } from '../lib/market-understanding';
 import { buildAnalystModelInput, buildWriterModelInput } from '../lib/reportInputs';
-import { formatProviderProbabilitySnapshot } from '../lib/predmarket-research-context';
+import { buildPredictionTopicResearchPrompt } from '../lib/predmarket-research-context';
 
-assert.equal(
-  formatProviderProbabilitySnapshot(
-    [
-      { label: 'France', probabilityPercent: 14.7 },
-      { label: 'Spain', probabilityPercent: 10.6 },
-      { label: 'Other' },
-    ],
-    '2026-07-16T20:06:01.000Z',
-  ),
-  'AgentFlow provider-implied probability snapshot (observed 2026-07-16T20:06:01.000Z): France=14.7% | Spain=10.6%.',
+const topicOnlyPredictionResearchPrompt = buildPredictionTopicResearchPrompt(
+  'Who Will Win the FIFA World Cup 2026?',
+  'Sports',
+);
+assert.match(topicOnlyPredictionResearchPrompt, /Who Will Win the FIFA World Cup 2026/i);
+assert.match(topicOnlyPredictionResearchPrompt, /latest real-world event state/i);
+assert.doesNotMatch(
+  topicOnlyPredictionResearchPrompt,
+  /achmarket|provider-implied|market address|France=|Spain=|listed outcomes/i,
 );
 
 const badWriterMarkdown = `# Iran-US Tensions Research Report
@@ -715,6 +715,24 @@ assert.ok(
   'Expected launch-deadline prediction markets to avoid generic forecast variants and stay on status/roadmap queries.',
 );
 
+const topicOnlyWorldCupQueries = buildPrimaryFirecrawlQueryVariants(
+  topicOnlyPredictionResearchPrompt,
+  topicOnlyPredictionResearchPrompt,
+);
+assert.ok(
+  topicOnlyWorldCupQueries.every(
+    (query) =>
+      !/achmarket|internal prediction provider|market category to disambiguate|retrieval time|routing metadata/i.test(
+        query,
+      ),
+  ),
+  'Expected the topic-only prompt scaffolding to be removed before search query generation.',
+);
+assert.ok(
+  topicOnlyWorldCupQueries.some((query) => /world cup/i.test(query)),
+  'Expected the topic-only prompt to retain the real-world subject.',
+);
+
 const worldCupWinnerQueries = buildPrimaryFirecrawlQueryVariants(
   `research the prediction market topic: Who Will Win the FIFA World Cup 2026?
 Listed outcomes in AgentFlow: France / Argentina / Brazil / Other.
@@ -760,6 +778,50 @@ Prediction market category in AgentFlow: Sports.`,
 assert.ok(
   worldCupCurrentEventQueries.some((query) => /latest results|finalists|semifinal results/i.test(query)),
   'Expected sports winner current-event retrieval to query the latest bracket and completed results.',
+);
+const freshSportsEvidenceDate = new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString();
+const sportsEvidenceKeepsResultsAheadOfOdds = selectPredictionMarketEvidenceWithHostDiversity(
+  `research the prediction market topic: Who Will Win the FIFA World Cup 2026?
+Prediction market category in AgentFlow: Sports.`,
+  [
+    {
+      title: 'World Cup winner odds',
+      publisher: 'Odds Publisher',
+      url: 'https://odds.example/world-cup-winner',
+      seen_at: '2026-07-12T00:00:00.000Z',
+      summary: 'France has a 34.0% chance to win in a pre-semifinal model.',
+    },
+    {
+      title: 'World Cup predictions',
+      publisher: 'Model Publisher',
+      url: 'https://model.example/world-cup-predictions',
+      seen_at: '2026-07-12T00:00:00.000Z',
+      summary: 'Pre-semifinal tournament probabilities.',
+    },
+    {
+      title: 'Spain beat France 2-0 in the World Cup semi-final',
+      publisher: 'FIFA',
+      url: 'https://fifa.example/spain-france-result',
+      seen_at: freshSportsEvidenceDate,
+      summary: 'Spain defeated France and advanced to the final.',
+    },
+    {
+      title: 'Argentina defeated England to set the World Cup final',
+      publisher: 'BBC News',
+      url: 'https://bbc.example/argentina-england-result',
+      seen_at: freshSportsEvidenceDate,
+      summary: 'Argentina beat England in the semi-final; Spain will face Argentina in the final.',
+    },
+  ],
+  4,
+);
+assert.match(sportsEvidenceKeepsResultsAheadOfOdds[0]?.title || '', /beat|defeated/i);
+assert.match(sportsEvidenceKeepsResultsAheadOfOdds[1]?.title || '', /beat|defeated/i);
+assert.ok(
+  sportsEvidenceKeepsResultsAheadOfOdds.every(
+    (source) => !/pre-semifinal|World Cup winner odds/i.test(`${source.title} ${source.summary}`),
+  ),
+  'Expected forecasts superseded by the confirmed final matchup to be removed.',
 );
 
 const gtaPredmarketFiltersLowValueSources = finalizeReportMarkdown({
@@ -1043,7 +1105,6 @@ assert.match(
 );
 
 const worldCupEvidenceTask = `research the prediction market topic: Who Will Win the FIFA World Cup 2026?
-Listed outcomes in AgentFlow: France / England / Argentina / Spain / Other.
 Prediction market category in AgentFlow: Sports.`;
 const normalFastResearchCanProceedWithSparseSources = assessFastReportEvidence({
   task: 'research on space x',
@@ -1589,8 +1650,7 @@ assert.equal(sportsPredmarketPrioritizesDecisionEvidence.sources[0]?.url,
 assert.match(sportsPredmarketPrioritizesDecisionEvidence.sources[0]?.usedFor || '', /34\.0% of simulations/i);
 assert.doesNotMatch(sportsPredmarketPrioritizesDecisionEvidence.markdown, /buck-buchanan|fcs-football/i);
 
-const postSemifinalWorldCupTask = `${worldCupEvidenceTask}
-AgentFlow provider-implied probability snapshot (observed 2026-07-16T20:06:01.000Z): France=14.7% | Argentina=9.3% | England=8.1% | Spain=10.6%.`;
+const postSemifinalWorldCupTask = worldCupEvidenceTask;
 const postSemifinalContradictionIsRejected = finalizeReportMarkdown({
   task: postSemifinalWorldCupTask,
   writerMarkdown: `# Who Will Win the FIFA World Cup 2026?
@@ -1644,11 +1704,96 @@ assert.match(
 );
 assert.match(
   postSemifinalContradictionIsRejected.validationIssues.join('\n'),
-  /provider snapshot|timeline contradicts fresh source evidence/i,
+  /timeline contradicts fresh source evidence/i,
 );
 assert.doesNotMatch(postSemifinalContradictionIsRejected.markdown, /four teams remain/i);
 assert.doesNotMatch(postSemifinalContradictionIsRejected.markdown, /France has a 57\.7% chance/i);
 assert.match(postSemifinalContradictionIsRejected.markdown, /generated ranking was withheld/i);
+
+const suppliedWorldCupCurrentState = {
+  snapshot_at: '2026-07-16T21:05:00.000Z',
+  source_diagnostics: {
+    has_sufficient_diversity: true,
+    drift_risk: 'low',
+    unresolved_entity: false,
+  },
+  dynamic_sources: {
+    articles: [
+      {
+        title: 'FIFA World Cup 2026 predictions ahead of the semi-finals',
+        publisher: 'The Analyst',
+        url: 'https://theanalyst.com/articles/world-cup-2026-semi-final-predictions-opta-supercomputer',
+        summary: 'Published before the semi-finals: France won 34.0% of simulations and had a 57.7% chance of reaching the final.',
+        seen_at: '2026-07-12T00:00:00.000Z',
+      },
+      {
+        title: 'Spain beat France 2-0 in the World Cup semi-final',
+        publisher: 'FIFA',
+        url: 'https://www.fifa.com/en/tournaments/mens/worldcup/canadamexicousa2026/articles/france-spain-match-report-highlights',
+        summary: 'Spain defeated France 2-0 and advanced to the final; France was eliminated.',
+        seen_at: '2026-07-14T23:00:00.000Z',
+      },
+      {
+        title: 'World Cup final is set: Spain will face Argentina',
+        publisher: 'BBC News',
+        url: 'https://www.bbc.com/sport/football/articles/world-cup-final-spain-argentina',
+        summary: 'Argentina beat England 2-1, confirming Spain against Argentina in the final.',
+        seen_at: '2026-07-16T00:30:00.000Z',
+      },
+    ],
+  },
+};
+
+const suppliedReportOneRejected = finalizeReportMarkdown({
+  task: postSemifinalWorldCupTask,
+  writerMarkdown: `# Who Will Win the FIFA World Cup 2026?
+
+France currently leads as the most probable winner, holding a 14.7% implied probability in the achmarket prediction market as of July 16, 2026. An Opta simulation gives France a 57.7% chance of reaching the final and a 34.0% chance of winning from the semi-final stage. France is currently favored. The top five exceed 50%, indicating a concentrated market view.
+
+## Sources
+
+- [The Analyst](https://theanalyst.com/articles/world-cup-2026-semi-final-predictions-opta-supercomputer)`,
+  research: null,
+  analysis: null,
+  liveData: suppliedWorldCupCurrentState,
+});
+assert.match(
+  suppliedReportOneRejected.validationIssues.join('\n'),
+  /internal prediction provider|timeline contradicts|promotes a forecast|partial outcome sum/i,
+);
+assert.match(
+  suppliedReportOneRejected.validationIssues.join('\n'),
+  /partial outcome sum/i,
+);
+assert.doesNotMatch(suppliedReportOneRejected.markdown, /achmarket|France currently/i);
+assert.match(suppliedReportOneRejected.markdown, /generated ranking was withheld/i);
+
+const suppliedReportTwoRejected = finalizeReportMarkdown({
+  task: postSemifinalWorldCupTask,
+  writerMarkdown: `# Who Will Win the FIFA World Cup 2026?
+
+The semifinals are occurring around July 14-16. Current prediction market data from achmarket favors France. Argentina advanced against England and is expected to face the winner of France vs Spain. The Analyst indicates a 34% France win probability based on post-semifinal performance data.
+
+## Takeaway
+
+France is both the market favorite and projected strongly by AI.
+
+## Sources
+
+- [The Analyst](https://theanalyst.com/articles/world-cup-2026-semi-final-predictions-opta-supercomputer)`,
+  research: null,
+  analysis: null,
+  liveData: suppliedWorldCupCurrentState,
+});
+assert.match(
+  suppliedReportTwoRejected.validationIssues.join('\n'),
+  /internal prediction provider|timeline contradicts|promotes a forecast/i,
+);
+assert.doesNotMatch(
+  suppliedReportTwoRejected.markdown,
+  /achmarket|semifinals are occurring|winner of France vs Spain/i,
+);
+assert.match(suppliedReportTwoRejected.markdown, /generated ranking was withheld/i);
 
 const staleWorldCupEvidenceFailsClosed = finalizeReportMarkdown({
   task: postSemifinalWorldCupTask,

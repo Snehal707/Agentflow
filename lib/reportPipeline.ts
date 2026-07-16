@@ -3123,11 +3123,6 @@ export function buildGeneralReportMarkdown(
   ].join('\n').trim();
 }
 
-type ProviderProbabilitySnapshot = {
-  observedAt: string;
-  outcomes: Array<{ label: string; normalizedLabel: string; probabilityPercent: number }>;
-};
-
 function isSportsWinnerPredictionMarketReport(task: string): boolean {
   return (
     isPredictionMarketResearchTask(task) &&
@@ -3138,45 +3133,33 @@ function isSportsWinnerPredictionMarketReport(task: string): boolean {
   );
 }
 
-function normalizeOutcomeLabel(value: string): string {
-  return value
-    .normalize('NFKD')
-    .replace(/[^a-z0-9\s.'-]/gi, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .toLowerCase();
-}
-
-function extractProviderProbabilitySnapshot(task: string): ProviderProbabilitySnapshot | null {
-  const match = task.match(
-    /AgentFlow provider-implied probability snapshot\s*\(observed\s+([^)]+)\):\s*([^\n]+)/i,
-  );
-  if (!match?.[1] || !match[2]) return null;
-
-  const outcomes = match[2]
-    .replace(/\.\s*$/, '')
-    .split(/\s*\|\s*/)
-    .map((entry) => {
-      const outcomeMatch = entry.match(/^(.+?)=(\d+(?:\.\d+)?)%$/);
-      if (!outcomeMatch?.[1] || !outcomeMatch[2]) return null;
-      const probabilityPercent = Number(outcomeMatch[2]);
-      const label = outcomeMatch[1].trim();
-      const normalizedLabel = normalizeOutcomeLabel(label);
-      if (!normalizedLabel || !Number.isFinite(probabilityPercent)) return null;
-      return { label, normalizedLabel, probabilityPercent };
-    })
-    .filter(
-      (value): value is { label: string; normalizedLabel: string; probabilityPercent: number } =>
-        Boolean(value),
-    );
-
-  return outcomes.length > 0 ? { observedAt: match[1].trim(), outcomes } : null;
-}
-
 function sportsStateEvidenceSignal(value: string): boolean {
-  return /\b(match report|latest results?|semi[- ]?final results?|finalists?|final|advanced to (?:the )?final|booked (?:a|their) place in (?:the )?final|qualified|eliminated|beat|defeated|lost to|fixtures?|bracket|standings)\b/i.test(
-    value,
+  const normalized = value.replace(/\s+/g, ' ');
+  const resultVerb =
+    /\b(beat|beats|defeated|eliminated|advanced|advances|qualified|reached|booked|secured|clinched|lost to)\b/i.test(
+      normalized,
+    );
+  const competitionStage = /\b(semi[- ]?finals?|finals?|finalists?|title match|championship match)\b/i.test(
+    normalized,
   );
+  const explicitFinalState =
+    /\b(final is set|confirmed final|finalists? (?:are|will be)|final matchup|will (?:play|face|meet) .{1,80} in (?:the )?final|final against)\b/i.test(
+      normalized,
+    );
+  const explicitFinalMatchup =
+    /\b[^.\n]{1,60}\b(?:vs\.?|versus|against|over)\b[^.\n]{1,60}\b(?:world cup )?final\b/i.test(
+      normalized,
+    ) &&
+    !/\b(would|could|potential|possible|hypothetical)\b/i.test(normalized);
+  const explicitResult =
+    /\b(?:semi[- ]?final|knockout) results?\b/i.test(normalized) ||
+    /\b\d{1,2}\s*[-–]\s*\d{1,2}\b[^.\n]{0,100}\b(?:semi[- ]?final|final)\b/i.test(
+      normalized,
+    );
+  const officialCompetitionState =
+    /\b(fixtures?|schedule|bracket|standings)\b/i.test(normalized) &&
+    /\b(fifa|uefa|nba|nfl|mlb|nhl)\b/i.test(normalized);
+  return explicitFinalState || explicitFinalMatchup || explicitResult || officialCompetitionState || (resultVerb && competitionStage);
 }
 
 function sourceAgeDays(source: NormalizedReportSource, referenceDate: number): number | null {
@@ -3201,64 +3184,6 @@ function freshSportsStateSources(
   });
 }
 
-function providerSnapshotConsistencyIssues(task: string, markdown: string): string[] {
-  const snapshot = extractProviderProbabilitySnapshot(task);
-  if (!snapshot || !markdown.trim()) return [];
-  const issues: string[] = [];
-  const topOutcome = [...snapshot.outcomes].sort(
-    (left, right) => right.probabilityPercent - left.probabilityPercent,
-  )[0];
-  const validationText = stripUrlsForValidation(markdown);
-
-  if (
-    /\bmarket favou?rite\b[^\n]{0,180}\b(?:opta|supercomputer|simulation|simulations)\b/i.test(
-      validationText,
-    ) ||
-    /\b(?:opta|supercomputer|simulation|simulations)\b[^\n]{0,180}\bmarket (?:odds|probabilit|favou?rite)/i.test(
-      validationText,
-    )
-  ) {
-    issues.push('Report conflates model or simulation probabilities with market probabilities.');
-  }
-
-  const normalizedValidationText = normalizeOutcomeLabel(validationText);
-  for (const outcome of snapshot.outcomes) {
-    if (outcome === topOutcome) continue;
-    const labelPattern = escapeRegExp(outcome.normalizedLabel);
-    if (
-      new RegExp(`\\b${labelPattern}\\b[^.\\n]{0,100}\\bmarket favou?rite\\b`, 'i').test(
-        normalizedValidationText,
-      )
-    ) {
-      issues.push(
-        `Report contradicts the AgentFlow provider snapshot by naming ${outcome.label} as the market favorite instead of ${topOutcome.label}.`,
-      );
-    }
-  }
-
-  for (const sentenceText of validationText.split(/(?<=[.!?])\s+|\n+/)) {
-    if (!/\bmarket\b/i.test(sentenceText)) continue;
-    if (/\b(opta|supercomputer|simulation|model|bookmaker)\b/i.test(sentenceText)) continue;
-    const normalizedSentence = normalizeOutcomeLabel(sentenceText);
-    for (const outcome of snapshot.outcomes) {
-      if (!normalizedSentence.includes(outcome.normalizedLabel)) continue;
-      const percentages = [...sentenceText.matchAll(/(\d+(?:\.\d+)?)\s*%/g)].map((match) =>
-        Number(match[1]),
-      );
-      if (
-        percentages.length === 1 &&
-        Math.abs(percentages[0] - outcome.probabilityPercent) > 0.15
-      ) {
-        issues.push(
-          `Report gives a market percentage for ${outcome.label} that does not match the timestamped AgentFlow provider snapshot.`,
-        );
-      }
-    }
-  }
-
-  return [...new Set(issues)];
-}
-
 function sportsTimelineConsistencyIssues(
   markdown: string,
   sources: NormalizedReportSource[],
@@ -3269,14 +3194,63 @@ function sportsTimelineConsistencyIssues(
     .join(' \n ');
   if (!currentStateText) return [];
   const issues: string[] = [];
-  const finalSet = /\b(final is set|finalists? (?:are|will be)|will (?:play|face) .{1,60} in (?:the )?final|final against)\b/i.test(
-    currentStateText,
-  );
-  const staleSemifinalFraming = /\b(four teams remain|final four remain|semi[- ]?final stage sees four|faces? .{1,40} in (?:the )?semi[- ]?final|chance to reach (?:the )?final)\b/i.test(
+  const finalSet =
+    /\b(final is set|confirmed final|finalists? (?:are|will be)|will (?:play|face|meet) .{1,60} in (?:the )?final|final against|[^.\n]{1,60}(?:vs\.?|versus|against|over)[^.\n]{1,60}(?:world cup )?final)\b/i.test(
+      currentStateText,
+    );
+  const staleSemifinalFraming = /\b(four teams remain|final four remain|semi[- ]?final stage sees four|from (?:the )?semi[- ]?final stage|semi[- ]?finals? (?:are|is|remain|occur|occurring|taking place|scheduled|upcoming)|faces? .{1,40} in (?:the )?semi[- ]?final|chance (?:to reach|of reaching) (?:the )?final|expected to face (?:the )?winner of|winner of .{1,50} (?:will )?face)\b/i.test(
     markdown,
   );
   if (finalSet && staleSemifinalFraming) {
     issues.push('Report timeline contradicts fresh source evidence that the final matchup is already set.');
+  }
+
+  const freshStateSources = freshSportsStateSources(sources);
+  const latestStateTime = Math.max(
+    ...freshStateSources.map((source) => Date.parse(source.publishedAt || '')).filter(Number.isFinite),
+  );
+  const hasSupersededForecastSource =
+    Number.isFinite(latestStateTime) &&
+    sources.some((source) => {
+      const publishedAt = Date.parse(source.publishedAt || '');
+      if (!Number.isFinite(publishedAt) || publishedAt >= latestStateTime) return false;
+      return /\b(opta|supercomputer|simulation|model|odds|probabilit|favou?rite|forecast)\b/i.test(
+        `${source.name} ${source.usedFor || ''}`,
+      );
+    });
+  if (
+    hasSupersededForecastSource &&
+    /\b(currently|current|as of today|now)\b[^.\n]{0,160}\b(favou?rite|leads?|most probable|probability|odds|forecast)\b|\b(favou?rite|leads?|most probable)\b[^.\n]{0,100}\b(currently|current|now)\b/i.test(
+      markdown,
+    )
+  ) {
+    issues.push('Report promotes a forecast published before newer completed results as current.');
+  }
+  return issues;
+}
+
+function sportsProbabilityLabelIssues(markdown: string): string[] {
+  const validationText = stripUrlsForValidation(markdown);
+  const issues: string[] = [];
+  if (
+    /\bmarket favou?rite\b[^\n]{0,180}\b(?:opta|supercomputer|simulation|simulations)\b/i.test(
+      validationText,
+    ) ||
+    /\b(?:opta|supercomputer|simulation|simulations)\b[^\n]{0,180}\bmarket (?:odds|probabilit|favou?rite)/i.test(
+      validationText,
+    )
+  ) {
+    issues.push('Report conflates model or simulation probabilities with market probabilities.');
+  }
+  if (/\b\d+(?:\.\d+)?%\s*%\b/.test(validationText)) {
+    issues.push('Report contains a duplicated percentage marker.');
+  }
+  if (
+    /\b(?:top|leading)\s+(?:\d+|three|four|five|six)\b[^.\n]{0,160}\b(?:exceed|above|over|more than)\s+50\s*%[^.\n]{0,180}\bconcentrat/i.test(
+      validationText,
+    )
+  ) {
+    issues.push('Report infers unusual market concentration from a partial outcome sum.');
   }
   return issues;
 }
@@ -3289,7 +3263,6 @@ function buildSportsWinnerConsistencyFallback(
     extractPredictionMarketQuestion(task) ||
     cleanPredictionMarketTopicLabel(task) ||
     'Sports winner market';
-  const snapshot = extractProviderProbabilitySnapshot(task);
   const freshSources = freshSportsStateSources(sources)
     .sort((left, right) => Date.parse(right.publishedAt || '') - Date.parse(left.publishedAt || ''))
     .slice(0, 4);
@@ -3299,12 +3272,6 @@ function buildSportsWinnerConsistencyFallback(
         return `- **${source.name}${date}:** ${shortenText(source.usedFor || source.name, 260)}`;
       })
     : ['- No fresh dated competition-state source survived the evidence gate.'];
-  const marketSnapshotLine = snapshot
-    ? `- AgentFlow provider snapshot observed ${snapshot.observedAt}: ${snapshot.outcomes
-        .map((outcome) => `${outcome.label} ${outcome.probabilityPercent}%`)
-        .join(', ')}. These are provider-implied values at that timestamp, not Opta simulations or advancement probabilities.`
-    : '- No timestamped AgentFlow provider probability snapshot was available in this run.';
-
   return [
     `# ${topic}`,
     '',
@@ -3316,10 +3283,10 @@ function buildSportsWinnerConsistencyFallback(
     '',
     ...evidenceLines,
     '',
-    '## Probability Labels',
+    '## Evidence Discipline',
     '',
-    marketSnapshotLine,
-    '- Model title probabilities, probabilities of reaching the next round, bookmaker odds, and prediction-market prices must remain separately labeled and separately dated.',
+    '- Only dated public evidence about the underlying real-world topic is used in this report.',
+    '- Model title probabilities, probabilities of reaching the next round, bookmaker odds, and public prediction-market prices must remain separately labeled and separately dated.',
     '',
     '## Sources',
     '',
@@ -3762,7 +3729,7 @@ function predictionMarketValidationIssues(
     ) {
       issues.push('Sports winner market report lacks fresh event-stage or result evidence.');
     }
-    issues.push(...providerSnapshotConsistencyIssues(task, markdown));
+    issues.push(...sportsProbabilityLabelIssues(markdown));
     issues.push(...sportsTimelineConsistencyIssues(markdown, sources));
   }
 
@@ -4014,6 +3981,14 @@ export function validateReportMarkdown(
     issues.push('Report leaked prompt scaffolding into final markdown.');
   }
   if (
+    isPredictionMarketResearchTask(task) &&
+    /\bachmarket\b|\bAgentFlow\b|\binternal prediction (?:provider|platform)\b/i.test(
+      markdown,
+    )
+  ) {
+    issues.push('Report mentions internal prediction provider or platform metadata.');
+  }
+  if (
     /\bResearch Pipeline\b/i.test(markdown) ||
     /\bresearch agent started\b/i.test(markdown) ||
     /\bResearch Agent is running Firecrawl \+ SearXNG live retrieval\b/i.test(markdown) ||
@@ -4135,8 +4110,10 @@ function isBlockingValidationIssue(issue: string): boolean {
     /lacks odds or probability evidence/i.test(issue) ||
     /lacks fresh event-stage or result evidence/i.test(issue) ||
     /conflates model or simulation probabilities with market probabilities/i.test(issue) ||
-    /contradicts the AgentFlow provider snapshot/i.test(issue) ||
-    /does not match the timestamped AgentFlow provider snapshot/i.test(issue) ||
+    /mentions internal prediction provider or platform metadata/i.test(issue) ||
+    /promotes a forecast published before newer completed results as current/i.test(issue) ||
+    /duplicated percentage marker/i.test(issue) ||
+    /infers unusual market concentration from a partial outcome sum/i.test(issue) ||
     /timeline contradicts fresh source evidence/i.test(issue) ||
     /lacks official or sufficiently strong status evidence/i.test(issue)
   );
@@ -4243,7 +4220,7 @@ export function finalizeReportMarkdown(params: FinalizeParams): {
       ]
     : [];
   const preservedWriterConsistencyIssues = writerValidationIssues.filter((issue) =>
-    /provider snapshot|model or simulation probabilities|timeline contradicts fresh source evidence/i.test(
+    /internal prediction provider|model or simulation probabilities|timeline contradicts fresh source evidence|promotes a forecast|duplicated percentage marker|partial outcome sum/i.test(
       issue,
     ),
   );

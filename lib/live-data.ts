@@ -220,10 +220,18 @@ function stripExecutionContext(task: string): string {
 
 function cleanPredictionMarketResearchTaskForSearch(task: string): string {
   const cleaned = task
-    .replace(/\r?\n+/g, ' ')
+    .replace(/\r\n/g, '\n')
     .replace(/^research\s+(?:the\s+)?(?:prediction\s+)?market(?:\s+topic)?[:\s-]*/i, '')
-    .replace(/\bListed outcomes in AgentFlow:[\s\S]*?(?=\bFocus on the real-world event\b|$)/i, ' ')
-    .replace(/\bFocus on the real-world event[\s\S]*$/i, ' ')
+    .replace(/\bListed outcomes in AgentFlow:[^\n]*/gi, ' ')
+    .replace(/\bPrediction market category in AgentFlow:[^\n]*/gi, ' ')
+    .replace(/\bPrediction market provider in AgentFlow:[^\n]*/gi, ' ')
+    .replace(/\bAgentFlow provider-implied probability snapshot[^\n]*/gi, ' ')
+    .replace(/\bAgentFlow market address reference:[^\n]*/gi, ' ')
+    .replace(/\bUse the market category to disambiguate the subject before searching[^\n]*/gi, ' ')
+    .replace(/\bResearch the real-world topic only[^\n]*/gi, ' ')
+    .replace(/\bEstablish the latest real-world event state[^\n]*/gi, ' ')
+    .replace(/\bFocus on (?:the real-world event|current facts)[^\n]*/gi, ' ')
+    .replace(/\n+/g, ' ')
     .replace(/\bthe\s+prediction\s+market\s+topic\b[:\s-]*/i, ' ')
     .replace(/\bprediction\s+market\s+topic\b[:\s-]*/i, ' ')
     .replace(/\bmarket\s+topic\b[:\s-]*/i, ' ')
@@ -374,6 +382,76 @@ function hasSportsWinnerMarketEvidenceSignal(haystack: string): boolean {
     /\b(?:winner|champion|title|tournament)\b[^.\n]{0,100}\b(?:odds|probability|probabilities|prediction|predictions|favorite|favourite|contender)\b/i.test(
       haystack,
     )
+  );
+}
+
+function hasSportsWinnerForecastSignal(haystack: string): boolean {
+  return (
+    /\b(opta|supercomputer|simulation|simulations|model|prediction|predictions|probability|probabilities|odds|favou?rite|favou?rites|forecast|forecasts)\b/i.test(
+      haystack,
+    ) &&
+    /\b(win|wins|winner|winning|title|champion|championship|world cup|tournament)\b/i.test(
+      haystack,
+    )
+  );
+}
+
+function isPredictionPlatformMechanicsEvidence(haystack: string): boolean {
+  return (
+    /\b(achmarket|kalshi|polymarket|prediction-market platform|prediction market platform)\b/i.test(
+      haystack,
+    ) &&
+    /\b(how to trade|trade event contracts?|event contracts?|market mechanics|fees?|deposit|withdraw|platform guide)\b/i.test(
+      haystack,
+    )
+  );
+}
+
+function hasConfirmedSportsFinalMatchupSignal(haystack: string): boolean {
+  const normalized = haystack.replace(/\s+/g, ' ');
+  const explicitFinalState =
+    /\b(final is set|confirmed final|finalists? (?:are|will be)|final matchup|will (?:play|face|meet) .{1,80} in (?:the )?final|final against)\b/i.test(
+      normalized,
+    );
+  const explicitFinalMatchup =
+    /\b[^.\n]{1,60}\b(?:vs\.?|versus|against|over)\b[^.\n]{1,60}\b(?:world cup )?final\b/i.test(
+      normalized,
+    ) &&
+    !/\b(would|could|potential|possible|hypothetical)\b/i.test(normalized);
+  return explicitFinalState || explicitFinalMatchup;
+}
+
+function hasDecisiveSportsStateSignal(haystack: string): boolean {
+  const normalized = haystack.replace(/\s+/g, ' ');
+  const resultVerb =
+    /\b(beat|beats|defeated|eliminated|advanced|advances|qualified|reached|booked|secured|clinched|lost to)\b/i.test(
+      normalized,
+    );
+  const competitionStage = /\b(semi[- ]?finals?|finals?|finalists?|title match|championship match)\b/i.test(
+    normalized,
+  );
+  const explicitResult =
+    /\b(?:semi[- ]?final|knockout) results?\b/i.test(normalized) ||
+    /\b\d{1,2}\s*[-–]\s*\d{1,2}\b[^.\n]{0,100}\b(?:semi[- ]?final|final)\b/i.test(
+      normalized,
+    );
+  const officialCompetitionState =
+    /\b(fixtures?|schedule|bracket|standings)\b/i.test(normalized) &&
+    /\b(fifa|uefa|nba|nfl|mlb|nhl)\b/i.test(normalized);
+  return hasConfirmedSportsFinalMatchupSignal(normalized) || explicitResult || officialCompetitionState || (resultVerb && competitionStage);
+}
+
+function isFreshDatedSportsStateSnapshot(
+  snapshot: FirecrawlArticleSnapshot,
+  maxAgeDays = 3,
+): boolean {
+  if (!snapshot.seen_at) return false;
+  const publishedAt = Date.parse(snapshot.seen_at);
+  if (!Number.isFinite(publishedAt)) return false;
+  const ageDays = (Date.now() - publishedAt) / 86_400_000;
+  if (ageDays < -0.5 || ageDays > maxAgeDays) return false;
+  return hasDecisiveSportsStateSignal(
+    `${snapshot.title} ${snapshot.summary} ${snapshot.publisher || ''}`,
   );
 }
 
@@ -1497,7 +1575,13 @@ async function fetchPredictionMarketOfficialSearchEvidence(
     queries.slice(0, 6).map(async (query) => {
       try {
         const [firecrawlResults, searxngResults] = await Promise.allSettled([
-          searchFirecrawlNews(query, 4, { recency: 'all' }),
+          searchFirecrawlNews(query, 4, {
+            recency: /\b(latest results?|semi[- ]?final results?|finalists?|final is set)\b/i.test(
+              query,
+            )
+              ? 'week'
+              : 'all',
+          }),
           searchSearxng(query, 4, { timeoutMs: 10_000, categories: ['news'] }),
         ]);
         const merged = new Map<string, FirecrawlSearchResult>();
@@ -1594,7 +1678,7 @@ async function fetchPredictionMarketSportsAuthorityEvidence(
     addUniqueQuery(fallbackUrls, 'https://www.cbssports.com/betting/news/world-cup-odds/');
   }
 
-  const fallbackSnapshots = await mapWithConcurrency(
+  const fallbackSnapshotsPromise = mapWithConcurrency(
     fallbackUrls.slice(0, 5),
     2,
     async (url) => {
@@ -1624,22 +1708,19 @@ async function fetchPredictionMarketSportsAuthorityEvidence(
       }
     },
   );
-  if (process.env.RETR_DEBUG && fallbackUrls.length > 0) {
-    const kept = fallbackSnapshots.filter(Boolean) as FirecrawlArticleSnapshot[];
-    console.error(
-      `[RETR][sports-fallback] competition="${competition}" urls=${fallbackUrls.length} kept=${kept.length} keptHosts=${kept
-        .map((snapshot) => extractHostname(snapshot.url) || snapshot.url)
-        .join(',')}`,
-    );
-  }
-
   const groups = await mapWithConcurrency(
     queries.slice(0, 4),
     2,
     async (query) => {
       try {
         const [firecrawlResults, searxngResults] = await Promise.allSettled([
-          searchFirecrawlNews(query, 4, { recency: 'all' }),
+          searchFirecrawlNews(query, 4, {
+            recency: /\b(latest results?|semi[- ]?final results?|finalists?|final is set)\b/i.test(
+              query,
+            )
+              ? 'week'
+              : 'all',
+          }),
           searchSearxng(query, 4, { timeoutMs: 10_000, categories: ['news'] }),
         ]);
         const merged = new Map<string, FirecrawlSearchResult>();
@@ -1659,6 +1740,15 @@ async function fetchPredictionMarketSportsAuthorityEvidence(
       }
     },
   );
+  const fallbackSnapshots = await fallbackSnapshotsPromise;
+  if (process.env.RETR_DEBUG && fallbackUrls.length > 0) {
+    const kept = fallbackSnapshots.filter(Boolean) as FirecrawlArticleSnapshot[];
+    console.error(
+      `[RETR][sports-fallback] competition="${competition}" urls=${fallbackUrls.length} kept=${kept.length} keptHosts=${kept
+        .map((snapshot) => extractHostname(snapshot.url) || snapshot.url)
+        .join(',')}`,
+    );
+  }
 
   const deduped = new Map<string, FirecrawlArticleSnapshot>();
   for (const snapshot of fallbackSnapshots) {
@@ -1697,7 +1787,11 @@ function mergePredictionMarketCurrentEventSnapshots(
 
   const deduped = new Map<string, FirecrawlArticleSnapshot>();
   for (const snapshot of existing) {
-    deduped.set(snapshot.url, snapshot);
+    const prior = deduped.get(snapshot.url);
+    deduped.set(
+      snapshot.url,
+      prior ? mergePredictionMarketSnapshotCopies(prior, snapshot) : snapshot,
+    );
   }
   for (const snapshot of currentEvents?.article_snapshots ?? []) {
     if (isGoogleNewsUrl(snapshot.url) || isGoogleConsentUrl(snapshot.url)) {
@@ -1706,7 +1800,10 @@ function mergePredictionMarketCurrentEventSnapshots(
       }
       continue;
     }
-    if (!isEntityRelevantPredictionMarketSource(snapshot, task, understanding)) {
+    const freshSportsState =
+      isSportsWinnerPredictionMarketTask(task, understanding) &&
+      isFreshDatedSportsStateSnapshot(snapshot);
+    if (!freshSportsState && !isEntityRelevantPredictionMarketSource(snapshot, task, understanding)) {
       if (process.env.RETR_DEBUG) {
         console.error(
           `[RETR][merge-current] skip entity gate url=${snapshot.url} title=${snapshot.title}`,
@@ -1714,12 +1811,13 @@ function mergePredictionMarketCurrentEventSnapshots(
       }
       continue;
     }
-    if (!deduped.has(snapshot.url)) {
-      deduped.set(snapshot.url, snapshot);
-    }
+    const prior = deduped.get(snapshot.url);
+    deduped.set(
+      snapshot.url,
+      prior ? mergePredictionMarketSnapshotCopies(prior, snapshot) : snapshot,
+    );
   }
   const merged = [...deduped.values()];
-  if (merged.length === existing.length) return existing;
 
   return selectPredictionMarketEvidenceWithHostDiversity(
     task,
@@ -2878,12 +2976,50 @@ export function buildPrimaryFirecrawlQueryVariants(
 // retrieval. Downstream rendering/claim-building applies its own narrower caps.
 const PREDICTION_MARKET_EVIDENCE_LIMIT = 10;
 
-function selectPredictionMarketEvidenceWithHostDiversity(
+function mergePredictionMarketSnapshotCopies(
+  existing: FirecrawlArticleSnapshot,
+  candidate: FirecrawlArticleSnapshot,
+): FirecrawlArticleSnapshot {
+  const existingTime = Date.parse(existing.seen_at || '');
+  const candidateTime = Date.parse(candidate.seen_at || '');
+  const candidateHasBetterDate =
+    Number.isFinite(candidateTime) &&
+    (!Number.isFinite(existingTime) || candidateTime > existingTime);
+  const preferred = candidateHasBetterDate ? candidate : existing;
+  const other = candidateHasBetterDate ? existing : candidate;
+  const summary = candidate.summary.length > existing.summary.length
+    ? candidate.summary
+    : existing.summary;
+  const candidateHasStateTitle = hasDecisiveSportsStateSignal(candidate.title);
+  const existingHasStateTitle = hasDecisiveSportsStateSignal(existing.title);
+
+  return {
+    ...other,
+    ...preferred,
+    title: candidateHasStateTitle && !existingHasStateTitle ? candidate.title : preferred.title,
+    summary,
+    seen_at: candidateHasBetterDate
+      ? candidate.seen_at
+      : Number.isFinite(existingTime)
+        ? existing.seen_at
+        : candidate.seen_at,
+  };
+}
+
+export function selectPredictionMarketEvidenceWithHostDiversity(
   task: string,
   snapshots: FirecrawlArticleSnapshot[],
   limit: number,
 ): FirecrawlArticleSnapshot[] {
-  const dedupedSnapshots = [...new Map(snapshots.map((snapshot) => [snapshot.url, snapshot])).values()];
+  const dedupedByUrl = new Map<string, FirecrawlArticleSnapshot>();
+  for (const snapshot of snapshots) {
+    const existing = dedupedByUrl.get(snapshot.url);
+    dedupedByUrl.set(
+      snapshot.url,
+      existing ? mergePredictionMarketSnapshotCopies(existing, snapshot) : snapshot,
+    );
+  }
+  const dedupedSnapshots = [...dedupedByUrl.values()];
   const selected: FirecrawlArticleSnapshot[] = [];
   const hostCounts = new Map<string, number>();
   const maxPerHost = extractPredictionMarketCategory(task) === 'sports' ? 2 : 2;
@@ -2901,7 +3037,52 @@ function selectPredictionMarketEvidenceWithHostDiversity(
     hostCounts.set(host, (hostCounts.get(host) ?? 0) + 1);
   };
 
+  // A winner report cannot be current without the current competition state. Reserve slots
+  // for fresh, dated result/finalist evidence before odds and simulation pages are considered.
+  // Otherwise high numeric-density scores can evict the very articles that make those odds stale.
+  const sportsWinnerTask = isSportsWinnerPredictionMarketTask(task);
+  let confirmedFinalReferenceTime: number | null = null;
+  if (sportsWinnerTask) {
+    const freshStateSnapshots = dedupedSnapshots
+      .filter((snapshot) => isFreshDatedSportsStateSnapshot(snapshot))
+      .sort((left, right) => Date.parse(right.seen_at || '') - Date.parse(left.seen_at || ''));
+    const confirmedFinalTimes = freshStateSnapshots
+      .filter((snapshot) =>
+        hasConfirmedSportsFinalMatchupSignal(`${snapshot.title} ${snapshot.summary}`),
+      )
+      .map((snapshot) => Date.parse(snapshot.seen_at || ''))
+      .filter(Number.isFinite);
+    if (confirmedFinalTimes.length > 0) {
+      confirmedFinalReferenceTime = Math.max(...confirmedFinalTimes);
+    }
+    for (const snapshot of freshStateSnapshots) {
+      if (!canAdd(snapshot)) continue;
+      push(snapshot);
+      if (selected.length >= Math.min(3, limit)) break;
+    }
+  }
+
+  const isSupersededForecast = (snapshot: FirecrawlArticleSnapshot): boolean => {
+    if (!sportsWinnerTask || confirmedFinalReferenceTime === null) return false;
+    const haystack = `${snapshot.title} ${snapshot.summary} ${snapshot.publisher || ''}`;
+    if (hasConfirmedSportsFinalMatchupSignal(haystack)) return false;
+    const obsoleteStageSignal =
+      /\b(before|ahead of|entering) (?:the )?semi[- ]?finals?\b|\b(first|second) semi[- ]?final\b|\b(four remaining|four teams remain|last four|chance (?:to reach|of reaching) (?:the )?final|place in (?:the )?final up for grabs)\b/i.test(
+        haystack,
+      );
+    const publishedAt = Date.parse(snapshot.seen_at || '');
+    const olderThanConfirmedFinal =
+      !Number.isFinite(publishedAt) || publishedAt < confirmedFinalReferenceTime;
+    if (!olderThanConfirmedFinal) return false;
+    if (hasSportsWinnerForecastSignal(haystack) || obsoleteStageSignal) return true;
+    return /\b(injury update|historic run|best moments|championship rings?|what you need to know about|team profile|player profile)\b/i.test(
+      haystack,
+    );
+  };
+
   for (const snapshot of dedupedSnapshots) {
+    if (selected.some((item) => item.url === snapshot.url)) continue;
+    if (isSupersededForecast(snapshot)) continue;
     if (!canAdd(snapshot)) continue;
     push(snapshot);
     if (selected.length >= limit) return selected;
@@ -2909,6 +3090,7 @@ function selectPredictionMarketEvidenceWithHostDiversity(
 
   for (const snapshot of dedupedSnapshots) {
     if (selected.some((item) => item.url === snapshot.url)) continue;
+    if (isSupersededForecast(snapshot)) continue;
     push(snapshot);
     if (selected.length >= limit) break;
   }
@@ -2979,10 +3161,18 @@ function filterPredictionMarketResearchEvidence(
     if (isLowValueSocialSourceUrl(snapshot.url)) return false;
     if (isLowValueVideoUrl(snapshot.url)) return false;
     if (
+      isPredictionPlatformMechanicsEvidence(
+        `${snapshot.title} ${snapshot.summary} ${snapshot.publisher || ''} ${snapshot.url}`,
+      )
+    ) {
+      return false;
+    }
+    if (
       isSportsWinnerPredictionMarketTask(task, understanding ?? null) &&
       hasSportsWinnerOffTopicSignal(
         `${snapshot.title} ${snapshot.summary} ${snapshot.publisher || ''} ${snapshot.url}`,
-      )
+      ) &&
+      !isFreshDatedSportsStateSnapshot(snapshot)
     ) {
       return false;
     }
@@ -2993,7 +3183,12 @@ function filterPredictionMarketResearchEvidence(
   const entityRelevantCandidates: FirecrawlArticleSnapshot[] = [];
   const gateRejected: FirecrawlArticleSnapshot[] = [];
   for (const snapshot of candidates) {
-    if (!understanding?.entity || isEntityRelevantPredictionMarketSource(snapshot, task, understanding)) {
+    if (
+      !understanding?.entity ||
+      isEntityRelevantPredictionMarketSource(snapshot, task, understanding) ||
+      (isSportsWinnerPredictionMarketTask(task, understanding) &&
+        isFreshDatedSportsStateSnapshot(snapshot))
+    ) {
       entityRelevantCandidates.push(snapshot);
     } else {
       gateRejected.push(snapshot);
@@ -4114,12 +4309,12 @@ function extractVisiblePublishedDateFromMarkdown(markdown: string | undefined): 
 
   const normalized = markdown.replace(/\r\n/g, '\n');
   const patterns = [
-    /\bPublished\s*\n+\s*([A-Za-z]{3,9}\s+\d{1,2},?\s+\d{4})\b/i,
-    /\bPublished\s*:?\s*([A-Za-z]{3,9}\s+\d{1,2},?\s+\d{4})\b/i,
+    /\bPublished\s*\n+\s*([A-Za-z]{3,9}\.?\s+\d{1,2},?\s+\d{4})\b/i,
+    /\bPublished\s*:?\s*([A-Za-z]{3,9}\.?\s+\d{1,2},?\s+\d{4})\b/i,
     /\bPublished\s*\n+\s*(\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4})\b/i,
     /\bPublished\s*:?\s*(\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4})\b/i,
-    /\bUpdated\s*:?\s*([A-Za-z]{3,9}\s+\d{1,2},?\s+\d{4})\b/i,
-    /\bLast updated\s*:?\s*([A-Za-z]{3,9}\s+\d{1,2},?\s+\d{4})\b/i,
+    /\bUpdated\s*:?\s*([A-Za-z]{3,9}\.?\s+\d{1,2},?\s+\d{4})\b/i,
+    /\bLast updated\s*:?\s*([A-Za-z]{3,9}\.?\s+\d{1,2},?\s+\d{4})\b/i,
   ];
 
   for (const pattern of patterns) {
