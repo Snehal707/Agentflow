@@ -135,6 +135,7 @@ function predictionMarketTaskContext(task: string): {
     .replace(/\bListed outcomes in AgentFlow:[^\n]*/gi, '')
     .replace(/\bPrediction market category in AgentFlow:[^\n]*/gi, '')
     .replace(/\bPrediction market provider in AgentFlow:[^\n]*/gi, '')
+    .replace(/\bAgentFlow provider-implied probability snapshot[^\n]*/gi, '')
     .replace(/\bAgentFlow market address reference:[^\n]*/gi, '')
     .replace(/\bUse the market category to disambiguate the subject before searching[^\n]*/gi, '')
     .replace(/\bFocus on the real-world event[^\n]*/gi, '')
@@ -272,10 +273,17 @@ function buildFastPredictionMarketBrief(
     scope: 'narrow',
     query_strategy: entity?.ambiguity === 'high' || category === 'sports' ? 'standard' : 'light',
     time_sensitivity:
-      questionType === 'price_target' || questionType === 'launch_milestone' || questionType === 'release_date'
+      category === 'sports' && questionType === 'event_outcome'
         ? 'live'
-        : 'recent',
-    required_freshness_days: questionType === 'price_target' ? 14 : 30,
+        : questionType === 'price_target' || questionType === 'launch_milestone' || questionType === 'release_date'
+          ? 'live'
+          : 'recent',
+    required_freshness_days:
+      category === 'sports' && questionType === 'event_outcome'
+        ? 2
+        : questionType === 'price_target'
+          ? 14
+          : 30,
     geography: [],
     domains_priority: [...domainsPriority].slice(0, 10),
     domains_avoid: [...avoidDomains].slice(0, 12),
@@ -313,9 +321,15 @@ function collectFastLiveDataSourceHints(liveData: Record<string, unknown>, task 
   name: string;
   url: string;
   evidenceText: string;
+  publishedAt?: string;
 }> {
-  const sources: Array<{ name: string; url: string; evidenceText: string }> = [];
-  const addSource = (name: unknown, url: unknown, evidence: unknown = '') => {
+  const sources: Array<{ name: string; url: string; evidenceText: string; publishedAt?: string }> = [];
+  const addSource = (
+    name: unknown,
+    url: unknown,
+    evidence: unknown = '',
+    publishedAt: unknown = undefined,
+  ) => {
     if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) return;
     const label =
       typeof name === 'string' && name.trim()
@@ -324,7 +338,14 @@ function collectFastLiveDataSourceHints(liveData: Record<string, unknown>, task 
     const evidenceText = [label, url, typeof evidence === 'string' ? evidence : '']
       .filter(Boolean)
       .join(' ');
-    sources.push({ name: label, url, evidenceText });
+    sources.push({
+      name: label,
+      url,
+      evidenceText,
+      ...(typeof publishedAt === 'string' && publishedAt.trim()
+        ? { publishedAt: publishedAt.trim() }
+        : {}),
+    });
   };
 
   const currentEvents =
@@ -339,6 +360,7 @@ function collectFastLiveDataSourceHints(liveData: Record<string, unknown>, task 
       snapshot.publisher ?? snapshot.title,
       snapshot.url,
       `${snapshot.title ?? ''} ${snapshot.summary ?? ''}`,
+      snapshot.seen_at,
     );
   }
 
@@ -354,6 +376,7 @@ function collectFastLiveDataSourceHints(liveData: Record<string, unknown>, task 
       article.publisher ?? article.title,
       article.url,
       `${article.title ?? ''} ${article.summary ?? ''}`,
+      article.seen_at,
     );
   }
 
@@ -468,6 +491,23 @@ function buildFastSourceDiagnostics(
       );
     if (!hasProbabilityEvidence) {
       reasons.push('The retrieved sports source set lacks outright odds or probability evidence.');
+    }
+    const referenceTimestamp = Date.parse(
+      typeof liveData.snapshot_at === 'string' ? liveData.snapshot_at : '',
+    );
+    const asOf = Number.isFinite(referenceTimestamp) ? referenceTimestamp : Date.now();
+    const hasFreshCompetitionState = sources.some((source) => {
+      if (!source.publishedAt) return false;
+      const published = Date.parse(source.publishedAt);
+      if (!Number.isFinite(published)) return false;
+      const ageDays = (asOf - published) / 86_400_000;
+      if (ageDays < -0.5 || ageDays > 2.25) return false;
+      return /\b(match report|latest results?|semi[- ]?final results?|finalists?|final|advanced to (?:the )?final|booked (?:a|their) place in (?:the )?final|qualified|eliminated|beat|defeated|lost to|fixtures?|bracket|standings)\b/i.test(
+        source.evidenceText,
+      );
+    });
+    if (!hasFreshCompetitionState) {
+      reasons.push('The retrieved sports source set lacks fresh event-stage or result evidence.');
     }
   }
   if (
@@ -1122,7 +1162,7 @@ const runHandler = async (req: express.Request, res: express.Response) => {
       : '';
     pushTimingTrace(timingTrace, traceStart, 'before_user_message_construction');
     const userMessage = liveData
-      ? `AS OF ${asOf}\nCURRENT DATE: ${asOf.slice(0, 10)}\n\nLIVE DATA JSON:\n${liveData}${contextBlock}${walletContextBlock}\n\n${subjectFraming ? `${subjectFraming}\n\n` : ''}${memoryContext?.promptBlock ? `${memoryContext.promptBlock}\n\n` : ''}USER TASK:\n${task}\n\nSEARCH QUERY VARIANTS:\n${expandedTask}\n\nUse the LIVE DATA JSON above for current figures and dated evidence. Do not cite or mention any date after CURRENT DATE as if it has happened. When present, cite concrete titles and URLs from current_events.articles, current_events.article_snapshots, dynamic_sources.articles, wikipedia.pages, coingecko, defillama, and bitcoin_onchain; do not invent outlets. Retrieval layers are not evidence and must not be cited as sources.${geopoliticalEvidenceInstruction} For prediction-market reports, do not infer event dates, launch dates, odds, or prices unless the value appears in LIVE DATA. For mainnet/testnet launch markets, do not treat DefiLlama TVL alone as evidence of mainnet readiness, ecosystem traction, or launch timing. When creator_audience_metrics is present, treat current_subscribers/current_subscribers_display and observed_at as direct evidence for the latest available audience count and mention that figure explicitly in the answer. When bitcoin_onchain is present, treat it as primary evidence for Bitcoin network transaction counts, block counts, fees, and on-chain activity windows; do not substitute market trading volume for on-chain transaction volume. When PORTFOLIO_CONTEXT is present, classify the user's exposure and explain impact through that exposure profile without revealing raw balances, full addresses, or PnL unless explicitly requested. Treat PRIOR RESEARCH MEMORY as historical hints only; never treat it as current evidence unless the LIVE DATA JSON independently supports it. Prefer official APIs, reputable publishers, Mempool.space for Bitcoin block/on-chain metrics, CoinGecko for token market data, DefiLlama for chain TVL and stablecoin liquidity only when directly relevant, current-event article snapshots for recent developments, and Wikipedia for factual background. Use the SEARCH QUERY VARIANTS as additional source-planning angles when the topic is broad or ecosystem-focused.`
+      ? `AS OF ${asOf}\nCURRENT DATE: ${asOf.slice(0, 10)}\n\nLIVE DATA JSON:\n${liveData}${contextBlock}${walletContextBlock}\n\n${subjectFraming ? `${subjectFraming}\n\n` : ''}${memoryContext?.promptBlock ? `${memoryContext.promptBlock}\n\n` : ''}USER TASK:\n${task}\n\nSEARCH QUERY VARIANTS:\n${expandedTask}\n\nUse the LIVE DATA JSON above for current figures and dated evidence. Do not cite or mention any date after CURRENT DATE as if it has happened. When present, cite concrete titles and URLs from current_events.articles, current_events.article_snapshots, dynamic_sources.articles, wikipedia.pages, coingecko, defillama, and bitcoin_onchain; do not invent outlets. Retrieval layers are not evidence and must not be cited as sources.${geopoliticalEvidenceInstruction} For prediction-market reports, do not infer event dates, launch dates, odds, or prices unless the value appears in LIVE DATA or in the timestamped AgentFlow provider-implied probability snapshot in USER TASK. Treat that AgentFlow snapshot as provider market data only; never replace it with model simulations, bookmaker odds, or advancement probabilities. For mainnet/testnet launch markets, do not treat DefiLlama TVL alone as evidence of mainnet readiness, ecosystem traction, or launch timing. When creator_audience_metrics is present, treat current_subscribers/current_subscribers_display and observed_at as direct evidence for the latest available audience count and mention that figure explicitly in the answer. When bitcoin_onchain is present, treat it as primary evidence for Bitcoin network transaction counts, block counts, fees, and on-chain activity windows; do not substitute market trading volume for on-chain transaction volume. When PORTFOLIO_CONTEXT is present, classify the user's exposure and explain impact through that exposure profile without revealing raw balances, full addresses, or PnL unless explicitly requested. Treat PRIOR RESEARCH MEMORY as historical hints only; never treat it as current evidence unless the LIVE DATA JSON independently supports it. Prefer official APIs, reputable publishers, Mempool.space for Bitcoin block/on-chain metrics, CoinGecko for token market data, DefiLlama for chain TVL and stablecoin liquidity only when directly relevant, current-event article snapshots for recent developments, and Wikipedia for factual background. Use the SEARCH QUERY VARIANTS as additional source-planning angles when the topic is broad or ecosystem-focused.`
       : `${task}${contextBlock}${walletContextBlock}`;
     pushTimingTrace(timingTrace, traceStart, 'after_user_message_construction', {
       userMessageChars: userMessage.length,

@@ -1478,6 +1478,10 @@ async function fetchPredictionMarketOfficialSearchEvidence(
   for (const domain of understanding.entity.officialDomains.slice(0, 2)) {
     addUniqueQuery(queries, `site:${domain} ${canonical}`);
     addUniqueQuery(queries, `site:${domain} ${canonical} official announcement`);
+    if (category === 'sports' && understanding.questionType === 'event_outcome') {
+      addUniqueQuery(queries, `site:${domain} ${canonical} latest results`);
+      addUniqueQuery(queries, `site:${domain} ${canonical} finalists final`);
+    }
     if (understanding.questionType === 'launch_milestone') {
       if (category === 'games' || category === 'gaming') {
         addUniqueQuery(queries, `site:${domain} ${canonical} release date`);
@@ -1550,6 +1554,9 @@ async function fetchPredictionMarketSportsAuthorityEvidence(
     : canonical;
   const queries: string[] = [];
 
+  addUniqueQuery(queries, `${competition} latest results finalists`);
+  addUniqueQuery(queries, `${competition} semifinal results final`);
+  addUniqueQuery(queries, `site:fifa.com ${competition} latest results final`);
   addUniqueQuery(queries, `site:theanalyst.com ${competition} winner odds`);
   addUniqueQuery(queries, `site:oddschecker.com ${competition} winner odds`);
   addUniqueQuery(queries, `${competition} winner odds semifinals`);
@@ -1560,6 +1567,10 @@ async function fetchPredictionMarketSportsAuthorityEvidence(
 
   const fallbackUrls: string[] = [];
   if (/\bFIFA World Cup\b/i.test(competition)) {
+    addUniqueQuery(
+      fallbackUrls,
+      'https://theanalyst.com/articles/2026-world-cup-bracket-opta-supercomputer',
+    );
     addUniqueQuery(
       fallbackUrls,
       'https://theanalyst.com/articles/world-cup-2026-semi-final-predictions-opta-supercomputer',
@@ -1602,6 +1613,7 @@ async function fetchPredictionMarketSportsAuthorityEvidence(
           title,
           url,
           publisher: extractHostname(url),
+          seen_at: extractVisiblePublishedDateFromMarkdown(markdown),
           summary,
         };
         return isEntityRelevantPredictionMarketSource(snapshot, task, understanding)
@@ -1682,7 +1694,6 @@ function mergePredictionMarketCurrentEventSnapshots(
   understanding: MarketUnderstanding | null,
 ): FirecrawlArticleSnapshot[] {
   if (!/\bprediction market\b/i.test(task)) return existing;
-  if (existing.length >= 4) return existing;
 
   const deduped = new Map<string, FirecrawlArticleSnapshot>();
   for (const snapshot of existing) {
@@ -2935,7 +2946,7 @@ function predictionMarketEvidenceSortScore(
   score += firecrawlSnapshotRelevance(snapshot, task);
   if (editorial) score += 28;
   if (authoritativeCategorySource && !official) score += 18;
-  if (official) score -= 18;
+  if (official) score += isSportsWinnerPredictionMarketTask(task, understanding) ? 45 : -18;
   if (official && !hasArticleLikePath(snapshot)) score -= 10;
   if (isSportsWinnerPredictionMarketTask(task, understanding)) {
     if (hasSportsWinnerMarketEvidenceSignal(haystack)) score += 55;
@@ -3580,7 +3591,7 @@ function normalizeCurrentEventQuery(task: string): string {
     .trim();
 }
 
-function buildCurrentEventQueries(
+export function buildCurrentEventQueries(
   task: string,
   understanding?: MarketUnderstanding | null,
 ): string[] {
@@ -3632,6 +3643,8 @@ function buildCurrentEventQueries(
       if (!sportsWinnerMarket) {
         addQuery(`${canonical} latest`);
         addQuery(`${canonical} latest news`);
+      } else {
+        addQuery(`${canonical} latest`);
       }
       if (understanding.questionType === 'launch_milestone') {
         if (marketCategory === 'crypto') {
@@ -3662,6 +3675,14 @@ function buildCurrentEventQueries(
         }
       }
       if (understanding.questionType === 'event_outcome' && marketCategory === 'sports') {
+        addQuery(`${canonical} latest results`);
+        addQuery(`${canonical} finalists`);
+        addQuery(`${canonical} semifinal results`);
+        const officialDomain = understanding.entity?.officialDomains?.[0];
+        if (officialDomain) {
+          addQuery(`site:${officialDomain} ${canonical} latest results`);
+          addQuery(`site:${officialDomain} ${canonical} final`);
+        }
         addQuery(`${canonical} odds`);
         addQuery(`${canonical} favorites`);
         addQuery(`${canonical} team rankings`);
@@ -3687,6 +3708,8 @@ function buildCurrentEventQueries(
         if (!sportsWinnerMarket) {
           addQuery(`${alias} latest`);
           addQuery(`${alias} latest news`);
+        } else {
+          addQuery(`${alias} latest results`);
         }
         if (understanding.questionType === 'launch_milestone') {
           if (marketCategory === 'games' || marketCategory === 'gaming') {
@@ -4978,6 +5001,12 @@ async function fetchFirecrawlSearchSnapshots(
     if (/\bprediction market\b/i.test(task) && discoveryQueries.has(normalized)) score += 34;
     if (/\b(official|announcement|newsroom|roadmap)\b/.test(normalized)) score += 16;
     if (/\b(odds|favorite|favorites|probability|prediction)\b/.test(normalized)) score += 10;
+    if (
+      isSportsWinnerPredictionMarketTask(task, understanding) &&
+      /\b(latest results?|semi[- ]?final results?|finalists?|final is set|bracket)\b/.test(normalized)
+    ) {
+      score += 46;
+    }
     if (/\b(kitco|lbma|reuters|rockstar|rockstargames|take2|fifa|theanalyst|oddschecker)\b/.test(normalized)) score += 18;
     if (
       /\b(xaut|tether gold)\b/i.test(task) &&

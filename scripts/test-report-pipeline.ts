@@ -6,6 +6,7 @@ import {
 } from '../lib/reportPipeline';
 import {
   buildPrimaryFirecrawlQueryVariants,
+  buildCurrentEventQueries,
   extractSportsWinnerNumericEvidenceSnippet,
   filterFastResearchDynamicEvidence,
   shouldGatherCurrentEvents,
@@ -13,6 +14,19 @@ import {
 import { isLowValueSourceForTask } from '../lib/source-policy';
 import { mergeUnderstandingWithHeuristic, type MarketUnderstanding } from '../lib/market-understanding';
 import { buildAnalystModelInput, buildWriterModelInput } from '../lib/reportInputs';
+import { formatProviderProbabilitySnapshot } from '../lib/predmarket-research-context';
+
+assert.equal(
+  formatProviderProbabilitySnapshot(
+    [
+      { label: 'France', probabilityPercent: 14.7 },
+      { label: 'Spain', probabilityPercent: 10.6 },
+      { label: 'Other' },
+    ],
+    '2026-07-16T20:06:01.000Z',
+  ),
+  'AgentFlow provider-implied probability snapshot (observed 2026-07-16T20:06:01.000Z): France=14.7% | Spain=10.6%.',
+);
 
 const badWriterMarkdown = `# Iran-US Tensions Research Report
 
@@ -721,7 +735,31 @@ assert.ok(
 );
 assert.ok(
   worldCupWinnerQueries.every((query) => !/world cup 2026 latest(?: news)?/i.test(query)),
-  'Expected sports winner markets to avoid generic latest-news queries that pull live match chatter.',
+  'Expected the odds/model query lane to stay decision-specific while the current-event lane handles results.',
+);
+const worldCupCurrentEventQueries = buildCurrentEventQueries(
+  `research the prediction market topic: Who Will Win the FIFA World Cup 2026?
+Listed outcomes in AgentFlow: France / Argentina / Brazil / Other.
+Prediction market category in AgentFlow: Sports.`,
+  {
+    subject: 'FIFA World Cup 2026 winner',
+    underlying: null,
+    questionType: 'event_outcome',
+    resolutionDate: '2026-07-19',
+    searchQueries: [],
+    entity: {
+      canonicalName: 'FIFA World Cup 2026',
+      aliases: ['World Cup 2026'],
+      officialDomains: ['fifa.com'],
+      avoidTerms: [],
+      ambiguity: 'low',
+      rationale: 'Sports category identifies the tournament.',
+    },
+  },
+);
+assert.ok(
+  worldCupCurrentEventQueries.some((query) => /latest results|finalists|semifinal results/i.test(query)),
+  'Expected sports winner current-event retrieval to query the latest bracket and completed results.',
 );
 
 const gtaPredmarketFiltersLowValueSources = finalizeReportMarkdown({
@@ -1072,18 +1110,21 @@ const decisionGradeWorldCupEvidence = assessFastReportEvidence({
           publisher: 'OddsChecker',
           url: 'https://www.oddschecker.com/us/insight/soccer/20260713-2026-fifa-world-cup-winner-odds',
           summary: 'Current outright prices imply France at 40%, Spain at 25%, England at 22%, and Argentina at 20%.',
+          seen_at: '2026-07-13T12:00:00.000Z',
         },
         {
           title: 'World Cup prediction model and team probabilities',
           publisher: 'The Analyst',
           url: 'https://theanalyst.com/articles/world-cup-2026-predictions-semifinals',
           summary: 'The Opta supercomputer gives numeric win probabilities for the remaining teams.',
+          seen_at: '2026-07-13T12:00:00.000Z',
         },
         {
           title: 'World Cup 2026 official semifinal schedule',
           publisher: 'FIFA',
           url: 'https://www.fifa.com/en/tournaments/mens/worldcup/canadamexicousa2026/schedule',
           summary: 'Official remaining fixtures and final date.',
+          seen_at: '2026-07-14T00:00:00.000Z',
         },
       ],
     },
@@ -1525,6 +1566,7 @@ France led the latest retrieved model at 34.0%, followed by Spain, England, and 
           publisher: 'The Analyst',
           url: 'https://theanalyst.com/articles/world-cup-2026-semi-final-predictions-opta-supercomputer',
           summary: 'France won the tournament in 34.0% of simulations, Spain 23.4%, England 21.9%, and Argentina 20.6%.',
+          seen_at: '2026-07-12T00:00:00.000Z',
         },
         {
           title: 'World Cup 2026 title odds',
@@ -1546,6 +1588,107 @@ assert.equal(sportsPredmarketPrioritizesDecisionEvidence.sources[0]?.url,
   'https://theanalyst.com/articles/world-cup-2026-semi-final-predictions-opta-supercomputer');
 assert.match(sportsPredmarketPrioritizesDecisionEvidence.sources[0]?.usedFor || '', /34\.0% of simulations/i);
 assert.doesNotMatch(sportsPredmarketPrioritizesDecisionEvidence.markdown, /buck-buchanan|fcs-football/i);
+
+const postSemifinalWorldCupTask = `${worldCupEvidenceTask}
+AgentFlow provider-implied probability snapshot (observed 2026-07-16T20:06:01.000Z): France=14.7% | Argentina=9.3% | England=8.1% | Spain=10.6%.`;
+const postSemifinalContradictionIsRejected = finalizeReportMarkdown({
+  task: postSemifinalWorldCupTask,
+  writerMarkdown: `# Who Will Win the FIFA World Cup 2026?
+
+Spain is the slight market favorite with a 23.4% Opta simulation probability, while France has a 34.0% chance to win. Four teams remain in the semi-final stage, with France facing Spain and Argentina playing England. France has a 57.7% chance to reach the final.
+
+## Sources
+
+- [The Analyst](https://theanalyst.com/articles/world-cup-2026-semi-final-predictions-opta-supercomputer)
+- [FIFA](https://www.fifa.com/en/tournaments/mens/worldcup/canadamexicousa2026/articles/france-spain-match-report-highlights)
+- [AP](https://apnews.com/article/world-cup-final-spain-argentina-example)`,
+  research: null,
+  analysis: null,
+  liveData: {
+    snapshot_at: '2026-07-16T20:07:00.000Z',
+    source_diagnostics: {
+      has_sufficient_diversity: true,
+      drift_risk: 'low',
+      unresolved_entity: false,
+    },
+    dynamic_sources: {
+      articles: [
+        {
+          title: 'FIFA World Cup 2026 predictions ahead of the semi-finals',
+          publisher: 'The Analyst',
+          url: 'https://theanalyst.com/articles/world-cup-2026-semi-final-predictions-opta-supercomputer',
+          summary: 'Before the semi-finals, France won 34.0% of simulations and Spain 23.4%.',
+          seen_at: '2026-07-12T00:00:00.000Z',
+        },
+        {
+          title: 'Spain beat France 2-0 to reach the World Cup final',
+          publisher: 'FIFA',
+          url: 'https://www.fifa.com/en/tournaments/mens/worldcup/canadamexicousa2026/articles/france-spain-match-report-highlights',
+          summary: 'Spain defeated France 2-0 in the semi-final and advanced to the final.',
+          seen_at: '2026-07-15T00:30:00.000Z',
+        },
+        {
+          title: 'World Cup final is set: Spain will face Argentina',
+          publisher: 'AP News',
+          url: 'https://apnews.com/article/world-cup-final-spain-argentina-example',
+          summary: 'Argentina beat England 2-1, so the final is set between Spain and Argentina.',
+          seen_at: '2026-07-16T00:30:00.000Z',
+        },
+      ],
+    },
+  },
+});
+assert.match(
+  postSemifinalContradictionIsRejected.validationIssues.join('\n'),
+  /conflates model or simulation probabilities with market probabilities/i,
+);
+assert.match(
+  postSemifinalContradictionIsRejected.validationIssues.join('\n'),
+  /provider snapshot|timeline contradicts fresh source evidence/i,
+);
+assert.doesNotMatch(postSemifinalContradictionIsRejected.markdown, /four teams remain/i);
+assert.doesNotMatch(postSemifinalContradictionIsRejected.markdown, /France has a 57\.7% chance/i);
+assert.match(postSemifinalContradictionIsRejected.markdown, /generated ranking was withheld/i);
+
+const staleWorldCupEvidenceFailsClosed = finalizeReportMarkdown({
+  task: postSemifinalWorldCupTask,
+  writerMarkdown: 'France remains the favorite based on the pre-semifinal model.',
+  research: null,
+  analysis: null,
+  liveData: {
+    snapshot_at: '2026-07-16T20:07:00.000Z',
+    dynamic_sources: {
+      articles: [
+        {
+          title: 'World Cup semi-final predictions',
+          publisher: 'The Analyst',
+          url: 'https://theanalyst.com/articles/world-cup-2026-semi-final-predictions-opta-supercomputer',
+          summary: 'France won 34.0% of simulations before the semi-finals.',
+          seen_at: '2026-07-12T00:00:00.000Z',
+        },
+        {
+          title: 'World Cup winner odds before the semi-finals',
+          publisher: 'Fox Sports',
+          url: 'https://www.foxsports.com/stories/soccer/world-cup-2026-champion-odds',
+          summary: 'Pre-match outright winner odds for the four semi-finalists.',
+          seen_at: '2026-07-12T06:00:00.000Z',
+        },
+        {
+          title: 'Who will win the World Cup? The view from the semi-finalists',
+          publisher: 'BBC News',
+          url: 'https://www.bbc.com/sport/football/articles/cjrgew3wv4xo',
+          summary: 'Background from the four teams before the semi-finals.',
+          seen_at: '2026-07-12T12:00:00.000Z',
+        },
+      ],
+    },
+  },
+});
+assert.match(
+  staleWorldCupEvidenceFailsClosed.markdown,
+  /current competition stage and latest results could not be verified/i,
+);
+assert.doesNotMatch(staleWorldCupEvidenceFailsClosed.markdown, /France remains the favorite/i);
 
 const structuredResearchSourceSurvivesGrounding = finalizeReportMarkdown({
   task: 'OpenAI latest model research',
