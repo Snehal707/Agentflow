@@ -1994,20 +1994,36 @@ const BRAIN_HISTORY_REPORT_CONTENT_LIMIT = 80_000;
 
 function isPortfolioAgentReportContent(content: string): boolean {
   const normalized = content.replace(/\r\n/g, '\n');
+
+  // Personalized / portfolio-impact *research* reports also mention Gateway/vaults and may
+  // use headings like "Portfolio Implications". Those must stay on research continuity
+  // (Sources, claims), not the paid Portfolio Agent follow-up path.
+  if (
+    /^##\s+(?:Sources|Key Evidence|Current Situation|Takeaway|Executive Summary|Key Findings|Key Insights)\b/im.test(
+      normalized,
+    ) ||
+    /^\*\*(?:Sources|Key Evidence|Current Situation|Takeaway|Executive Summary|Your Portfolio Impact|Portfolio Implications)\b/im.test(
+      normalized,
+    ) ||
+    /^##\s+(?:Your Portfolio Impact|Portfolio Implications)\b/im.test(normalized)
+  ) {
+    return false;
+  }
+
   if (lastAssistantLooksLikePortfolioSnapshot(normalized)) {
     return true;
   }
-  // Paid Portfolio Agent analysis often uses "## Overview" which would otherwise
-  // be mistaken for a research report and steal follow-ups into source/claim mode.
-  const hasPortfolioAnalysisHeading =
-    /^#+\s+Portfolio\b/im.test(normalized) ||
+
+  // Paid Portfolio Agent chat body only: explicit holdings labels + analysis block.
+  // Do not key off bare "# Portfolio ..." — that overlaps research section titles.
+  const hasHoldingsBlock =
+    /\*\*Wallet tokens?:\*\*/i.test(normalized) ||
+    /\*\*Gateway reserve:\*\*/i.test(normalized) ||
+    /\*\*Vault:\*\*/i.test(normalized);
+  const hasPortfolioAnalysis =
     /\bPortfolio Analysis\b/i.test(normalized) ||
-    /\b##\s+Analysis\b/i.test(normalized);
-  const hasPortfolioSignals =
-    /\b(?:wallet tokens?|gateway reserve|vault shares?|prediction market positions?|luneUSDC|luneEURC|marked value)\b/i.test(
-      normalized,
-    );
-  return hasPortfolioAnalysisHeading && hasPortfolioSignals;
+    /^#+\s+Portfolio Analysis\b/im.test(normalized);
+  return hasHoldingsBlock && hasPortfolioAnalysis;
 }
 
 function looksLikeStoredResearchReportContent(content: string): boolean {
