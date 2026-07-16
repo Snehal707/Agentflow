@@ -1992,7 +1992,28 @@ async function storeLocalBrainUserProfile(
 const BRAIN_HISTORY_DEFAULT_CONTENT_LIMIT = 4_000;
 const BRAIN_HISTORY_REPORT_CONTENT_LIMIT = 80_000;
 
+function isPortfolioAgentReportContent(content: string): boolean {
+  const normalized = content.replace(/\r\n/g, '\n');
+  if (lastAssistantLooksLikePortfolioSnapshot(normalized)) {
+    return true;
+  }
+  // Paid Portfolio Agent analysis often uses "## Overview" which would otherwise
+  // be mistaken for a research report and steal follow-ups into source/claim mode.
+  const hasPortfolioAnalysisHeading =
+    /^#+\s+Portfolio\b/im.test(normalized) ||
+    /\bPortfolio Analysis\b/i.test(normalized) ||
+    /\b##\s+Analysis\b/i.test(normalized);
+  const hasPortfolioSignals =
+    /\b(?:wallet tokens?|gateway reserve|vault shares?|prediction market positions?|luneUSDC|luneEURC|marked value)\b/i.test(
+      normalized,
+    );
+  return hasPortfolioAnalysisHeading && hasPortfolioSignals;
+}
+
 function looksLikeStoredResearchReportContent(content: string): boolean {
+  if (isPortfolioAgentReportContent(content)) {
+    return false;
+  }
   const normalized = content.replace(/\r\n/g, '\n');
   if (/\n\s*---\s*\n/.test(normalized) && /^#{1,3}\s+\S/m.test(normalized)) {
     return true;
@@ -3899,6 +3920,99 @@ function buildPortfolioContextualFollowupReply(message: string): string {
     return 'Yes. The report above is your current AgentFlow portfolio snapshot.';
   }
   return 'You already checked it in the report above. Whenever you want a fresh live snapshot, ask me to show your portfolio.';
+}
+
+function shouldUsePortfolioContextTurn(
+  message: string,
+  history: BrainConversationMessage[],
+): boolean {
+  if (!hasRecentPortfolioConversationContext(history)) {
+    return false;
+  }
+  if (!latestAssistantContentIsPortfolioReport(history) && !findRecentPortfolioSnapshotMessage(history)) {
+    return false;
+  }
+  // If a real research report is the newest assistant content, keep research continuity.
+  for (const item of [...history].reverse()) {
+    if (item.role !== 'assistant') continue;
+    if (isLowValueAssistantChitChat(item.content)) continue;
+    if (isPortfolioAgentReportContent(item.content)) break;
+    if (extractStoredResearchReport(item.content)) return false;
+    break;
+  }
+
+  const normalized = message.trim().toLowerCase();
+  if (!normalized || normalized.length > 280) return false;
+  if (shouldHandleAsResearchRequest(message, history)) return false;
+  if (/\b(?:swap|bridge|send|pay|invoice|vault deposit|vault withdraw)\b/i.test(normalized)) {
+    return false;
+  }
+
+  if (
+    /\b(?:good|great|nice|helpful|useful|solid|perfect|awesome|thanks|thank you)\b/i.test(normalized)
+  ) {
+    return true;
+  }
+  if (/\b(?:source|sources|citation|citations|where.*(?:from|come)|data source)\b/i.test(normalized)) {
+    return true;
+  }
+  if (
+    /\b(?:what should i do(?: next)?|what next|next step|what do you recommend|recommend)\b/i.test(
+      normalized,
+    )
+  ) {
+    return true;
+  }
+  if (
+    /\b(?:that|this|it|the portfolio|my portfolio|the report|holdings|positions)\b/i.test(normalized) &&
+    /\b(?:good|risk|pnl|value|gateway|vault|position|next|mean|means|why|how|what)\b/i.test(normalized)
+  ) {
+    return true;
+  }
+  return false;
+}
+
+function buildPortfolioAcknowledgementReply(): string {
+  return "Glad it helped. That was your live Portfolio Agent snapshot — not a research report. Ask about holdings, Gateway, vaults, prediction positions, or what to do next, or say show my portfolio for a fresh read.";
+}
+
+function buildPortfolioSourceReply(): string {
+  return [
+    'That portfolio view is not a research report with web citations.',
+    'It is grounded in live AgentFlow reads: Arc balances / Arcscan activity, Lunex vault positions, Circle Gateway balance, and AchMarket prediction-market positions when present.',
+    'Ask about a specific line (Gateway, vault, or a market position) if you want that part explained.',
+  ].join(' ');
+}
+
+function buildPortfolioNextStepReply(): string {
+  return [
+    'From that portfolio snapshot, sensible next steps are:',
+    '1) Keep an eye on active prediction-market positions before they resolve.',
+    '2) Treat Gateway reserve as payment liquidity — move funds to the execution wallet only if you want to spend/deploy them.',
+    '3) Ask for a fresh portfolio check, a swap preview, or a vault action if you want to change something.',
+    '',
+    'What do you want to do next?',
+  ].join('\n');
+}
+
+function buildPortfolioContextFollowupReply(message: string): string {
+  const normalized = message.trim().toLowerCase();
+  if (/\b(?:source|sources|citation|citations|where.*(?:from|come)|data source)\b/i.test(normalized)) {
+    return buildPortfolioSourceReply();
+  }
+  if (
+    /\b(?:what should i do(?: next)?|what next|next step|what do you recommend|recommend)\b/i.test(
+      normalized,
+    )
+  ) {
+    return buildPortfolioNextStepReply();
+  }
+  if (
+    /\b(?:good|great|nice|helpful|useful|solid|perfect|awesome|thanks|thank you)\b/i.test(normalized)
+  ) {
+    return buildPortfolioAcknowledgementReply();
+  }
+  return buildPortfolioContextualFollowupReply(message);
 }
 
 function isReferentialNoAntecedentQuestion(message: string): boolean {
@@ -9632,12 +9746,18 @@ function isReportRenderingComplaint(message: string): boolean {
 }
 
 function extractStoredResearchReport(content: string): string | null {
+  if (isPortfolioAgentReportContent(content)) {
+    return null;
+  }
   const normalized = content.replace(/\r\n/g, '\n');
   const divider = /\n\s*---\s*\n/.exec(normalized);
   const candidate = divider
     ? normalized.slice(divider.index + divider[0].length).trim()
     : normalized.trim();
   if (!candidate) return null;
+  if (isPortfolioAgentReportContent(candidate)) {
+    return null;
+  }
 
   const hasMarkdownHeading = /^#{1,3}\s+\S/m.test(candidate);
   const hasKnownReportHeading =
@@ -9656,10 +9776,22 @@ function extractStoredResearchReport(content: string): string | null {
 function findLatestStoredResearchReport(history: BrainConversationMessage[]): string | null {
   for (const item of [...history].reverse()) {
     if (item.role !== 'assistant') continue;
+    if (isPortfolioAgentReportContent(item.content)) continue;
     const report = extractStoredResearchReport(item.content);
     if (report) return report;
   }
   return null;
+}
+
+function latestAssistantContentIsPortfolioReport(history: BrainConversationMessage[]): boolean {
+  for (const item of [...history].reverse()) {
+    if (item.role !== 'assistant') continue;
+    if (isLowValueAssistantChitChat(item.content)) continue;
+    if (/^Glad it helped\b/i.test(item.content.trim())) continue;
+    if (/^I can only ground that in the report\b/i.test(item.content.trim())) continue;
+    return isPortfolioAgentReportContent(item.content);
+  }
+  return false;
 }
 
 async function storeLastResearchReport(sessionId: string, report: string): Promise<void> {
@@ -9693,7 +9825,15 @@ async function resolveLatestResearchReport(
   sessionId: string,
   history: BrainConversationMessage[],
 ): Promise<string | null> {
-  return findLatestStoredResearchReport(history) ?? (await loadLastResearchReport(sessionId));
+  const fromHistory = findLatestStoredResearchReport(history);
+  if (fromHistory) {
+    return fromHistory;
+  }
+  // A stale Redis research report must not win over a newer portfolio turn in this chat.
+  if (latestAssistantContentIsPortfolioReport(history)) {
+    return null;
+  }
+  return loadLastResearchReport(sessionId);
 }
 
 function hasRecentStoredResearchReport(history: BrainConversationMessage[]): boolean {
@@ -9882,6 +10022,13 @@ function shouldUseReportContextTurn(
   history: BrainConversationMessage[] = [],
 ): boolean {
   if (!previousReport) return false;
+  // Portfolio Agent replies are not research reports — keep those follow-ups on portfolio continuity.
+  if (shouldUsePortfolioContextTurn(message, history)) {
+    return false;
+  }
+  if (latestAssistantContentIsPortfolioReport(history)) {
+    return false;
+  }
   const normalized = message.trim().toLowerCase();
   if (!normalized) return false;
   const recentPredmarketAddress =
@@ -12005,8 +12152,12 @@ function createPublicApp(): express.Express {
       earlyPortfolioHistory,
     );
     const earlyPortfolioSnapshot = findRecentPortfolioSnapshotMessage(earlyPortfolioHistory);
+    const earlyPortfolioContextReply = shouldUsePortfolioContextTurn(message, earlyPortfolioHistory)
+      ? buildPortfolioContextFollowupReply(message)
+      : null;
     const earlyPortfolioClarificationReply =
-      !shouldHandleAsResearchRequest(message) && shouldClarifyPortfolioRequest(message)
+      earlyPortfolioContextReply ||
+      (!shouldHandleAsResearchRequest(message) && shouldClarifyPortfolioRequest(message)
         ? earlyPortfolioSnapshot && isPortfolioReferentialFollowup(message)
           ? buildPortfolioContextualFollowupReply(message)
           : buildPortfolioCheckClarificationReply()
@@ -12014,7 +12165,7 @@ function createPublicApp(): express.Express {
               message,
             ) && hasRecentPortfolioConversationContext(earlyPortfolioHistory)
           ? 'The portfolio report is in this chat above. Ask me to show your portfolio whenever you want a fresh live snapshot.'
-          : null;
+          : null);
 
     if (earlyPortfolioClarificationReply) {
       await appendBrainConversationTurn(memorySessionId, message, earlyPortfolioClarificationReply);
@@ -15202,6 +15353,27 @@ function createPublicApp(): express.Express {
           res.end();
           return;
         }
+      }
+
+      if (shouldUsePortfolioContextTurn(message, historyForBrain)) {
+        const portfolioFollowup = buildPortfolioContextFollowupReply(message);
+        await appendBrainConversationTurn(memorySessionId, message, portfolioFollowup);
+        await updateBrainEvent(brainEventId, {
+          intent_label: 'portfolio.followup',
+          intent_source: 'fastpath',
+          ...buildFastpathBrainEventFields('portfolio.followup'),
+          final_response_summary: portfolioFollowup,
+          outcome: 'success',
+          total_latency_ms: Date.now() - responseStartedAt,
+        });
+        recentBrainEventsBySession.set(memorySessionId, {
+          eventId: brainEventId,
+          assistantAt: Date.now(),
+        });
+        res.write(`data: ${JSON.stringify({ delta: portfolioFollowup })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        res.end();
+        return;
       }
 
       const previousReport = await resolveLatestResearchReport(memorySessionId, historyForBrain);
