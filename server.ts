@@ -102,6 +102,8 @@ import {
 import {
   buildSemanticMemoryContext,
   rememberSemanticMemory,
+  retrieveSemanticMemories,
+  type SemanticMemoryRow,
 } from './lib/semantic-memory';
 import { buildSemanticContinuationContext } from './lib/semantic-continuation';
 import {
@@ -2299,7 +2301,7 @@ function isConversationRecallRequest(message: string): boolean {
   if (!normalized) {
     return false;
   }
-  return /\b(?:what were we talking about|what did we talk about|what did i tell you|do you remember|you remember|what do you remember|where did we leave off|pick up where we left off|what happened before|what did you call me)\b/i.test(
+  return /\b(?:what were we talking about|what did we talk about|what we (?:were )?talking(?: about)?|what did we do(?: earlier)?|what we did(?: earlier)?|recall what we(?: were)? talk(?:ing)?(?: about)?|what did i (?:tell|ask) you|do you remember|you remember|what do you remember|where did we leave off|pick up where we left off|what happened before|what did you call me|earlier session|previous session|last session)\b/i.test(
     normalized,
   );
 }
@@ -2392,11 +2394,50 @@ async function maybeCaptureEpisodicMemory(
   });
 }
 
-function buildConversationRecallReply(
+function extractEpisodicUserAsk(memory: SemanticMemoryRow): string | null {
+  const fromSource = memory.source_user_message?.replace(/\s+/g, ' ').trim();
+  if (fromSource) {
+    return fromSource;
+  }
+  const content = memory.content?.replace(/\s+/g, ' ').trim() || '';
+  const askedMatch = content.match(/user asked:\s*(.+?)(?:\s*\|\s*AgentFlow replied:|$)/i);
+  if (askedMatch?.[1]?.trim()) {
+    return askedMatch[1].trim();
+  }
+  if (memory.memory_type === 'session_summary' && content) {
+    return content;
+  }
+  return content || null;
+}
+
+function summarizeCrossSessionRecall(memories: SemanticMemoryRow[]): string | null {
+  const asks = memories
+    .map((memory) => extractEpisodicUserAsk(memory))
+    .filter((value): value is string => Boolean(value?.trim()))
+    .map((value) => compactRecallLine(value, 110));
+  const uniqueAsks = [...new Set(asks)].slice(0, 3);
+  if (!uniqueAsks.length) {
+    return null;
+  }
+  if (uniqueAsks.length === 1) {
+    return `From a recent session, you asked about ${uniqueAsks[0]}.`;
+  }
+  return `From recent sessions, you asked about ${uniqueAsks[0]}, and also ${uniqueAsks.slice(1).join('; ')}.`;
+}
+
+const RECENT_CHATS_RECALL_NUDGE =
+  'I do not load full older chats into a new session — open Recent Chats in the sidebar to jump back to that thread.';
+
+const RECALL_NEXT_STEP =
+  'Want to continue here — portfolio, research, or something else?';
+
+async function buildConversationRecallReply(
   message: string,
   history: BrainConversationMessage[] = [],
   profile: BrainUserProfileRow | null = null,
-): string | null {
+  walletAddress?: Address,
+  currentSessionId?: string,
+): Promise<string | null> {
   if (!isConversationRecallRequest(message)) {
     return null;
   }
@@ -2413,20 +2454,35 @@ function buildConversationRecallReply(
         !isLowValueAssistantChitChat(turn.content),
     );
   const safeDisplayName = sanitizeDisplayNameForReply(profile?.display_name);
-
-  if (!lastUser && !lastAssistant && !safeDisplayName) {
-    return "We haven't really started a thread here yet.";
-  }
-
   const parts: string[] = [];
+
   if (lastUser) {
-    parts.push(`You last asked about ${compactRecallLine(lastUser.content)}.`);
+    parts.push(`In this chat, you last asked about ${compactRecallLine(lastUser.content)}.`);
   }
   if (lastAssistant) {
     parts.push(`I last replied with ${compactRecallLine(lastAssistant.content)}.`);
   }
+
+  if (!lastUser && !lastAssistant && walletAddress) {
+    try {
+      const memories = await retrieveSemanticMemories({
+        walletAddress,
+        sessionId: currentSessionId,
+        query: message,
+        limit: 3,
+        types: ['episodic', 'session_summary'],
+      });
+      const crossSession = summarizeCrossSessionRecall(memories);
+      if (crossSession) {
+        parts.push(crossSession);
+      }
+    } catch (error) {
+      console.warn('[brain] cross-session recall lookup failed:', getErrorMessage(error));
+    }
+  }
+
   if (
-    /\b(?:what did you call me|do you remember|what do you remember|my name)\b/i.test(
+    /\b(?:what did you call me|do you remember my name|what do you remember|my name)\b/i.test(
       message.trim().toLowerCase(),
     ) &&
     safeDisplayName
@@ -2434,6 +2490,16 @@ function buildConversationRecallReply(
     parts.push(`For this wallet profile, I have your saved name as ${safeDisplayName}.`);
   }
 
+  if (!parts.length) {
+    return [
+      "I don't have a short summary from an earlier session yet.",
+      RECENT_CHATS_RECALL_NUDGE,
+      RECALL_NEXT_STEP,
+    ].join(' ');
+  }
+
+  parts.push(RECENT_CHATS_RECALL_NUDGE);
+  parts.push(RECALL_NEXT_STEP);
   return parts.join(' ');
 }
 
@@ -12512,7 +12578,13 @@ function createPublicApp(): express.Express {
           .join('\n\n');
       }
 
-      const conversationRecallReply = buildConversationRecallReply(message, historyForBrain, profile);
+      const conversationRecallReply = await buildConversationRecallReply(
+        message,
+        historyForBrain,
+        profile,
+        walletAddress,
+        memorySessionId,
+      );
       if (conversationRecallReply) {
         await appendBrainConversationTurn(memorySessionId, message, conversationRecallReply);
         await updateBrainEvent(brainEventId, {
