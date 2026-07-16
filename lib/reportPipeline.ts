@@ -3263,15 +3263,62 @@ function ensureCurrentSportsWinnerFavorite(
   sources: NormalizedReportSource[],
 ): string {
   const reportBody = markdown.split(/^##\s+Sources\b/im)[0] || markdown;
-  if (/\b(?:favou?rite|favou?red)\b/i.test(reportBody)) return markdown;
   const evidence = currentSportsWinnerFavoriteEvidence(sources);
   if (!evidence) return markdown;
+  const normalizedBody = reportBody.toLowerCase().replace(/[^a-z0-9]+/g, '');
+  const sourceToken = evidence.source.name
+    .toLowerCase()
+    .replace(/^www\./, '')
+    .replace(/\.(?:com|org|net|co\.uk).*$/, '')
+    .replace(/[^a-z0-9]+/g, '');
+  const favoriteToken = evidence.favorite.toLowerCase().replace(/[^a-z0-9]+/g, '');
+  const opponentToken = evidence.opponent.toLowerCase().replace(/[^a-z0-9]+/g, '');
+  const alreadyUsesCurrentEvidence =
+    /\b(?:favou?rite|favou?red)\b/i.test(reportBody) &&
+    Boolean(sourceToken && normalizedBody.includes(sourceToken)) &&
+    Boolean(favoriteToken && normalizedBody.includes(favoriteToken)) &&
+    Boolean(opponentToken && normalizedBody.includes(opponentToken));
+  if (alreadyUsesCurrentEvidence) return markdown;
   const date = evidence.source.publishedAt ? ` on ${evidence.source.publishedAt}` : '';
   const sentence = `${evidence.source.name} reported${date} that ${evidence.favorite} was favored over ${evidence.opponent} for the final. This is a dated qualitative odds signal, not a numerical probability or guarantee.`;
   if (/^#\s+.*$/m.test(markdown)) {
     return markdown.replace(/^#\s+.*$/m, (heading) => `${heading}\n\n${sentence}`);
   }
   return `${sentence}\n\n${markdown}`.trim();
+}
+
+function stripUnsupportedSportsResultDates(
+  markdown: string,
+  sources: NormalizedReportSource[],
+): string {
+  const resultDatePattern =
+    /\s+on\s+((?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},\s+20\d{2})/gi;
+  const resultSignal = /\b(beat|beats|defeated|eliminated|advanced|qualified|reached|booked|secured|clinched|lost to)\b/i;
+  const resultEvidence = sources
+    .filter((source) => sportsStateEvidenceSignal(`${source.name} ${source.usedFor || ''}`))
+    .map((source) => source.usedFor || '')
+    .join(' \n ');
+
+  return markdown
+    .split('\n')
+    .map((line) => {
+      if (!resultSignal.test(line) || !resultDatePattern.test(line)) {
+        resultDatePattern.lastIndex = 0;
+        return line;
+      }
+      resultDatePattern.lastIndex = 0;
+      return line.replace(resultDatePattern, (full, dateText: string) => {
+        const parsed = Date.parse(dateText);
+        const isoDate = Number.isFinite(parsed)
+          ? new Date(parsed).toISOString().slice(0, 10)
+          : '';
+        const explicitlySupported =
+          resultEvidence.toLowerCase().includes(dateText.toLowerCase()) ||
+          Boolean(isoDate && resultEvidence.includes(isoDate));
+        return explicitlySupported ? full : '';
+      });
+    })
+    .join('\n');
 }
 
 function sportsWinnerNumericEvidenceSignal(value: string): boolean {
@@ -4357,7 +4404,10 @@ export function finalizeReportMarkdown(params: FinalizeParams): {
     ? normalizePredictionMarketMarkdown(sanitizedWriterMarkdown, params.task)
     : sanitizedWriterMarkdown;
   const writerMarkdown = isSportsWinnerPredictionMarketReport(params.task)
-    ? ensureCurrentSportsWinnerFavorite(normalizedWriterMarkdown, effectiveSources)
+    ? ensureCurrentSportsWinnerFavorite(
+        stripUnsupportedSportsResultDates(normalizedWriterMarkdown, effectiveSources),
+        effectiveSources,
+      )
     : normalizedWriterMarkdown;
   const writerValidationIssues = writerMarkdown
       ? [
