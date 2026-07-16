@@ -149,6 +149,7 @@ function cleanResearchQuery(value: string): string {
     .replace(/\bExecution context:[\s\S]*$/i, '')
     .replace(/\bMarket address for AgentFlow trade routing only:[^\n]*/gi, ' ')
     .replace(/\bDo not research the contract address itself[^\n]*/gi, ' ')
+    .replace(/\bAgentFlow provider-implied probability snapshot[^\n]*/gi, ' ')
     .replace(/\bFocus on the real-world event[^\n]*/gi, ' ')
     .replace(/\b0x[a-fA-F0-9]{40}\b/g, ' ')
     .replace(/\brsearch\b/gi, 'research')

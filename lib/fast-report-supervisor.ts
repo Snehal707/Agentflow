@@ -47,7 +47,7 @@ type HermesRunStatusResponse = {
 const LOCAL_HERMES_API_URL = (
   process.env.AGENTFLOW_HERMES_URL ||
   process.env.HERMES_AGENT_URL ||
-  ''
+  'http://127.0.0.1:8000'
 ).trim().replace(/\/+$/, '');
 
 const LOCAL_HERMES_API_KEY = (
