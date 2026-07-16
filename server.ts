@@ -7289,6 +7289,10 @@ function shouldHandleAsResearchRequest(
   }
   if (capabilityRouting.swap.routeToFeature) return false;
   if (capabilityRouting.predmarket.routeToFeature && isPredictionMarketBrowseIntent(message)) return false;
+  // "make report on my portfolio" is a live Portfolio Agent snapshot, not web research.
+  if (classifyPortfolioRequestMode(message) === 'snapshot' || isPortfolioSnapshotIntent(message)) {
+    return false;
+  }
   return (
     isExplicitResearchRequest(message) ||
     detectPortfolioImpactIntent(message) ||

@@ -1,5 +1,8 @@
 import { detectPortfolioImpactIntent } from './portfolio-impact-intent';
-import { isExplicitResearchRequest } from './research-request-intent';
+import {
+  isExplicitResearchRequest,
+  isOwnPortfolioReportRequest,
+} from './research-request-intent';
 
 export type PortfolioRequestMode = 'snapshot' | 'clarify' | 'discussion' | null;
 
@@ -20,6 +23,8 @@ const PORTFOLIO_ANALYSIS_REQUEST_RE =
   /^(?:(?:make|create|generate|run|perform|do)\s+(?:a\s+)?)?(?:my\s+)?portfolio\s+(?:analysis|report|review|assessment|overview)(?:\s+(?:for\s+me|now|please))?\??$/i;
 const PORTFOLIO_ANALYSIS_VERB_RE =
   /^(?:make|create|generate|run|perform|do)\b[\s\S]{0,40}\bportfolio\b[\s\S]{0,40}\b(?:analysis|report|review|assessment|overview)\b/i;
+const PORTFOLIO_REPORT_ON_OWN_RE =
+  /\b(?:make|create|generate|run|perform|do|write|prepare|give\s+me)\b[\s\S]{0,40}\breport\b[\s\S]{0,40}\b(?:on|about|for|of)\s+my\s+(?:[a-z0-9-]+\s+){0,3}(?:portfolio|holdings|positions|wallet|balances?)\b/i;
 const INFORMATIONAL_OR_REFERENTIAL_QUESTION_RE =
   /^(?:how|where|when|why|is|are|was|were|do|does|did|should)\b/i;
 const INDIRECT_REQUEST_RE = /^(?:can|could|would|will)\s+you\b/i;
@@ -78,8 +83,10 @@ export function classifyPortfolioRequestMode(message: string): PortfolioRequestM
     return null;
   }
   if (
+    isOwnPortfolioReportRequest(normalized) ||
     PORTFOLIO_ANALYSIS_REQUEST_RE.test(normalized) ||
-    PORTFOLIO_ANALYSIS_VERB_RE.test(normalized)
+    PORTFOLIO_ANALYSIS_VERB_RE.test(normalized) ||
+    PORTFOLIO_REPORT_ON_OWN_RE.test(normalized)
   ) {
     return 'snapshot';
   }
