@@ -81,6 +81,7 @@
     "test:hermes-chat-quality": "tsx scripts/test-hermes-chat-quality.ts",
     "test:hermes-chat-quality:soft": "tsx scripts/test-hermes-chat-quality.ts --soft",
     "test:hermes-chat-quality:loop": "tsx scripts/test-hermes-chat-quality.ts --soft --loops=5",
+    "test:hermes-grounding": "tsx scripts/test-hermes-grounding-regressions.ts",
     "test:telegram-chat-fallback": "tsx scripts/test-telegram-chat-fallback.ts",
     "test:chat-persona": "tsx scripts/test-chat-persona.ts",
     "test:chat-multilang-leaks": "tsx scripts/test-chat-multilang-leaks.ts",

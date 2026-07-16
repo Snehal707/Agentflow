@@ -189,6 +189,12 @@ import {
 } from './lib/agentflowProduct';
 import { answerProductQuestion, PRODUCT_KNOWLEDGE } from './lib/product-rag';
 import {
+  buildHermesCorrectionReply,
+  filterUntrustedHermesHistory,
+  isHallucinationChallenge,
+  removeLatestAssistantTurn,
+} from './lib/hermes-response-grounding';
+import {
   CHAT_DAILY_LIMIT_DEFAULT,
   TRANSCRIBE_DAILY_LIMIT_DEFAULT,
   VISION_DAILY_LIMIT_DEFAULT,
@@ -1473,6 +1479,12 @@ function buildHermesBrainEventFields() {
   };
 }
 
+function resolveAgentBrainHermesModelTier(): 'fast' | 'deep' {
+  // start-hermes selects HERMES_MODEL_DEEP before HERMES_MODEL_FAST. Mirror
+  // that selection here instead of labeling every fallback as "fast".
+  return process.env.HERMES_MODEL_DEEP?.trim() ? 'deep' : 'fast';
+}
+
 function buildClassifierHistory(
   history: BrainConversationMessage[],
 ): Array<{ role: 'user' | 'assistant'; content: string }> {
@@ -1841,7 +1853,10 @@ function summarizeToolParams(params: Record<string, unknown>): string {
 }
 
 function startsLikeCorrection(message: string): boolean {
-  return /^(?:no|wait|actually|correction|wrong|not quite|that's wrong)\b/i.test(message.trim());
+  return (
+    /^(?:no|wait|actually|correction|wrong|not quite|that's wrong)\b/i.test(message.trim()) ||
+    isHallucinationChallenge(message)
+  );
 }
 
 async function markPossibleBrainCorrection(
@@ -1852,7 +1867,19 @@ async function markPossibleBrainCorrection(
   if (!previous || Date.now() - previous.assistantAt > 60_000 || !startsLikeCorrection(message)) {
     return;
   }
-  await updateBrainEvent(previous.eventId, { user_correction: message });
+  await updateBrainEvent(previous.eventId, {
+    user_correction: message,
+    ...(isHallucinationChallenge(message)
+      ? {
+          outcome: 'hallucination_detected' as const,
+          failure_reason: 'The user disputed the preceding Hermes response as ungrounded.',
+          validator_passed: false,
+        }
+      : {}),
+  });
+  if (isHallucinationChallenge(message)) {
+    await discardLatestBrainConversationTurn(sessionId);
+  }
 }
 
 async function appendBrainToolTelemetry(
@@ -2096,6 +2123,14 @@ async function storeBrainConversationHistory(
 
   if (LOCAL_BRAIN_MEMORY_FALLBACK_ENABLED) {
     await storeLocalBrainConversationHistory(sessionId, history);
+  }
+}
+
+async function discardLatestBrainConversationTurn(sessionId: string): Promise<void> {
+  const existing = await loadBrainConversationHistory(sessionId);
+  const pruned = removeLatestAssistantTurn(existing);
+  if (pruned.length !== existing.length) {
+    await storeBrainConversationHistory(sessionId, pruned);
   }
 }
 
@@ -11863,6 +11898,28 @@ function createPublicApp(): express.Express {
 
     const capabilityProbe = resolveCapabilityRoutingProbe(rawUserBodyField, message);
 
+    const groundedConversationReply = buildHermesCorrectionReply(message);
+    if (groundedConversationReply) {
+      await appendBrainConversationTurn(memorySessionId, message, groundedConversationReply);
+      await updateBrainEvent(brainEventId, {
+        intent_label: isHallucinationChallenge(message) ? 'general.correction' : 'general.clarify',
+        intent_source: 'fastpath',
+        ...buildFastpathBrainEventFields(
+          isHallucinationChallenge(message) ? 'general.correction' : 'general.clarify',
+        ),
+        final_response_summary: groundedConversationReply,
+        outcome: 'success',
+        total_latency_ms: Date.now() - responseStartedAt,
+      });
+      brainTelemetryFinalized = true;
+      recentBrainEventsBySession.set(memorySessionId, {
+        eventId: brainEventId,
+        assistantAt: Date.now(),
+      });
+      streamStaticSseReply(res, groundedConversationReply, { eventId: brainEventId });
+      return;
+    }
+
     /*
      * Fast-path routing intent (payments & confirmations are handled elsewhere in this route):
      * 1) Hard confirmations / pending executions (invoice, YES, Redis) — unchanged order below
@@ -12205,13 +12262,24 @@ function createPublicApp(): express.Express {
         (isCasualSmallTalkTurn(message) && !shouldKeepPersistentConversationContext(message))
           ? []
           : await loadBrainConversationHistory(memorySessionId);
+      // Never feed known-invalid Hermes output back into the model. This also
+      // cleans older sessions containing unsupported providers, fabricated
+      // runtime explanations, or an unexplained language switch.
+      const filteredPersistedHistory = filterUntrustedHermesHistory(persistedHistory);
+      const filteredIncomingMessages = filterUntrustedHermesHistory(messages);
+      const trustedPersistedHistory = isHallucinationChallenge(message)
+        ? removeLatestAssistantTurn(filteredPersistedHistory)
+        : filteredPersistedHistory;
+      const trustedIncomingMessages = isHallucinationChallenge(message)
+        ? removeLatestAssistantTurn(filteredIncomingMessages)
+        : filteredIncomingMessages;
       // Always merge the client-sent recent thread into persisted history. For connected
       // wallet chats, dropping req.body.messages caused referential follow-ups like
       // "yeah make that" and "set up that payment every month" to lose the immediate
       // context that the frontend already had.
       const mergedMessages = mergeBrainConversationHistory(
-        persistedHistory,
-        messages,
+        trustedPersistedHistory,
+        trustedIncomingMessages,
       );
       const historyForBrain =
         mergedMessages.length > 0 &&
@@ -15498,6 +15566,23 @@ function createPublicApp(): express.Express {
             continue;
           }
           if (chunk.type === 'guard') {
+            if (chunk.guard === 'hallucination_blocked') {
+              const guardText =
+                chunk.replacement?.trim() ||
+                'I discarded an ungrounded draft. Please ask again and I will answer from verified AgentFlow product data.';
+              fullResponse = guardText;
+              guardedOutcome = 'hallucination_detected';
+              chatSseHermesChunkWritten = true;
+              writeHermesSsePayload({ delta: guardText });
+              await updateBrainEvent(brainEventId, {
+                outcome: 'hallucination_detected',
+                failure_reason: chunk.reason,
+                validator_passed: false,
+                total_latency_ms: Date.now() - responseStartedAt,
+              });
+              brainTelemetryFinalized = true;
+              continue;
+            }
             if (chunk.guard === 'stale_state_blocked' && chunk.requiredTool) {
               const pendingForGuard = await loadPendingAction(actionSessionId).catch(() => null);
               const shouldGroundState = userExplicitlyRequestedLiveState(message);
@@ -15707,7 +15792,8 @@ function createPublicApp(): express.Express {
       const hermesEventUpdate: Parameters<typeof updateBrainEvent>[1] = {
         intent_source: 'hermes',
         ...buildHermesBrainEventFields(),
-        hermes_model: 'fast',
+        hermes_model: resolveAgentBrainHermesModelTier(),
+        validator_passed: guardedOutcome ? false : true,
         final_response_summary: fullResponse,
         outcome: existingOutcome,
         total_latency_ms: Date.now() - responseStartedAt,
