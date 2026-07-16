@@ -1204,9 +1204,11 @@ const currentQualitativeFavoriteReport = finalizeReportMarkdown({
   task: collapsedScaffoldTask,
   writerMarkdown: `# Who Will Win the FIFA World Cup 2026? Prediction market category in AgentFlow: Sports. Use the market category to disambiguate the subject before searching.
 
+### Who Will Win the FIFA World Cup 2026?
+
 ## Overview
 
-Spain is the reported favorite over Argentina for the final, according to Fox Sports' July 16 update. No numerical winner probability is stated here.
+Argentina and Spain are the confirmed finalists. Current numerical winner probabilities are not available in the retrieved evidence.
 
 ## Current Situation
 
@@ -1256,7 +1258,15 @@ Argentina and Spain are the confirmed finalists.
   },
 });
 assert.match(currentQualitativeFavoriteReport.markdown, /^# Who Will Win the FIFA World Cup 2026\?/m);
-assert.match(currentQualitativeFavoriteReport.markdown, /Spain is the reported favorite over Argentina/i);
+assert.match(
+  currentQualitativeFavoriteReport.markdown,
+  /fox sports reported on 2026-07-16 that Spain was favored over Argentina for the final/i,
+);
+assert.equal(
+  (currentQualitativeFavoriteReport.markdown.match(/^#{1,6}\s+Who Will Win the FIFA World Cup 2026\?\s*$/gim) || []).length,
+  1,
+  'Expected prediction-market title normalization to remove repeated title headings.',
+);
 assert.doesNotMatch(
   currentQualitativeFavoriteReport.markdown,
   /Prediction market category in AgentFlow|Use the market category to disambiguate|Research the real-world topic only|Establish the latest real-world event state/i,

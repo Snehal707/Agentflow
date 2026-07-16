@@ -2975,7 +2975,27 @@ function normalizePredictionMarketMarkdown(markdown: string, task: string): stri
     .replace(/\n{3,}/g, '\n\n')
     .trim();
   if (/^#\s+/m.test(normalized)) {
-    return normalized.replace(/^#\s+.*$/m, `# ${cleanTopic}`).trim();
+    const normalizedTopicKey = cleanTopic
+      .normalize('NFKC')
+      .replace(/[^\p{L}\p{N}]+/gu, ' ')
+      .trim()
+      .toLowerCase();
+    return normalized
+      .replace(/^#\s+.*$/m, `# ${cleanTopic}`)
+      .split('\n')
+      .filter((line) => {
+        const duplicateHeading = line.match(/^#{2,6}\s+(.+?)\s*$/);
+        if (!duplicateHeading) return true;
+        const headingKey = duplicateHeading[1]
+          .normalize('NFKC')
+          .replace(/[^\p{L}\p{N}]+/gu, ' ')
+          .trim()
+          .toLowerCase();
+        return headingKey !== normalizedTopicKey;
+      })
+      .join('\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
   }
   if (!headingReplaced && normalized) {
     return `# ${cleanTopic}\n\n${normalized}`.trim();
@@ -3196,6 +3216,62 @@ function freshSportsStateSources(
     if (ageDays === null || ageDays < -0.5 || ageDays > maxAgeDays) return false;
     return sportsStateEvidenceSignal(`${source.name} ${source.url} ${source.usedFor || ''}`);
   });
+}
+
+type SportsWinnerFavoriteEvidence = {
+  favorite: string;
+  opponent: string;
+  source: NormalizedReportSource;
+};
+
+function currentSportsWinnerFavoriteEvidence(
+  sources: NormalizedReportSource[],
+): SportsWinnerFavoriteEvidence | null {
+  const freshStateSources = freshSportsStateSources(sources);
+  const latestStateTime = Math.max(
+    ...freshStateSources
+      .map((source) => Date.parse(source.publishedAt || ''))
+      .filter(Number.isFinite),
+  );
+  const currentSources = sources
+    .filter((source) => {
+      const publishedAt = Date.parse(source.publishedAt || '');
+      return !Number.isFinite(latestStateTime) ||
+        (Number.isFinite(publishedAt) && publishedAt >= latestStateTime);
+    })
+    .sort((left, right) => Date.parse(right.publishedAt || '') - Date.parse(left.publishedAt || ''));
+
+  for (const source of currentSources) {
+    const evidence = repairMojibake(`${source.name} ${source.usedFor || ''}`)
+      .replace(/=+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const match = evidence.match(
+      /(?:^|:)\s*([^:;.=]{1,50}?)\s+(?:is\s+)?(?:favou?red|favorite)\s+(?:over|ahead of)\s+([^:;.=]{1,50}?)(?=\s+(?:in|for)\s+(?:the\s+)?final\b|[.;]|$)/i,
+    );
+    if (!match) continue;
+    const favorite = match[1].trim();
+    const opponent = match[2].trim();
+    if (favorite.length > 50 || opponent.length > 50) continue;
+    return { favorite, opponent, source };
+  }
+  return null;
+}
+
+function ensureCurrentSportsWinnerFavorite(
+  markdown: string,
+  sources: NormalizedReportSource[],
+): string {
+  const reportBody = markdown.split(/^##\s+Sources\b/im)[0] || markdown;
+  if (/\b(?:favou?rite|favou?red)\b/i.test(reportBody)) return markdown;
+  const evidence = currentSportsWinnerFavoriteEvidence(sources);
+  if (!evidence) return markdown;
+  const date = evidence.source.publishedAt ? ` on ${evidence.source.publishedAt}` : '';
+  const sentence = `${evidence.source.name} reported${date} that ${evidence.favorite} was favored over ${evidence.opponent} for the final. This is a dated qualitative odds signal, not a numerical probability or guarantee.`;
+  if (/^#\s+.*$/m.test(markdown)) {
+    return markdown.replace(/^#\s+.*$/m, (heading) => `${heading}\n\n${sentence}`);
+  }
+  return `${sentence}\n\n${markdown}`.trim();
 }
 
 function sportsWinnerNumericEvidenceSignal(value: string): boolean {
@@ -4277,9 +4353,12 @@ export function finalizeReportMarkdown(params: FinalizeParams): {
     sanitizeWriterMarkdown(params.writerMarkdown),
     params.liveData,
   );
-  const writerMarkdown = isPredictionMarketResearchTask(params.task)
+  const normalizedWriterMarkdown = isPredictionMarketResearchTask(params.task)
     ? normalizePredictionMarketMarkdown(sanitizedWriterMarkdown, params.task)
     : sanitizedWriterMarkdown;
+  const writerMarkdown = isSportsWinnerPredictionMarketReport(params.task)
+    ? ensureCurrentSportsWinnerFavorite(normalizedWriterMarkdown, effectiveSources)
+    : normalizedWriterMarkdown;
   const writerValidationIssues = writerMarkdown
       ? [
         ...validateReportMarkdown(params.task, writerMarkdown, params.liveData),
