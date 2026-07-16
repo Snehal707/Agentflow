@@ -250,22 +250,26 @@ function stripUrlsForValidation(value: string): string {
   return value.replace(/\bhttps?:\/\/\S+/gi, ' ');
 }
 
+const PREDICTION_MARKET_SCAFFOLD_MARKER =
+  /\b(?:Listed outcomes in AgentFlow:|Prediction market category in AgentFlow:|Prediction market provider in AgentFlow:|AgentFlow provider-implied probability snapshot|Market address for AgentFlow trade routing only:|AgentFlow market address reference:|Use the market category to disambiguate the subject before searching|Research the real-world topic only|Establish the latest real-world event state|Focus on current facts|Focus on the real-world event)/i;
+
 function cleanPredictionMarketTopicLabel(task: string): string {
-  return task
+  const normalized = task
     .replace(/\r?\n+/g, ' ')
     .replace(/^research\s+(?:the\s+)?(?:prediction\s+)?market(?:\s+topic)?[:\s-]*/i, '')
-    .replace(/\bListed outcomes in AgentFlow:[\s\S]*?(?=\bFocus on the real-world event\b|$)/i, ' ')
-    .replace(/\bFocus on the real-world event[\s\S]*$/i, ' ')
-    .replace(/\bthe\s+prediction\s+market\s+topic\b[:\s-]*/i, ' ')
-    .replace(/\bprediction\s+market\s+topic\b[:\s-]*/i, ' ')
-    .replace(/\bmarket\s+topic\b[:\s-]*/i, ' ')
+    .replace(/^\s*the\s+prediction\s+market\s+topic\b[:\s-]*/i, '')
+    .replace(/^\s*prediction\s+market\s+topic\b[:\s-]*/i, '')
+    .replace(/^\s*market\s+topic\b[:\s-]*/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const scaffoldStart = normalized.search(PREDICTION_MARKET_SCAFFOLD_MARKER);
+  return (scaffoldStart >= 0 ? normalized.slice(0, scaffoldStart) : normalized)
     .replace(/\s+/g, ' ')
     .trim();
 }
 
 function extractPredictionMarketQuestion(task: string): string {
-  const match = task.match(/research the prediction market topic:\s*([^\n]+)/i);
-  return (match?.[1] || cleanPredictionMarketTopicLabel(task) || task).replace(/\s+/g, ' ').trim();
+  return cleanPredictionMarketTopicLabel(task) || 'Prediction market research';
 }
 
 function extractAllowedPredictionMarketFutureDates(task: string, liveData: Obj | null): Set<string> {
@@ -2860,6 +2864,9 @@ function sanitizeWriterMarkdown(markdown: string): string {
     .replace(/^prediction market provider in agentflow:[^\n]*$/gim, '')
     .replace(/^agentflow market address reference:[^\n]*$/gim, '')
     .replace(/^use the market category to disambiguate the subject before searching[^\n]*$/gim, '')
+    .replace(/^research the real-world topic only[^\n]*$/gim, '')
+    .replace(/^establish the latest real-world event state[^\n]*$/gim, '')
+    .replace(/^focus on current facts[^\n]*$/gim, '')
     .replace(/^focus on the real-world event, relevant stats\/news, timing, outcome probabilities, and what evidence would help someone compare the listed outcomes\.[^\n]*$/gim, '')
     .replace(/^numbered sources\s*$/gim, '')
     .replace(/^activating topical detection from source feed:?\s*$/gim, '')
@@ -2899,7 +2906,7 @@ function sanitizeWriterMarkdown(markdown: string): string {
 }
 
 function normalizePredictionMarketMarkdown(markdown: string, task: string): string {
-  const cleanTopic = cleanPredictionMarketTopicLabel(task) || 'Prediction market research';
+  const cleanTopic = extractPredictionMarketQuestion(task);
   const precleaned = markdown
     .replace(
       /#?\s*research the prediction market topic:\s*[\s\S]*?(?=(?:\n|^)\s*##\s+|(?:\n|^)\s*#\s+|$)/i,
@@ -2961,9 +2968,16 @@ function normalizePredictionMarketMarkdown(markdown: string, task: string): stri
     .replace(/\bPrediction market category in AgentFlow:[^\n]*/gi, '')
     .replace(/\bPrediction market provider in AgentFlow:[^\n]*/gi, '')
     .replace(/\bAgentFlow market address reference:[^\n]*/gi, '')
+    .replace(/^.*\bUse the market category to disambiguate the subject before searching\b.*$/gim, '')
+    .replace(/^.*\bResearch the real-world topic only\b.*$/gim, '')
+    .replace(/^.*\bEstablish the latest real-world event state\b.*$/gim, '')
+    .replace(/^.*\bFocus on current facts\b.*$/gim, '')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
-  if (!headingReplaced && normalized && !/^#\s+/m.test(normalized)) {
+  if (/^#\s+/m.test(normalized)) {
+    return normalized.replace(/^#\s+.*$/m, `# ${cleanTopic}`).trim();
+  }
+  if (!headingReplaced && normalized) {
     return `# ${cleanTopic}\n\n${normalized}`.trim();
   }
   return normalized;
@@ -3193,7 +3207,7 @@ function sportsWinnerNumericEvidenceSignal(value: string): boolean {
       value,
     );
   const hasNumericOdds =
-    /\b\d+(?:\.\d+)?\s*%(?![0-9a-f]{2})|\b[+-]\d{2,4}\b|\b\d+(?:\.\d+)?\/\d+(?:\.\d+)?\b|\b\d+(?:\.\d+)?\s*(?:to|:)\s*1\b/i.test(
+    /\b\d+(?:\.\d+)?\s*%(?![0-9a-f]{2})|(?<!\d)[+-]\d{3,4}\b|\b\d+(?:\.\d+)?\/\d+(?:\.\d+)?\b|\b\d+(?:\.\d+)?\s*(?:to|:)\s*1\b/i.test(
       value,
     );
   return hasWinnerContext && hasNumericOdds;
@@ -3202,9 +3216,21 @@ function sportsWinnerNumericEvidenceSignal(value: string): boolean {
 function hasSourceBackedSportsWinnerNumericEvidence(
   sources: NormalizedReportSource[],
 ): boolean {
+  const latestStateTime = Math.max(
+    ...freshSportsStateSources(sources)
+      .map((source) => Date.parse(source.publishedAt || ''))
+      .filter(Number.isFinite),
+  );
   return sources.some((source) => {
     // URLs contain dates, IDs, and percent-encoded spaces; none are evidence.
     // Only visible source titles/snippets may support a numeric winner claim.
+    const publishedAt = Date.parse(source.publishedAt || '');
+    if (
+      Number.isFinite(latestStateTime) &&
+      (!Number.isFinite(publishedAt) || publishedAt < latestStateTime)
+    ) {
+      return false;
+    }
     return sportsWinnerNumericEvidenceSignal(`${source.name} ${source.usedFor || ''}`);
   });
 }
@@ -3248,8 +3274,18 @@ function sportsTimelineConsistencyIssues(
         `${source.name} ${source.usedFor || ''}`,
       );
     });
+  const hasCurrentForecastSource =
+    Number.isFinite(latestStateTime) &&
+    sources.some((source) => {
+      const publishedAt = Date.parse(source.publishedAt || '');
+      if (!Number.isFinite(publishedAt) || publishedAt < latestStateTime) return false;
+      return /\b(opta|supercomputer|simulation|model|odds|probabilit|favou?rite|forecast)\b/i.test(
+        `${source.name} ${source.usedFor || ''}`,
+      );
+    });
   if (
     hasSupersededForecastSource &&
+    !hasCurrentForecastSource &&
     /\b(currently|current|as of today|now)\b[^.\n]{0,160}\b(favou?rite|leads?|most probable|probability|odds|forecast)\b|\b(favou?rite|leads?|most probable)\b[^.\n]{0,100}\b(currently|current|now)\b/i.test(
       markdown,
     )
@@ -3299,7 +3335,25 @@ function buildSportsWinnerConsistencyFallback(
   const evidenceLines = freshSources.length > 0
     ? freshSources.map((source) => {
         const date = source.publishedAt ? ` (${source.publishedAt})` : '';
-        return `- **${source.name}${date}:** ${shortenText(source.usedFor || source.name, 260)}`;
+        const rawEvidence = repairMojibake(source.usedFor || source.name)
+          .replace(/=+/g, ' ')
+          .replace(/\b(?:Twitter|WhatsApp|Email|Share|Re live this|Updated)\b[\s\S]*$/i, ' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+        const titleOddsMatch = rawEvidence.match(
+          /\bWorld Cup Title Odds:\s*([^.;]{1,140}?\bIn (?:The )?Final)\b/i,
+        );
+        const segments = rawEvidence
+          .split(/\s*[;|]\s*|(?<=[.!?])\s+(?=[A-Z])/)
+          .map((segment) => segment.replace(/\s+/g, ' ').trim())
+          .filter(Boolean);
+        const conciseEvidence =
+          (titleOddsMatch?.[1]
+            ? `World Cup title odds: ${titleOddsMatch[1]}.`
+            : segments.find((segment) => sportsStateEvidenceSignal(segment))) ||
+          segments[0] ||
+          'Dated current-stage tournament coverage.';
+        return `- **${source.name}${date}:** ${shortenText(conciseEvidence, 220)}`;
       })
     : ['- No fresh dated competition-state source survived the evidence gate.'];
   return [
@@ -3307,7 +3361,7 @@ function buildSportsWinnerConsistencyFallback(
     '',
     '## Overview',
     '',
-    'The generated ranking was withheld because it mixed incompatible competition stages or probability types. Older pre-match projections were not promoted as current winner probabilities.',
+    'The latest verified sources establish the current competition state. Unsupported numerical winner probabilities and projections superseded by completed results were withheld.',
     '',
     '## Verified Current State',
     '',
@@ -3324,7 +3378,7 @@ function buildSportsWinnerConsistencyFallback(
     '',
     '## Takeaway',
     '',
-    'No current winner ranking is published from this run until the competition state and probability evidence agree on the same as-of time.',
+    'The report uses the latest supported finalist and result evidence. It publishes no numerical winner probability unless a dated current source explicitly supplies it.',
   ].join('\n').trim();
 }
 
@@ -3982,6 +4036,13 @@ export function validateReportMarkdown(
     issues.push('Report leaked prompt scaffolding into final markdown.');
   }
   if (
+    /\bUse the market category to disambiguate the subject before searching\b|\bResearch the real-world topic only\b|\bEstablish the latest real-world event state\b|\bFocus on current facts, relevant statistics, dated public forecasts\b/i.test(
+      markdown,
+    )
+  ) {
+    issues.push('Report leaked prompt scaffolding into final markdown.');
+  }
+  if (
     /\bPrediction market category in AgentFlow:/i.test(markdown) ||
     /\bPrediction market provider in AgentFlow:/i.test(markdown) ||
     /\bAgentFlow provider-implied probability snapshot/i.test(markdown) ||
@@ -4212,10 +4273,13 @@ export function finalizeReportMarkdown(params: FinalizeParams): {
         params.research,
         params.analysis,
       );
-  const writerMarkdown = normalizeMarketCapThresholdMath(
+  const sanitizedWriterMarkdown = normalizeMarketCapThresholdMath(
     sanitizeWriterMarkdown(params.writerMarkdown),
     params.liveData,
   );
+  const writerMarkdown = isPredictionMarketResearchTask(params.task)
+    ? normalizePredictionMarketMarkdown(sanitizedWriterMarkdown, params.task)
+    : sanitizedWriterMarkdown;
   const writerValidationIssues = writerMarkdown
       ? [
         ...validateReportMarkdown(params.task, writerMarkdown, params.liveData),

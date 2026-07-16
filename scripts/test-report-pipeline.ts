@@ -1199,6 +1199,74 @@ assert.equal(
   `Expected confirmed-final evidence to proceed without numeric odds, got: ${confirmedFinalEvidenceWithoutNumericOdds.issues.join('; ')}`,
 );
 
+const collapsedScaffoldTask = topicOnlyPredictionResearchPrompt.replace(/\s+/g, ' ').trim();
+const currentQualitativeFavoriteReport = finalizeReportMarkdown({
+  task: collapsedScaffoldTask,
+  writerMarkdown: `# Who Will Win the FIFA World Cup 2026? Prediction market category in AgentFlow: Sports. Use the market category to disambiguate the subject before searching.
+
+## Overview
+
+Spain is the reported favorite over Argentina for the final, according to Fox Sports' July 16 update. No numerical winner probability is stated here.
+
+## Current Situation
+
+Argentina and Spain are the confirmed finalists.
+
+## Sources
+
+- [Fox Sports](https://www.foxsports.com/stories/soccer/world-cup-2026-champion-odds) - final odds update
+- [The Analyst](https://theanalyst.com/articles/england-vs-argentina-stats-world-cup-2026) - semifinal result
+- [FIFA](https://www.fifa.com/en/tournaments/mens/worldcup/canadamexicousa2026/schedule) - final schedule`,
+  research: null,
+  analysis: null,
+  liveData: {
+    snapshot_at: '2026-07-16T18:00:00.000Z',
+    dynamic_sources: {
+      articles: [
+        {
+          title: 'FIFA World Cup 2026 odds and predictions',
+          publisher: 'Fox Sports',
+          url: 'https://www.foxsports.com/stories/soccer/world-cup-2026-champion-odds',
+          summary: 'World Cup Title Odds: Spain Favored Over Argentina In Final. Updated Jul. 16, 2026.',
+          seen_at: '2026-07-16T12:26:00.000Z',
+        },
+        {
+          title: 'England 1-2 Argentina Stats: Late comeback sets up World Cup final against Spain',
+          publisher: 'The Analyst',
+          url: 'https://theanalyst.com/articles/england-vs-argentina-stats-world-cup-2026',
+          summary: 'Argentina reached the final against Spain.',
+          seen_at: '2026-07-15T23:00:00.000Z',
+        },
+        {
+          title: 'FIFA World Cup 2026 final schedule',
+          publisher: 'FIFA',
+          url: 'https://www.fifa.com/en/tournaments/mens/worldcup/canadamexicousa2026/schedule',
+          summary: 'The official FIFA schedule lists the confirmed World Cup final.',
+          seen_at: '2026-07-16T00:00:00.000Z',
+        },
+        {
+          title: 'World Cup predictions before the semifinals',
+          publisher: 'BBC News',
+          url: 'https://www.bbc.com/sport/football/articles/cjrgew3wv4xo',
+          summary: 'A pre-semifinal forecast published before the finalists were known.',
+          seen_at: '2026-07-14T00:00:00.000Z',
+        },
+      ],
+    },
+  },
+});
+assert.match(currentQualitativeFavoriteReport.markdown, /^# Who Will Win the FIFA World Cup 2026\?/m);
+assert.match(currentQualitativeFavoriteReport.markdown, /Spain is the reported favorite over Argentina/i);
+assert.doesNotMatch(
+  currentQualitativeFavoriteReport.markdown,
+  /Prediction market category in AgentFlow|Use the market category to disambiguate|Research the real-world topic only|Establish the latest real-world event state/i,
+);
+assert.doesNotMatch(currentQualitativeFavoriteReport.markdown, /generated ranking was withheld/i);
+assert.doesNotMatch(
+  currentQualitativeFavoriteReport.validationIssues.join('\n'),
+  /prompt scaffolding|promotes a forecast published before newer completed results/i,
+);
+
 const unsupportedNumericWinnerClaimIsWithheld = finalizeReportMarkdown({
   task: worldCupEvidenceTask,
   writerMarkdown: `# Who Will Win the FIFA World Cup 2026?
@@ -1218,6 +1286,13 @@ Spain has a 61% chance of winning the tournament and is the clear numerical favo
     snapshot_at: '2026-07-16T00:00:00.000Z',
     dynamic_sources: {
       articles: [
+        {
+          title: 'FIFA World Cup 2026 odds and predictions',
+          publisher: 'Fox Sports',
+          url: 'https://www.foxsports.com/stories/soccer/world-cup-2026-champion-odds',
+          summary: 'FIFA Men\'s World Cup 2026 World Cup Title Odds: Spain Favored Over Argentina In Final ================================================================ Updated Jul. 16, 2026 12:26 p.m. ET share f...',
+          seen_at: '2026-07-16T12:26:00.000Z',
+        },
         {
           title: 'Spain beat France in the World Cup semifinal and advance to the final',
           publisher: 'ESPN',
@@ -1251,6 +1326,11 @@ assert.doesNotMatch(
   unsupportedNumericWinnerClaimIsWithheld.markdown,
   /61%/i,
   'Expected an unsupported numerical winner ranking to be withheld from the final report.',
+);
+assert.doesNotMatch(
+  unsupportedNumericWinnerClaimIsWithheld.markdown,
+  /={3,}|Twitter|WhatsApp|share f\.\.\./i,
+  'Expected the deterministic fallback to summarize source evidence instead of exposing scraped page chrome.',
 );
 
 const decisionGradeWorldCupEvidence = assessFastReportEvidence({
@@ -1802,7 +1882,10 @@ assert.match(
 );
 assert.doesNotMatch(postSemifinalContradictionIsRejected.markdown, /four teams remain/i);
 assert.doesNotMatch(postSemifinalContradictionIsRejected.markdown, /France has a 57\.7% chance/i);
-assert.match(postSemifinalContradictionIsRejected.markdown, /generated ranking was withheld/i);
+assert.match(
+  postSemifinalContradictionIsRejected.markdown,
+  /unsupported numerical winner probabilities.*were withheld/i,
+);
 
 const suppliedWorldCupCurrentState = {
   snapshot_at: '2026-07-16T21:05:00.000Z',
@@ -1860,7 +1943,10 @@ assert.match(
   /partial outcome sum/i,
 );
 assert.doesNotMatch(suppliedReportOneRejected.markdown, /achmarket|France currently/i);
-assert.match(suppliedReportOneRejected.markdown, /generated ranking was withheld/i);
+assert.match(
+  suppliedReportOneRejected.markdown,
+  /unsupported numerical winner probabilities.*were withheld/i,
+);
 
 const suppliedReportTwoRejected = finalizeReportMarkdown({
   task: postSemifinalWorldCupTask,
@@ -1887,7 +1973,10 @@ assert.doesNotMatch(
   suppliedReportTwoRejected.markdown,
   /achmarket|semifinals are occurring|winner of France vs Spain/i,
 );
-assert.match(suppliedReportTwoRejected.markdown, /generated ranking was withheld/i);
+assert.match(
+  suppliedReportTwoRejected.markdown,
+  /unsupported numerical winner probabilities.*were withheld/i,
+);
 
 const staleWorldCupEvidenceFailsClosed = finalizeReportMarkdown({
   task: postSemifinalWorldCupTask,
