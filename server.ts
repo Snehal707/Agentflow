@@ -115,7 +115,7 @@ import {
   finalizeReportMarkdown,
 } from './lib/reportPipeline';
 import { maybeImproveFastReport } from './lib/fast-report-supervisor';
-import { formatProviderProbabilitySnapshot } from './lib/predmarket-research-context';
+import { buildPredictionTopicResearchPrompt } from './lib/predmarket-research-context';
 import { setWalletForUser } from './lib/walletStore';
 import { payProtectedResourceServer } from './lib/x402ServerClient';
 import { insertAgentToAgentLedger } from './lib/a2a-ledger';
@@ -6511,42 +6511,17 @@ function detectVaultSelectionReply(
 
 function buildPredmarketResearchPrompt(
   title: string,
-  marketAddress: `0x${string}`,
-  outcomes: PredictionOutcomeChoice[] = [],
+  _marketAddress: `0x${string}`,
+  _outcomes: PredictionOutcomeChoice[] = [],
   metadata?: {
     category?: string | null;
-    provider?: string | null;
   },
 ): string {
-  const safeTitle = title.trim() || 'this prediction market';
-  const outcomeLabels = outcomes
-    .map((outcome) => outcome.label.trim())
-    .filter(Boolean);
   const category =
     typeof metadata?.category === 'string' && metadata.category.trim()
       ? metadata.category.trim()
       : null;
-  const provider =
-    typeof metadata?.provider === 'string' && metadata.provider.trim()
-      ? metadata.provider.trim()
-      : null;
-  const observedAt = new Date().toISOString();
-  const marketSnapshot = formatProviderProbabilitySnapshot(outcomes, observedAt);
-
-  return [
-    `research the prediction market topic: ${safeTitle}`,
-    outcomeLabels.length
-      ? `Listed outcomes in AgentFlow: ${outcomeLabels.join(' / ')}.`
-      : null,
-    category ? `Prediction market category in AgentFlow: ${category}.` : null,
-    provider ? `Prediction market provider in AgentFlow: ${provider}.` : null,
-    marketSnapshot,
-    marketAddress ? `AgentFlow market address reference: ${marketAddress}.` : null,
-    'Use the market category to disambiguate the subject before searching. For example: crypto markets should be researched as crypto/blockchain topics, sports markets as teams/tournaments, and macro/commodity markets by their real-world underlying drivers.',
-    'Focus on the real-world event, relevant stats/news, timing, outcome probabilities, and what evidence would help someone compare the listed outcomes.',
-  ]
-    .filter(Boolean)
-    .join('\n');
+  return buildPredictionTopicResearchPrompt(title, category);
 }
 
 function buildPredmarketTradeActionGroup(
@@ -6631,6 +6606,9 @@ function extractPredmarketResearchContext(
     .replace(/\bDo not research the contract address itself[^\n]*/gi, '')
     .replace(/\bUse the market category to disambiguate the subject before searching[^\n]*/gi, '')
     .replace(/\bFocus on the real-world event[^\n]*/gi, '')
+    .replace(/\bResearch the real-world topic only[^\n]*/gi, '')
+    .replace(/\bEstablish the latest real-world event state[^\n]*/gi, '')
+    .replace(/\bFocus on current facts[^\n]*/gi, '')
     .replace(/\(\s*0x[a-fA-F0-9]{40}\s*\)/g, '')
     .replace(/\b0x[a-fA-F0-9]{40}\b/g, '')
     .replace(/\n{2,}/g, '\n')
@@ -17200,7 +17178,7 @@ async function start(): Promise<void> {
       ? ' Verify the user\'s premise before accepting it. If the evidence supports only tensions, reported planning, isolated strikes, or older background context, say that plainly instead of repeating the user\'s framing. If LIVE DATA current_events framing_signals are present, follow them exactly for broader conflict status, Strait of Hormuz route status, and Red Sea route status.'
       : '';
     const userMessage = liveData
-      ? `AS OF ${asOf}\nCURRENT DATE: ${asOf.slice(0, 10)}\n\nLIVE DATA JSON:\n${liveData}${contextBlock}${walletContextBlock}\n\nUSER TASK:\n${task}\n\nUse the LIVE DATA JSON above for current figures and dated evidence. Do not cite or mention any date after CURRENT DATE as if it has happened. When present, cite concrete titles and URLs from current_events.articles, current_events.article_snapshots, dynamic_sources.articles, wikipedia.pages, coingecko, defillama, and bitcoin_onchain; do not invent outlets. Retrieval layers are not evidence and must not be cited as sources.${geopoliticalEvidenceInstruction} For prediction-market reports, do not infer event dates, launch dates, odds, or prices unless the value appears in LIVE DATA or in the timestamped AgentFlow provider-implied probability snapshot in USER TASK. Treat that AgentFlow snapshot as provider market data only; never replace it with model simulations, bookmaker odds, or advancement probabilities. For mainnet/testnet launch markets, do not treat DefiLlama TVL alone as evidence of mainnet readiness, ecosystem traction, or launch timing. When creator_audience_metrics is present, treat current_subscribers/current_subscribers_display and observed_at as direct evidence for the latest available audience count and mention that figure explicitly in the answer. When bitcoin_onchain is present, treat it as primary evidence for Bitcoin network transaction counts, block counts, fees, and on-chain activity windows; do not substitute market trading volume for on-chain transaction volume. When PORTFOLIO_CONTEXT is present, classify the user's exposure and explain impact through that exposure profile without revealing raw balances, full addresses, or PnL unless explicitly requested. Prefer official APIs, reputable publishers, Mempool.space for Bitcoin block/on-chain metrics, CoinGecko for token market data, DefiLlama for chain TVL and stablecoin liquidity only when directly relevant, current-event article snapshots for recent developments, and Wikipedia for factual background.`
+      ? `AS OF ${asOf}\nCURRENT DATE: ${asOf.slice(0, 10)}\n\nLIVE DATA JSON:\n${liveData}${contextBlock}${walletContextBlock}\n\nUSER TASK:\n${task}\n\nUse the LIVE DATA JSON above for current figures and dated evidence. Do not cite or mention any date after CURRENT DATE as if it has happened. When present, cite concrete titles and URLs from current_events.articles, current_events.article_snapshots, dynamic_sources.articles, wikipedia.pages, coingecko, defillama, and bitcoin_onchain; do not invent outlets. Retrieval layers are not evidence and must not be cited as sources.${geopoliticalEvidenceInstruction} For prediction-question reports, research the underlying real-world topic only. Never mention or treat an internal provider, platform, contract address, listed price, or liquidity value as report evidence. Do not infer event dates, odds, or probabilities unless they appear in dated public evidence in LIVE DATA. Keep model title probabilities, advancement probabilities, bookmaker odds, and prediction-market prices separately labeled and separately dated. A source access or retrieval date is not its publication date and does not make an older forecast current. For mainnet/testnet launch markets, do not treat DefiLlama TVL alone as evidence of mainnet readiness, ecosystem traction, or launch timing. When creator_audience_metrics is present, treat current_subscribers/current_subscribers_display and observed_at as direct evidence for the latest available audience count and mention that figure explicitly in the answer. When bitcoin_onchain is present, treat it as primary evidence for Bitcoin network transaction counts, block counts, fees, and on-chain activity windows; do not substitute market trading volume for on-chain transaction volume. When PORTFOLIO_CONTEXT is present, classify the user's exposure and explain impact through that exposure profile without revealing raw balances, full addresses, or PnL unless explicitly requested. Prefer official APIs, reputable publishers, Mempool.space for Bitcoin block/on-chain metrics, CoinGecko for token market data, DefiLlama for chain TVL and stablecoin liquidity only when directly relevant, current-event article snapshots for recent developments, and Wikipedia for factual background.`
       : `${task}${contextBlock}${walletContextBlock}`;
     return {
       task,
