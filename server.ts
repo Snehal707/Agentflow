@@ -9657,7 +9657,7 @@ function stripExistingPortfolioImpactSection(markdown: string): string {
   let normalized = markdown.replace(/\r\n/g, '\n');
 
   const headingPattern =
-    /^#{2,3}\s+(?:Your Portfolio Impact|Personalized Portfolio Impact|Portfolio Impact|Portfolio Implications)\b.*$/im;
+    /^#{2,3}\s+(?:Your Portfolio Impact|Personalized Portfolio Impact|Portfolio Impact|Portfolio Implications|How This Affects Your Portfolio|Impact on Your Portfolio|Portfolio Relevance)\b.*$/im;
   while (true) {
     const match = headingPattern.exec(normalized);
     if (!match || match.index === undefined) break;
@@ -9674,7 +9674,7 @@ function stripExistingPortfolioImpactSection(markdown: string): string {
   }
 
   const inlinePattern =
-    /(?:^|\n)(?:\*\*)?(?:Portfolio Impact|Implications for Your Portfolio|Current Economic Situation impacts for your portfolio)(?:\*\*)?:\s*[\s\S]*?(?=\n\s*\n|\n#{2,3}\s+\S|$)/im;
+    /(?:^|\n)(?:\*\*)?(?:Portfolio Impact|Implications for Your Portfolio|How This Affects Your Portfolio|Impact on Your Portfolio|Portfolio Relevance|Current Economic Situation impacts for your portfolio)(?:\*\*)?:\s*[\s\S]*?(?=\n\s*\n|\n#{2,3}\s+\S|$)/im;
   while (true) {
     const match = inlinePattern.exec(normalized);
     if (!match || match.index === undefined) break;
