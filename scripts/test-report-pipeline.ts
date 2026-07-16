@@ -1212,7 +1212,7 @@ Argentina and Spain are the confirmed finalists. Current numerical winner probab
 
 ## Current Situation
 
-Argentina and Spain are the confirmed finalists.
+Argentina defeated England 2-1 in the semifinal on July 14, 2026. Argentina and Spain are the confirmed finalists.
 
 ## Sources
 
@@ -1272,6 +1272,11 @@ assert.doesNotMatch(
   /Prediction market category in AgentFlow|Use the market category to disambiguate|Research the real-world topic only|Establish the latest real-world event state/i,
 );
 assert.doesNotMatch(currentQualitativeFavoriteReport.markdown, /generated ranking was withheld/i);
+assert.doesNotMatch(
+  currentQualitativeFavoriteReport.markdown,
+  /defeated England 2-1 in the semifinal on July 14, 2026/i,
+  'Expected an event date absent from result evidence to be omitted rather than inferred from publication timing.',
+);
 assert.doesNotMatch(
   currentQualitativeFavoriteReport.validationIssues.join('\n'),
   /prompt scaffolding|promotes a forecast published before newer completed results/i,
