@@ -1384,21 +1384,31 @@ function inferPendingVaultSelectionFromAssistantReply(input: {
     return null;
   }
 
-  const vaultSymbol = detectVaultSymbol(content);
-  if (!vaultSymbol) {
-    return null;
-  }
-
   let action: "deposit" | "withdraw" | null = null;
-  if (/\bhow much\b[\s\S]*\bdeposit\b/i.test(content)) {
-    action = "deposit";
-  } else if (/\bhow much\b[\s\S]*\bwithdraw\b/i.test(content)) {
+  // Backend validator clarifications are often:
+  // "Tell me how much you want to withdraw from the vault."
+  // (no luneUSDC symbol). Prefer action detection first so a prior deposit
+  // pending selection cannot steal the amount reply.
+  if (
+    /\b(?:how much|tell me how much)\b[\s\S]{0,120}\bwithdraw\b/i.test(content) ||
+    /\bwant to withdraw\b/i.test(content)
+  ) {
     action = "withdraw";
+  } else if (
+    /\b(?:how much|tell me how much)\b[\s\S]{0,120}\bdeposit\b/i.test(content) ||
+    /\bwant to deposit\b/i.test(content)
+  ) {
+    action = "deposit";
   }
 
   if (!action) {
     return null;
   }
+
+  const vaultSymbol =
+    detectVaultSymbol(content) ||
+    inferVaultSymbolFromAssetHint(content) ||
+    "luneUSDC";
 
   return {
     assistantId,

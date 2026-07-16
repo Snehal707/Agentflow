@@ -5626,6 +5626,8 @@ function isRouterContinuationIntent(intent: AgentFlowIntentName): boolean {
     AgentFlowIntentName.SplitExecute,
     AgentFlowIntentName.BatchExecute,
     AgentFlowIntentName.InvoiceCreate,
+    AgentFlowIntentName.VaultDeposit,
+    AgentFlowIntentName.VaultWithdraw,
   ].includes(intent);
 }
 
@@ -5885,6 +5887,26 @@ function tryBuildRouterContinuationMessage(
     case AgentFlowIntentName.BatchExecute: {
       if (state.slotsMissing.some((slot) => slot.startsWith('payments'))) {
         return /^batch\s+pay/i.test(trimmedReply) ? trimmedReply : `batch pay\n${trimmedReply}`;
+      }
+      return null;
+    }
+    case AgentFlowIntentName.VaultDeposit: {
+      if (state.slotsMissing.includes('amount.value') && amount) {
+        const vaultHint =
+          amount.currency === 'EURC' ? 'luneEURC' : amount.currency === 'USDC' ? 'luneUSDC' : null;
+        return vaultHint
+          ? `deposit ${amount.value} ${amount.currency} to ${vaultHint}`
+          : `deposit ${amount.value} ${amount.currency}`;
+      }
+      return null;
+    }
+    case AgentFlowIntentName.VaultWithdraw: {
+      if (state.slotsMissing.includes('amount.value') && amount) {
+        const vaultHint =
+          amount.currency === 'EURC' ? 'luneEURC' : amount.currency === 'USDC' ? 'luneUSDC' : null;
+        return vaultHint
+          ? `withdraw ${amount.value} ${amount.currency} from ${vaultHint}`
+          : `withdraw ${amount.value} ${amount.currency}`;
       }
       return null;
     }
