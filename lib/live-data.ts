@@ -2308,12 +2308,17 @@ function isEntityRelevantPredictionMarketSource(
 
   if (sportsTask) {
     if (!sportsContext) return false;
-    if (sportsWinnerMarket && !hasSportsWinnerMarketEvidenceSignal(haystack)) {
+    if (
+      sportsWinnerMarket &&
+      !hasSportsWinnerMarketEvidenceSignal(haystack) &&
+      !hasDecisiveSportsStateSignal(haystack)
+    ) {
       return false;
     }
     if (
       sportsWinnerMarket &&
       hasSportsWinnerMarketMatchNoiseSignal(haystack) &&
+      !hasDecisiveSportsStateSignal(haystack) &&
       !/\b(winner odds|outright|favorites|power rankings|team rankings|re-ranking|re-rank|contender|contenders)\b/i.test(
         haystack,
       )
@@ -3132,6 +3137,7 @@ function predictionMarketEvidenceSortScore(
   if (official && !hasArticleLikePath(snapshot)) score -= 10;
   if (isSportsWinnerPredictionMarketTask(task, understanding)) {
     if (hasSportsWinnerMarketEvidenceSignal(haystack)) score += 55;
+    if (hasDecisiveSportsStateSignal(haystack)) score += 70;
     if (/\b\d+(?:\.\d+)?\s*%(?![0-9a-f]{2})|\b[+-]\d{2,4}\b|\b\d+(?:\.\d+)?[-/]\d+(?:\.\d+)?\b/i.test(haystack)) {
       score += 35;
     }

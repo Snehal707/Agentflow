@@ -1065,7 +1065,7 @@ assert.match(
   /underlying gold-market evidence/i,
 );
 
-const worldCupPredmarketRequiresProbabilityEvidence = finalizeReportMarkdown({
+const worldCupPredmarketRequiresFreshStateEvidence = finalizeReportMarkdown({
   task: 'research the prediction market topic: Who Will Win the FIFA World Cup 2026?',
   writerMarkdown: `## Summary
 
@@ -1100,8 +1100,8 @@ France, Argentina, and Brazil remain strong teams.
   },
 });
 assert.match(
-  worldCupPredmarketRequiresProbabilityEvidence.validationIssues.join('\n'),
-  /odds or probability evidence/i,
+  worldCupPredmarketRequiresFreshStateEvidence.validationIssues.join('\n'),
+  /fresh event-stage or result evidence/i,
 );
 
 const worldCupEvidenceTask = `research the prediction market topic: Who Will Win the FIFA World Cup 2026?
@@ -1123,7 +1123,7 @@ assert.equal(
 );
 assert.equal(normalFastResearchCanProceedWithSparseSources.requiredDistinctDomains, 0);
 
-const thinWorldCupEvidence = assessFastReportEvidence({
+const factualWorldCupEvidenceWithoutNumericOdds = assessFastReportEvidence({
   task: worldCupEvidenceTask,
   research: null,
   liveData: {
@@ -1135,28 +1135,122 @@ const thinWorldCupEvidence = assessFastReportEvidence({
           publisher: 'FIFA',
           url: 'https://www.fifa.com/en/tournaments/mens/worldcup/canadamexicousa2026/schedule',
           summary: 'Official tournament schedule.',
+          seen_at: '2026-07-14T00:00:00.000Z',
         },
         {
           title: 'World Cup semifinal schedule',
           publisher: 'BBC News',
           url: 'https://www.bbc.com/sport/football/world-cup-2026-semifinal-schedule',
           summary: 'Remaining fixtures and kickoff times.',
+          seen_at: '2026-07-14T00:00:00.000Z',
         },
         {
           title: 'World Cup teams remaining',
           publisher: 'Sporting News',
           url: 'https://www.sportingnews.com/us/soccer/news/world-cup-2026-teams-remaining/example',
           summary: 'Tournament bracket background.',
+          seen_at: '2026-07-14T00:00:00.000Z',
         },
       ],
     },
   },
 });
-assert.equal(thinWorldCupEvidence.ok, false);
+assert.equal(
+  factualWorldCupEvidenceWithoutNumericOdds.ok,
+  true,
+  `Expected a fresh factual World Cup report to proceed without numeric odds, got: ${factualWorldCupEvidenceWithoutNumericOdds.issues.join('; ')}`,
+);
+
+const confirmedFinalEvidenceWithoutNumericOdds = assessFastReportEvidence({
+  task: worldCupEvidenceTask,
+  research: null,
+  liveData: {
+    snapshot_at: '2026-07-16T00:00:00.000Z',
+    dynamic_sources: {
+      articles: [
+        {
+          title: 'Spain beat France in the World Cup semifinal and advance to the final',
+          publisher: 'ESPN',
+          url: 'https://www.espn.com/soccer/story/_/id/world-cup-spain-france-semifinal',
+          summary: 'Spain defeated France in the semifinal and secured a place in the final.',
+          seen_at: '2026-07-14T23:00:00.000Z',
+        },
+        {
+          title: 'Argentina defeat England to reach the World Cup final',
+          publisher: 'CBS Sports',
+          url: 'https://www.cbssports.com/soccer/news/argentina-england-world-cup-semifinal-result/',
+          summary: 'Argentina beat England in the semifinal and will face Spain in the final.',
+          seen_at: '2026-07-15T23:00:00.000Z',
+        },
+        {
+          title: 'FIFA World Cup 2026 final schedule',
+          publisher: 'FIFA',
+          url: 'https://www.fifa.com/en/tournaments/mens/worldcup/canadamexicousa2026/schedule',
+          summary: 'The official FIFA schedule lists the confirmed World Cup final.',
+          seen_at: '2026-07-16T00:00:00.000Z',
+        },
+      ],
+    },
+  },
+});
+assert.equal(
+  confirmedFinalEvidenceWithoutNumericOdds.ok,
+  true,
+  `Expected confirmed-final evidence to proceed without numeric odds, got: ${confirmedFinalEvidenceWithoutNumericOdds.issues.join('; ')}`,
+);
+
+const unsupportedNumericWinnerClaimIsWithheld = finalizeReportMarkdown({
+  task: worldCupEvidenceTask,
+  writerMarkdown: `# Who Will Win the FIFA World Cup 2026?
+
+## Overview
+
+Spain has a 61% chance of winning the tournament and is the clear numerical favorite.
+
+## Sources
+
+- [ESPN](https://www.espn.com/soccer/story/_/id/world-cup-spain-france-semifinal) - semifinal result
+- [CBS Sports](https://www.cbssports.com/soccer/news/argentina-england-world-cup-semifinal-result/) - semifinal result
+- [FIFA](https://www.fifa.com/en/tournaments/mens/worldcup/canadamexicousa2026/schedule) - final schedule`,
+  research: null,
+  analysis: null,
+  liveData: {
+    snapshot_at: '2026-07-16T00:00:00.000Z',
+    dynamic_sources: {
+      articles: [
+        {
+          title: 'Spain beat France in the World Cup semifinal and advance to the final',
+          publisher: 'ESPN',
+          url: 'https://www.espn.com/soccer/story/_/id/world-cup-spain-france-semifinal',
+          summary: 'Spain defeated France in the semifinal and secured a place in the final.',
+          seen_at: '2026-07-14T23:00:00.000Z',
+        },
+        {
+          title: 'Argentina defeat England to reach the World Cup final',
+          publisher: 'CBS Sports',
+          url: 'https://www.cbssports.com/soccer/news/argentina-england-world-cup-semifinal-result/',
+          summary: 'Argentina beat England in the semifinal and will face Spain in the final.',
+          seen_at: '2026-07-15T23:00:00.000Z',
+        },
+        {
+          title: 'FIFA World Cup 2026 final schedule',
+          publisher: 'FIFA',
+          url: 'https://www.fifa.com/en/tournaments/mens/worldcup/canadamexicousa2026/schedule',
+          summary: 'The official FIFA schedule lists the confirmed World Cup final.',
+          seen_at: '2026-07-16T00:00:00.000Z',
+        },
+      ],
+    },
+  },
+});
 assert.match(
-  thinWorldCupEvidence.issues.join('\n'),
-  /odds or probability evidence/i,
-  'Expected schedule-only World Cup sources to stop before paid agents.',
+  unsupportedNumericWinnerClaimIsWithheld.validationIssues.join('\n'),
+  /numeric odds or probability claims without source-backed numeric winner evidence/i,
+);
+assert.doesNotMatch(
+  unsupportedNumericWinnerClaimIsWithheld.markdown,
+  /61%/i,
+  'Expected an unsupported numerical winner ranking to be withheld from the final report.',
 );
 
 const decisionGradeWorldCupEvidence = assessFastReportEvidence({
@@ -1228,7 +1322,7 @@ const awardMarketIsNotWinnerEvidence = assessFastReportEvidence({
 assert.equal(awardMarketIsNotWinnerEvidence.ok, false);
 assert.match(
   awardMarketIsNotWinnerEvidence.issues.join('\n'),
-  /numeric winner odds or probabilities|independent source domain/i,
+  /fresh event-stage or result evidence|independent source domain/i,
   'Expected Golden Boot/Glove and quiz pages not to satisfy the tournament-winner gate.',
 );
 
@@ -1269,11 +1363,11 @@ const encodedPercentAndTournamentNoiseAreNotWinnerEvidence = assessFastReportEvi
 assert.equal(encodedPercentAndTournamentNoiseAreNotWinnerEvidence.ok, false);
 assert.match(
   encodedPercentAndTournamentNoiseAreNotWinnerEvidence.issues.join('\n'),
-  /numeric winner odds or probabilities|independent source domain/i,
+  /fresh event-stage or result evidence|independent source domain/i,
   'Expected URL-encoded spaces and tournament noise not to pass the winner-odds gate.',
 );
 
-const datedOddsUrlsWithoutVisibleNumbersAreNotWinnerEvidence = assessFastReportEvidence({
+const oddsPagesWithoutFreshStateDoNotPass = assessFastReportEvidence({
   task: worldCupEvidenceTask,
   research: null,
   liveData: {
@@ -1301,11 +1395,11 @@ const datedOddsUrlsWithoutVisibleNumbersAreNotWinnerEvidence = assessFastReportE
     },
   },
 });
-assert.equal(datedOddsUrlsWithoutVisibleNumbersAreNotWinnerEvidence.ok, false);
+assert.equal(oddsPagesWithoutFreshStateDoNotPass.ok, false);
 assert.match(
-  datedOddsUrlsWithoutVisibleNumbersAreNotWinnerEvidence.issues.join('\n'),
-  /numeric winner odds or probabilities/i,
-  'Expected URL dates and IDs never to count as visible numeric odds.',
+  oddsPagesWithoutFreshStateDoNotPass.issues.join('\n'),
+  /fresh event-stage or result evidence/i,
+  'Expected undated odds pages without fresh competition-state evidence not to pass the fast gate.',
 );
 
 const extractedSportsWinnerEvidence = extractSportsWinnerNumericEvidenceSnippet(`

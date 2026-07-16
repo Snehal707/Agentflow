@@ -233,8 +233,8 @@ function buildFastPredictionMarketBrief(
       domainsPriority.add('reuters');
     }
   } else if (questionType === 'event_outcome') {
-    mustAnswer.add(`What current probabilities, odds, rankings, or form indicators matter for ${subject}?`);
-    subQuestions.add(`What current probability evidence exists for ${subject}?`);
+    mustAnswer.add(`What is the latest confirmed event state for ${subject}, and what current probabilities, odds, rankings, or form indicators are publicly supported?`);
+    subQuestions.add(`What current outcome evidence exists for ${subject}, including probabilities only when a dated public source provides them?`);
     if (category === 'sports') {
       domainsPriority.add('fifa.com');
       domainsPriority.add('uefa.com');
@@ -461,7 +461,6 @@ function buildFastSourceDiagnostics(
     domains.length - highReliabilityDomains.length - mediumReliabilityDomains.length,
   );
   const reasons: string[] = [];
-  const evidenceHaystack = sources.map((source) => source.evidenceText).join(' \n ');
 
   if (domains.length < brief.minimum_source_diversity) {
     reasons.push(
@@ -488,13 +487,6 @@ function buildFastSourceDiagnostics(
     }
   }
   if (/\b(world cup|fifa|winner|champions league|nba|nfl|mlb|nhl|tennis)\b/i.test(task)) {
-    const hasProbabilityEvidence =
-      /\b(winner odds|odds to win|outright odds|title odds|champion odds|who will win|win probability|winning probability|tournament predictions?|opta supercomputer)\b/i.test(
-        evidenceHaystack,
-      );
-    if (!hasProbabilityEvidence) {
-      reasons.push('The retrieved sports source set lacks outright odds or probability evidence.');
-    }
     const referenceTimestamp = Date.parse(
       typeof liveData.snapshot_at === 'string' ? liveData.snapshot_at : '',
     );
