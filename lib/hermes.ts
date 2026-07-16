@@ -24,6 +24,9 @@ function resolveModel(which: 'fast' | 'deep'): string {
 type HermesCallOptions = {
   model?: 'fast' | 'deep';
   memoryContext?: string;
+  /** When true, do not load prior agent_interactions into the prompt. */
+  skipMemory?: boolean;
+  maxTokens?: number;
   walletAddress?: string;
   agentSlug?: string;
 };
@@ -75,6 +78,9 @@ export async function callHermes(
       { role: 'system', content: systemPrompt },
       { role: 'user', content: userContent },
     ],
+    ...(typeof options?.maxTokens === 'number' && options.maxTokens > 0
+      ? { max_tokens: options.maxTokens }
+      : {}),
   });
 
   return response.choices[0]?.message?.content ?? '';
@@ -142,6 +148,9 @@ export async function streamHermesToSSE(
 }
 
 async function resolveMemoryContext(options?: HermesCallOptions): Promise<string> {
+  if (options?.skipMemory) {
+    return '';
+  }
   const explicit = options?.memoryContext?.trim();
   if (explicit) {
     return explicit;

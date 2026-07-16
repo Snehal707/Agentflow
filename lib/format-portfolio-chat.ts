@@ -193,12 +193,72 @@ export function formatPortfolioSnapshotRecordsForChat(
   return result;
 }
 
+/**
+ * Hermes sometimes returns the whole JSON envelope as `report`, or leaves
+ * the chat formatter with a raw `{"report":"..."}` blob. Unwrap to markdown.
+ */
+export function normalizePortfolioReportText(report: string): string {
+  let current = report.trim();
+  if (!current) {
+    return '';
+  }
+
+  for (let depth = 0; depth < 3; depth += 1) {
+    if (!current.startsWith('{')) {
+      break;
+    }
+    try {
+      const parsed = JSON.parse(current) as unknown;
+      if (!parsed || typeof parsed !== 'object') {
+        break;
+      }
+      const nested = (parsed as Record<string, unknown>).report;
+      if (typeof nested === 'string' && nested.trim()) {
+        current = nested.trim();
+        continue;
+      }
+      break;
+    } catch {
+      const extracted = extractReportFieldFromLooseJson(current);
+      if (extracted && extracted !== current) {
+        current = extracted;
+        continue;
+      }
+      break;
+    }
+  }
+
+  return current;
+}
+
+function extractReportFieldFromLooseJson(source: string): string | null {
+  const match = source.match(/"report"\s*:\s*"((?:\\.|[^"\\])*)"/);
+  if (!match?.[1]) {
+    return null;
+  }
+  try {
+    return JSON.parse(`"${match[1]}"`) as string;
+  } catch {
+    return match[1]
+      .replace(/\\"/g, '"')
+      .replace(/\\n/g, '\n')
+      .replace(/\\r/g, '\r')
+      .replace(/\\t/g, '\t')
+      .replace(/\\\\/g, '\\')
+      .trim();
+  }
+}
+
 function formatPortfolioAnalysis(report: string): string {
-  const trimmed = report.trim();
+  const trimmed = normalizePortfolioReportText(report);
   const substantiveText = trimmed
     .replace(/^#{1,6}\s+.*$/gm, '')
     .replace(/[-*_`\s]/g, '');
   if (!substantiveText) {
+    return '';
+  }
+  // Still looks like a JSON envelope — do not dump it into chat.
+  if (trimmed.startsWith('{') && /"report"\s*:/.test(trimmed)) {
     return '';
   }
   return /^#{1,6}\s+\S/m.test(trimmed)

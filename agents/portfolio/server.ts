@@ -144,11 +144,13 @@ app.post(
       executionTarget === 'DCW'
         ? [normalizedAuthWallet, normalizedExecutionWallet]
         : [portfolioWalletAddress];
+    const runStartedAt = Date.now();
     const snapshot = await buildPortfolioSnapshot(portfolioWalletAddress, {
       gatewayDepositors,
     });
     const responseStyle = String(req.body?.responseStyle || '').trim().toLowerCase();
     if (responseStyle === 'concise_post_action') {
+      console.log('[portfolio] run_ms', Date.now() - runStartedAt, 'style', responseStyle);
       return res.json({
         success: true,
         holdings: snapshot.holdings,
@@ -163,6 +165,7 @@ app.post(
       walletAddress: auth.walletAddress,
       agentSlug: 'portfolio',
     });
+    console.log('[portfolio] run_ms', Date.now() - runStartedAt, 'style', 'full');
 
     return res.json({
       success: true,

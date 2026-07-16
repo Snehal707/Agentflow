@@ -10,7 +10,10 @@ import {
 } from 'viem';
 import { arcTestnet } from 'viem/chains';
 import { fetchGatewayBalancesForDepositors } from '../../lib/gateway-balance';
-import { formatPortfolioSnapshotRecordsForChat } from '../../lib/format-portfolio-chat';
+import {
+  formatPortfolioSnapshotRecordsForChat,
+  normalizePortfolioReportText,
+} from '../../lib/format-portfolio-chat';
 import {
   getUserPositionsAcrossProviders,
   previewRedeem,
@@ -292,25 +295,25 @@ type GatewayBalanceResult = {
   note: string;
 };
 
+const PORTFOLIO_ASSESSMENT_TIMEOUT_MS = Math.max(
+  15_000,
+  Number(process.env.PORTFOLIO_ASSESSMENT_TIMEOUT_MS || 45_000) || 45_000,
+);
+
 const PORTFOLIO_REPORT_PROMPT = `You are AgentFlow's portfolio analyst.
-Return strict JSON with this exact schema:
+Return strict JSON only (no markdown fences) with this exact schema:
 {"report":string,"riskScore":number,"recommendations":[string],"notes":[string]}
 
 Rules:
-- The report must be markdown.
-- Be concise and specific.
+- report is short markdown: at most 220 words, 4-6 short sections max.
+- No emojis. No methodology dump. No wallet addresses.
 - Use exact wallet values from the input.
-- Do not include full wallet addresses or labels like "Wallet scanned".
-- Do not include raw "Risk score: N" lines; express risk in plain English instead.
-- Do not include a methodology section unless the user explicitly asked for technical methodology.
-- Explain that Arc Testnet balances are read with standard JSON-RPC/eth_call plus Arcscan/Gateway data; do not claim Alchemy Token API is required.
-- Mention meaningful DeFi positions like vault shares, swap liquidity, and gateway balances when present.
-- Only describe Gateway balances as estimated when diagnostics.gatewayBalance.source is "transfer_estimate".
-- Recommendations must be user-facing portfolio guidance, not developer workflow advice.
-- Do not recommend testing, simulation, documenting gas patterns, stress tests, or checking network conditions.
-- If the wallet is mostly stablecoins, explain that very small PnL changes usually come from swap fees, transfers, and rounding rather than market volatility.
-- recommendations must be 2 to 4 actionable strings.
-- notes must be 1 to 4 caveats or assumptions.`;
+- Mention vault shares, swap liquidity, gateway, and prediction markets only when present.
+- Only call Gateway estimated when gatewayBalanceSource is "transfer_estimate".
+- If mostly stablecoins, say small PnL moves are usually fees/transfers/rounding.
+- recommendations: 2-3 actionable user-facing strings.
+- notes: 1-3 short caveats.
+- riskScore: 0-100 integer.`;
 
 export async function buildPortfolioSnapshot(
   walletAddress: string,
@@ -327,37 +330,46 @@ export async function buildPortfolioSnapshot(
     transport: http(alchemyRpcUrl),
   });
 
+  const snapshotStartedAt = Date.now();
   const [arcData, explorerBalances, transactions, transferHistory] = await Promise.all([
     checkArcDataAvailability(alchemyRpcUrl),
     fetchExplorerTokenBalances(normalizedWallet),
     fetchExplorerTransactions(normalizedWallet, 12),
-    fetchExplorerTokenTransfers(normalizedWallet, 120),
+    fetchExplorerTokenTransfers(normalizedWallet, 80),
   ]);
 
-  const priceMap = await buildTokenPriceMap(normalizedWallet, explorerBalances);
-  const gatewayBalance = await resolveGatewayBalance(
-    normalizedWallet,
-    transferHistory,
-    options.gatewayDepositors,
-  );
-  const holdings = await buildHoldings({
-    client,
-    walletAddress: normalizedWallet,
-    explorerBalances,
-    priceMap,
-  });
+  const [priceMap, gatewayBalance] = await Promise.all([
+    buildTokenPriceMap(normalizedWallet, explorerBalances),
+    resolveGatewayBalance(normalizedWallet, transferHistory, options.gatewayDepositors),
+  ]);
 
   const positionCosts = calculatePositionCostBasis(normalizedWallet, transferHistory);
-  const positions = await buildPositions({
-    client,
-    walletAddress: normalizedWallet,
-    priceMap,
-    transferHistory,
-    gatewayBalance,
-    positionCosts,
-  });
-  const predictionMarketPositions = await buildPredictionMarketPortfolioPositions(normalizedWallet);
-  positions.push(...predictionMarketPositions);
+  const [holdings, corePositions, predictionMarketPositions] = await Promise.all([
+    buildHoldings({
+      client,
+      walletAddress: normalizedWallet,
+      explorerBalances,
+      priceMap,
+    }),
+    buildPositions({
+      client,
+      walletAddress: normalizedWallet,
+      priceMap,
+      transferHistory,
+      gatewayBalance,
+      positionCosts,
+    }),
+    buildPredictionMarketPortfolioPositions(normalizedWallet),
+  ]);
+  const positions = [...corePositions, ...predictionMarketPositions];
+  console.log(
+    '[portfolio] snapshot_ms',
+    Date.now() - snapshotStartedAt,
+    'holdings',
+    holdings.length,
+    'positions',
+    positions.length,
+  );
 
   const currentValueUsd = roundUsd(
     holdings.reduce((sum, item) => sum + (item.usdValue ?? 0), 0) +
@@ -426,29 +438,127 @@ export async function buildPortfolioSnapshot(
   };
 }
 
+function buildCompactAssessmentPromptInput(snapshot: PortfolioSnapshot): Record<string, unknown> {
+  return {
+    holdings: snapshot.holdings.map((holding) => ({
+      kind: holding.kind,
+      symbol: holding.symbol,
+      name: holding.name,
+      balanceFormatted: holding.balanceFormatted,
+      usdValue: holding.usdValue,
+    })),
+    positions: snapshot.positions.map((position) => ({
+      kind: position.kind,
+      name: position.name,
+      protocol: position.protocol,
+      amountFormatted: position.amountFormatted,
+      usdValue: position.usdValue,
+      costBasisUsd: position.costBasisUsd,
+      pnlUsd: position.pnlUsd,
+      stage: position.stage,
+      canRedeem: position.canRedeem,
+      canRefund: position.canRefund,
+    })),
+    pnl: snapshot.pnlSummary,
+    recentTransactions: snapshot.recentTransactions.slice(0, 5).map((tx) => ({
+      method: tx.method,
+      status: tx.status,
+      timestamp: tx.timestamp,
+    })),
+    gatewayBalanceSource: snapshot.diagnostics.gatewayBalance.source,
+  };
+}
+
+function buildFallbackPortfolioAssessment(snapshot: PortfolioSnapshot): PortfolioAssessment {
+  const pnl = snapshot.pnlSummary;
+  const gatewayEstimated = snapshot.diagnostics.gatewayBalance.source === 'transfer_estimate';
+  const report = [
+    '# Portfolio Analysis',
+    '',
+    '## Overview',
+    `Marked value $${roundUsd(pnl.currentValueUsd)} with unrealized PnL $${roundUsd(pnl.pnlUsd)} (${roundUsd(pnl.pnlPct)}%).`,
+    '',
+    '## Notes',
+    gatewayEstimated
+      ? '- Gateway reserve is estimated from transfer history.'
+      : '- Gateway reserve uses the live Gateway balance when available.',
+    '- Prediction-market PnL stays incomplete until markets resolve.',
+  ].join('\n');
+  return {
+    report,
+    riskScore: 35,
+    recommendations: [
+      'Review active prediction-market positions before resolution.',
+      'Keep vault and gateway balances aligned with your near-term spend needs.',
+    ],
+    notes: ['Deep analysis timed out; returned a compact fallback from live holdings.'],
+  };
+}
+
 export async function generatePortfolioAssessment(
   snapshot: PortfolioSnapshot,
   context?: { walletAddress?: string; agentSlug?: string },
 ): Promise<PortfolioAssessment> {
-  const { alchemyEnhanced: _legacyAlchemyEnhanced, ...diagnosticsForPrompt } = snapshot.diagnostics;
-  const promptSnapshot = {
-    ...snapshot,
-    diagnostics: diagnosticsForPrompt,
-  };
+  const promptInput = buildCompactAssessmentPromptInput(snapshot);
+  const promptChars = JSON.stringify(promptInput).length;
+  const assessmentStartedAt = Date.now();
 
-  const response = await callHermesDeep(
+  const hermesCall = callHermesDeep(
     PORTFOLIO_REPORT_PROMPT,
-    JSON.stringify(promptSnapshot),
+    JSON.stringify(promptInput),
     {
+      // Assessment is snapshot-grounded; prior chat turns bloat 405B latency.
+      skipMemory: true,
+      maxTokens: 900,
       walletAddress: context?.walletAddress,
       agentSlug: context?.agentSlug ?? 'portfolio',
     },
   );
 
+  let response: string;
+  try {
+    response = await Promise.race([
+      hermesCall,
+      new Promise<string>((_, reject) => {
+        setTimeout(() => {
+          reject(new Error(`portfolio_assessment_timeout_${PORTFOLIO_ASSESSMENT_TIMEOUT_MS}ms`));
+        }, PORTFOLIO_ASSESSMENT_TIMEOUT_MS);
+      }),
+    ]);
+  } catch (error) {
+    // Prevent a late Hermes rejection from becoming an unhandled rejection after timeout.
+    void hermesCall.catch(() => undefined);
+    console.warn(
+      '[portfolio] assessment_ms',
+      Date.now() - assessmentStartedAt,
+      'prompt_chars',
+      promptChars,
+      'error',
+      toMessage(error),
+    );
+    if (/portfolio_assessment_timeout_/i.test(toMessage(error))) {
+      return buildFallbackPortfolioAssessment(snapshot);
+    }
+    throw error;
+  }
+
+  console.log(
+    '[portfolio] assessment_ms',
+    Date.now() - assessmentStartedAt,
+    'prompt_chars',
+    promptChars,
+    'response_chars',
+    response.length,
+  );
+
   try {
     const parsed = parsePortfolioAssessmentJson(response);
+    const reportText =
+      typeof parsed.report === 'string' && parsed.report.trim()
+        ? normalizePortfolioReportText(parsed.report)
+        : normalizePortfolioReportText(response);
     return {
-      report: typeof parsed.report === 'string' ? parsed.report : response,
+      report: reportText || normalizePortfolioReportText(response) || response.trim(),
       riskScore: clampRiskScore(parsed.riskScore),
       recommendations: Array.isArray(parsed.recommendations)
         ? parsed.recommendations.map((item) => String(item))
@@ -456,11 +566,20 @@ export async function generatePortfolioAssessment(
       notes: Array.isArray(parsed.notes) ? parsed.notes.map((item) => String(item)) : [],
     };
   } catch {
+    const loose = extractPortfolioAssessmentFields(response);
+    const reportText =
+      typeof loose.report === 'string' && loose.report.trim()
+        ? normalizePortfolioReportText(loose.report)
+        : normalizePortfolioReportText(response);
     return {
-      report: response,
-      riskScore: 50,
-      recommendations: [],
-      notes: ['Hermes response was not strict JSON; raw report returned instead.'],
+      report: reportText || response.trim(),
+      riskScore: clampRiskScore(loose.riskScore),
+      recommendations: Array.isArray(loose.recommendations)
+        ? loose.recommendations.map((item) => String(item))
+        : [],
+      notes: Array.isArray(loose.notes)
+        ? loose.notes.map((item) => String(item))
+        : ['Hermes response was not strict JSON; recovered report text when possible.'],
     };
   }
 }
@@ -615,9 +734,9 @@ function isPortfolioAssessmentShape(value: unknown): value is Partial<PortfolioA
 function extractPortfolioAssessmentFields(candidate: string): Partial<PortfolioAssessment> {
   const result: Partial<PortfolioAssessment> = {};
 
-  const reportMatch = candidate.match(
-    /"report"\s*:\s*"([\s\S]*?)"\s*,\s*"riskScore"/i,
-  );
+  const reportMatch =
+    candidate.match(/"report"\s*:\s*"((?:\\.|[^"\\])*)"\s*,\s*"riskScore"/i) ||
+    candidate.match(/"report"\s*:\s*"((?:\\.|[^"\\])*)"/i);
   if (reportMatch?.[1]) {
     result.report = decodeJsonLikeString(reportMatch[1]).trim();
   }
@@ -793,30 +912,32 @@ async function estimatePredictionMarketUsdValue(
       return null;
     }
 
-    let totalProceedsUsd = 0;
-    let hasPreview = false;
-
-    for (let index = 0; index < position.outcomes.length; index++) {
-      const outcome = position.outcomes[index];
-      const sharesRaw = outcome ? BigInt(outcome.sharesRaw) : 0n;
-      if (sharesRaw <= 0n) {
-        continue;
-      }
-      const preview = await previewSell(
-        position.provider,
-        position.market.address,
-        index,
-        sharesRaw,
-        0,
-      );
-      const proceeds = Number(preview.proceedsRaw) / 1e18;
-      if (Number.isFinite(proceeds)) {
-        totalProceedsUsd += proceeds;
-        hasPreview = true;
-      }
+    const sellPreviews = await Promise.all(
+      position.outcomes.map(async (outcome, index) => {
+        const sharesRaw = outcome ? BigInt(outcome.sharesRaw || '0') : 0n;
+        if (sharesRaw <= 0n) {
+          return null;
+        }
+        try {
+          const preview = await previewSell(
+            position.provider,
+            position.market.address,
+            index,
+            sharesRaw,
+            0,
+          );
+          const proceeds = Number(preview.proceedsRaw) / 1e18;
+          return Number.isFinite(proceeds) ? proceeds : null;
+        } catch {
+          return null;
+        }
+      }),
+    );
+    const proceeds = sellPreviews.filter((value): value is number => value !== null);
+    if (!proceeds.length) {
+      return null;
     }
-
-    return hasPreview ? roundUsd(totalProceedsUsd) : null;
+    return roundUsd(proceeds.reduce((sum, value) => sum + value, 0));
   } catch (error) {
     console.warn(
       '[portfolio] prediction market valuation unavailable:',
