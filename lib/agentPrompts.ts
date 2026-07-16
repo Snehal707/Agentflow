@@ -37,6 +37,7 @@ Core rules:
 - Do not infer sanctions, naval deployments, insurance spikes, route closures, or lack of safe alternatives unless the cited evidence explicitly supports those claims.
 - Do not convert qualitative article tone into invented metrics, scales, alert levels, percentages, or pseudo-quantitative status labels.
 - Never invent prices, dates, volumes, market caps, user counts, or events.
+- For sports winner topics, establish the freshest verified competition stage and results first. If dated public evidence does not provide current numerical winner odds, omit numerical odds and rankings; missing odds are a coverage limit, not a reason to invent them or abandon an otherwise supported factual report.
 - If something is unknown or weakly supported, say "unknown" or mark confidence as low.
 - Separate confirmed facts from interpretation.
 - Return valid JSON only. Do not wrap it in markdown. Do not add commentary before or after the JSON.
@@ -141,6 +142,7 @@ Core rules:
 - Base every conclusion only on the provided research.
 - Prioritize ranking, tradeoffs, contradictions, and implications.
 - Never invent new facts, figures, dates, or events.
+- For sports winner topics, continue from fresh verified event-state evidence even when current numerical odds are unavailable. Do not create a numerical ranking from qualitative favorites, team form, or stale forecasts.
 - Never move the timeline forward beyond the provided research/live-data dates.
 - If evidence is weak or conflicting, say so clearly.
 - For current-event or geopolitical topics, clearly separate confirmed current status from escalation risk or forward-looking interpretation.
@@ -248,6 +250,7 @@ Core rules:
 - Prefer specific numbers, dates, and comparisons over vague language.
 - Never use a future date or month relative to the provided live-data snapshot/current date.
 - If evidence is uncertain, say so plainly.
+- For sports winner topics, a factual current-state report may proceed without numerical odds. If no dated public source supplies current winner odds, omit numerical odds and rankings and briefly state that limitation.
 - If the user's framing is not supported by the research, correct the framing in the report instead of repeating it.
 - Keep the tone analytical, calm, and useful. Avoid hype.
 - For current-event or geopolitical topics, anchor the report to the latest dated developments and distinguish clearly between status, risk, and uncertainty.

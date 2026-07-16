@@ -16764,7 +16764,7 @@ function createPublicApp(): express.Express {
         if (!evidenceAssessment.ok) {
           throw new Error(
             `Live retrieval did not establish decision-grade evidence: ${evidenceAssessment.issues.join(' ')} ` +
-              'The report stopped before the Analyst and Writer stages to avoid charging for an inadequately sourced result. Please retry after retrieval recovers or use deep research.',
+              'The report stopped before the Analyst and Writer stages to avoid charging for an inadequately sourced result. Please retry after live retrieval recovers.',
           );
         }
       }

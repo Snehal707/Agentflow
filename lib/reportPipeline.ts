@@ -3184,6 +3184,36 @@ function freshSportsStateSources(
   });
 }
 
+function sportsWinnerNumericEvidenceSignal(value: string): boolean {
+  const hasWinnerContext =
+    /\b(winner odds|odds to win|outright odds|title odds|champion odds|who will win|win probability|winning probability|chance (?:of winning|to win)|tournament predictions?|opta supercomputer)\b/i.test(
+      value,
+    ) ||
+    /\b(?:winner|champion|title|tournament)\b[^.\n]{0,100}\b(?:odds|probability|probabilities|prediction|predictions|favorite|favourite)\b/i.test(
+      value,
+    );
+  const hasNumericOdds =
+    /\b\d+(?:\.\d+)?\s*%(?![0-9a-f]{2})|\b[+-]\d{2,4}\b|\b\d+(?:\.\d+)?\/\d+(?:\.\d+)?\b|\b\d+(?:\.\d+)?\s*(?:to|:)\s*1\b/i.test(
+      value,
+    );
+  return hasWinnerContext && hasNumericOdds;
+}
+
+function hasSourceBackedSportsWinnerNumericEvidence(
+  sources: NormalizedReportSource[],
+): boolean {
+  return sources.some((source) => {
+    // URLs contain dates, IDs, and percent-encoded spaces; none are evidence.
+    // Only visible source titles/snippets may support a numeric winner claim.
+    return sportsWinnerNumericEvidenceSignal(`${source.name} ${source.usedFor || ''}`);
+  });
+}
+
+function reportMakesSportsWinnerNumericClaim(markdown: string): boolean {
+  if (!markdown.trim()) return false;
+  return sportsWinnerNumericEvidenceSignal(stripUrlsForValidation(markdown));
+}
+
 function sportsTimelineConsistencyIssues(
   markdown: string,
   sources: NormalizedReportSource[],
@@ -3715,19 +3745,20 @@ function predictionMarketValidationIssues(
   }
 
   if (/\b(world cup|fifa|winner|champions league|nba|nfl|mlb|nhl|tennis)\b/i.test(task)) {
-    const hasProbabilityEvidence =
-      /\b(odds|probability|probabilities|favorite|favorites|implied)\b/i.test(sourceHaystack) ||
-      /\b(oddschecker|actionnetwork|theanalyst|foxsports|covers|draftkings|fanduel|vegasinsider|cbssports)\b/i.test(
-        sourceHaystack,
-      );
-    if (!hasProbabilityEvidence) {
-      issues.push('Sports winner market report lacks odds or probability evidence.');
-    }
     if (
       isSportsWinnerPredictionMarketReport(task) &&
       freshSportsStateSources(sources).length === 0
     ) {
       issues.push('Sports winner market report lacks fresh event-stage or result evidence.');
+    }
+    if (
+      isSportsWinnerPredictionMarketReport(task) &&
+      reportMakesSportsWinnerNumericClaim(markdown) &&
+      !hasSourceBackedSportsWinnerNumericEvidence(sources)
+    ) {
+      issues.push(
+        'Sports winner report makes numeric odds or probability claims without source-backed numeric winner evidence.',
+      );
     }
     issues.push(...sportsProbabilityLabelIssues(markdown));
     issues.push(...sportsTimelineConsistencyIssues(markdown, sources));
@@ -3904,28 +3935,6 @@ export function assessFastReportEvidence(params: {
   if (isPredictionMarket) {
     issues.push(...predictionMarketValidationIssues(params.task, '', sources));
     issues.push(...predictionMarketEntityResolutionIssues(params.task, '', params.liveData, sources));
-  }
-
-  if (isSportsWinnerMarket) {
-    const numericWinnerEvidence = sources.some((source) => {
-      // URLs contain dates, IDs, and percent-encoded spaces; none are evidence.
-      // Only visible source titles/snippets may satisfy the numeric winner gate.
-      const evidence = `${source.name} ${source.usedFor || ''}`;
-      const hasWinnerContext =
-        /\b(winner odds|odds to win|outright odds|title odds|champion odds|who will win|win probability|winning probability|tournament predictions?|opta supercomputer)\b/i.test(
-          evidence,
-        );
-      const hasNumericOdds =
-        /\b\d+(?:\.\d+)?\s*%(?![0-9a-f]{2})|\b[+-]\d{2,4}\b|\b\d+(?:\.\d+)?[-/]\d+(?:\.\d+)?\b/i.test(
-          evidence,
-        );
-      return hasWinnerContext && hasNumericOdds;
-    });
-    if (!numericWinnerEvidence) {
-      issues.push(
-        'Sports winner market research lacks source-backed numeric winner odds or probabilities.',
-      );
-    }
   }
 
   if (isBitcoinMarketCapMarket) {
@@ -4107,7 +4116,7 @@ function isBlockingValidationIssue(issue: string): boolean {
     /known homonym evidence/i.test(issue) ||
     /high-ambiguity prediction-market entity/i.test(issue) ||
     /lacks underlying gold-market evidence/i.test(issue) ||
-    /lacks odds or probability evidence/i.test(issue) ||
+    /numeric odds or probability claims without source-backed numeric winner evidence/i.test(issue) ||
     /lacks fresh event-stage or result evidence/i.test(issue) ||
     /conflates model or simulation probabilities with market probabilities/i.test(issue) ||
     /mentions internal prediction provider or platform metadata/i.test(issue) ||
@@ -4220,7 +4229,7 @@ export function finalizeReportMarkdown(params: FinalizeParams): {
       ]
     : [];
   const preservedWriterConsistencyIssues = writerValidationIssues.filter((issue) =>
-    /internal prediction provider|model or simulation probabilities|timeline contradicts fresh source evidence|promotes a forecast|duplicated percentage marker|partial outcome sum/i.test(
+    /internal prediction provider|numeric odds or probability claims without source-backed numeric winner evidence|model or simulation probabilities|timeline contradicts fresh source evidence|promotes a forecast|duplicated percentage marker|partial outcome sum/i.test(
       issue,
     ),
   );

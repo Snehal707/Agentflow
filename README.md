@@ -214,7 +214,7 @@ Current behavior on `pvt/main`:
 - Explicit research/report prompts bypass Hermes Agent and enter `/run`; this prevents the chat brain from inventing citations.
 - Live retrieval is Firecrawl + SearXNG plus deterministic enrichers and task-specific adapters. Local research memory / evidence-index paths can supplement weak live retrieval.
 - Ordinary fast research does **not** abort just because the first live retrieval pass has fewer than two source domains; Analyst/Writer/finalizer continue and the report must caveat sparse evidence.
-- Prediction-market research keeps stricter pre-Analyst evidence gates because bad sources can produce a wrong market decision. Sports winner markets need source-backed odds/probabilities; price/market-cap markets need numeric market snapshots and independent context.
+- Prediction-market research keeps stricter pre-Analyst evidence gates because bad sources can produce a wrong market decision. Sports winner topics need fresh, source-backed event-stage or result evidence; numerical rankings are optional and are allowed only when visible source evidence supplies the odds/probabilities. Price/market-cap markets still need numeric market snapshots and independent context.
 - Final Sources are rebuilt from grounded live/research evidence, not copied blindly from writer markdown. The finalizer filters low-value/circular/tooling sources, validates dates/domains, repairs where possible, and may omit unsupported citations.
 - Timeout/retry protection prevents Firecrawl or x402 retry storms from blocking the stack; failed retrieval paths should degrade through the remaining layers instead of spinning forever.
 
