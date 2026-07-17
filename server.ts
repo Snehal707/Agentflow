@@ -50,7 +50,12 @@ import {
   loadPendingAction,
   takeRecentExecutionMeta,
 } from './lib/tool-executor';
-import { detectForecastingIntent, fetchLiveData, shouldGatherCurrentEvents } from './lib/live-data';
+import {
+  detectForecastingIntent,
+  fetchFocusedCryptoMarketSnapshot,
+  fetchLiveData,
+  shouldGatherCurrentEvents,
+} from './lib/live-data';
 import {
   detectPortfolioImpactIntent,
   parseResearchRequest,
@@ -16769,10 +16774,10 @@ function createPublicApp(): express.Express {
       });
       pushPipelineTimingTrace(pipelineTimingTrace, timingTraceStart, 'after_research_debug_write_kicked_off');
       pushPipelineTimingTrace(pipelineTimingTrace, timingTraceStart, 'before_live_data_source_summary');
-      const parsedLiveData = researchResult.data.liveData ?? null;
-      const actualSources = summarizeLiveDataSourceNames(parsedLiveData, task);
+      let parsedLiveData = researchResult.data.liveData ?? null;
+      let actualSources = summarizeLiveDataSourceNames(parsedLiveData, task);
       if (reasoningMode === 'fast') {
-        const evidenceAssessment = assessFastReportEvidence({
+        let evidenceAssessment = assessFastReportEvidence({
           task,
           // The payment gate must evaluate raw retrieval only. The Research LLM's
           // draft source list can be incomplete or malformed and must not displace
@@ -16780,6 +16785,34 @@ function createPublicApp(): express.Express {
           research: null,
           liveData: parsedLiveData,
         });
+        const needsFocusedCryptoRefresh = evidenceAssessment.issues.some((issue) =>
+          /lacks a current numeric price and market-cap snapshot/i.test(issue),
+        );
+        if (!evidenceAssessment.ok && needsFocusedCryptoRefresh) {
+          sendEvent({
+            delta: 'Refreshing the current crypto price and market-cap snapshot before evidence review.\n',
+          });
+          const focusedSnapshot = await withTimeout(
+            fetchFocusedCryptoMarketSnapshot(task),
+            15_000,
+            'Focused crypto market snapshot timed out after 15s',
+          ).catch((error) => {
+            console.warn('[pipeline] focused crypto market refresh failed:', getErrorMessage(error));
+            return null;
+          });
+          if (focusedSnapshot) {
+            parsedLiveData = {
+              ...(parsedLiveData ?? {}),
+              ...focusedSnapshot,
+            };
+            actualSources = summarizeLiveDataSourceNames(parsedLiveData, task);
+            evidenceAssessment = assessFastReportEvidence({
+              task,
+              research: null,
+              liveData: parsedLiveData,
+            });
+          }
+        }
         if (!evidenceAssessment.ok) {
           throw new Error(
             `Live retrieval did not establish decision-grade evidence: ${evidenceAssessment.issues.join(' ')} ` +
