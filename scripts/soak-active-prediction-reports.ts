@@ -50,9 +50,12 @@ function marketAssertions(market: MarketSummary, markdown: string): string[] {
     if (/\b(?:hacker|hacking)\b[^.\n]{0,100}\b(?:prison|sentenced|hospital|custody|jail)\b/i.test(markdown)) {
       failures.push('Hacker custody news leaked into the GTA launch report.');
     }
-    if (/\b(?:release|launch)(?:d|es|ing)?\b[^.\n]{0,50}\bNovember\s+30,?\s+2026\b/i.test(markdown) && !/does not satisfy a strict [“"]before November 30, 2026[”"] condition/i.test(markdown)) {
+    const gtaBody = markdown.replace(/^#\s+.*$/m, '');
+    if (/\b(?:release|launch)(?:d|es|ing)?(?:\s+date)?\s+(?:(?:is|was|set|scheduled|planned)\s+)?(?:for\s+|on\s+)?November\s+30,?\s+2026\b/i.test(gtaBody) && !/does not satisfy a strict [“"]before November 30, 2026[”"] condition/i.test(gtaBody)) {
       failures.push('GTA report does not apply strict before-deadline semantics to a cutoff-day launch.');
     }
+    const deadlineSemanticsLines = gtaBody.match(/^The stated .+? (?:launch date|cutoff)[^.]*\.$/gim) || [];
+    if (deadlineSemanticsLines.length > 1) failures.push('GTA deadline semantics sentence was duplicated.');
   }
   if (/bitcoin/i.test(market.title)) {
     if (!/bitcoin|\bbtc\b/i.test(markdown) || !/market cap|market capitalization|\$?2\s*trillion/i.test(markdown)) {
