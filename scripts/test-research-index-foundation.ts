@@ -7,12 +7,14 @@ import {
 } from '../lib/portfolio-impact-intent';
 import {
   indexFastResearchEvidence,
+  mergeLocalEvidenceIntoLiveData,
   searchLocalEvidence,
   type EvidenceDocument,
 } from '../lib/local-evidence-index';
 import { buildResearchQueries } from '../agents/research/queryGen';
 import { retrieveSources } from '../agents/research/retriever';
 import { enforceRetrievedSourceUrls } from '../agents/research/synthesizer';
+import { assessFastReportEvidence } from '../lib/reportPipeline';
 import {
   deriveAllowedEntities,
   hasNamedEntityAndStrongNarrowingSignal,
@@ -184,6 +186,87 @@ try {
 
   const hits = await searchLocalEvidence('example topic', { limit: 5 });
   assert.deepEqual(hits.map((hit) => hit.id), ['fresh'], 'expired evidence must not be reused');
+
+  const expiredButFreshSportsResult: EvidenceDocument = {
+    ...fresh,
+    id: 'world-cup-finalists',
+    canonical_url: 'https://www.fifa.com/world-cup/finalists',
+    url: 'https://www.fifa.com/world-cup/finalists',
+    domain: 'fifa.com',
+    title: 'Spain and Argentina advance to the World Cup final',
+    publisher: 'FIFA',
+    content: 'Spain defeated France and Argentina beat England to book their places in the final.',
+    reliability: 'high',
+    authority: 9,
+    published_at: new Date(now - 36 * 60 * 60 * 1_000).toISOString(),
+    expires_at: new Date(now - 60_000).toISOString(),
+  };
+  const expiredAndStaleSportsResult: EvidenceDocument = {
+    ...expiredButFreshSportsResult,
+    id: 'old-world-cup-result',
+    canonical_url: 'https://www.fifa.com/world-cup/old-result',
+    url: 'https://www.fifa.com/world-cup/old-result',
+    title: 'Old World Cup semifinal result',
+    published_at: new Date(now - 4 * 24 * 60 * 60 * 1_000).toISOString(),
+  };
+  const expiredButFreshAnalystResult: EvidenceDocument = {
+    ...expiredButFreshSportsResult,
+    id: 'world-cup-analyst-final',
+    canonical_url: 'https://theanalyst.com/world-cup/final',
+    url: 'https://theanalyst.com/world-cup/final',
+    domain: 'theanalyst.com',
+    title: 'England 1-2 Argentina sets up World Cup final against Spain',
+    publisher: 'The Analyst',
+    content: 'Argentina beat England 2-1 and advanced to the final against Spain.',
+  };
+  const expiredButFreshOddsUpdate: EvidenceDocument = {
+    ...expiredButFreshSportsResult,
+    id: 'world-cup-final-odds',
+    canonical_url: 'https://www.foxsports.com/world-cup/final-odds',
+    url: 'https://www.foxsports.com/world-cup/final-odds',
+    domain: 'foxsports.com',
+    title: 'World Cup title odds: Spain favored over Argentina in final',
+    publisher: 'Fox Sports',
+    content: 'A dated final-stage odds update lists Spain as favored over Argentina.',
+    reliability: 'medium',
+    authority: 6,
+  };
+  searchHits = [
+    expiredButFreshSportsResult,
+    expiredButFreshAnalystResult,
+    expiredButFreshOddsUpdate,
+    expiredAndStaleSportsResult,
+  ];
+  const sportsTask = [
+    'Research the prediction market topic: Who Will Win the FIFA World Cup 2026?',
+    'Prediction market category in AgentFlow: Sports.',
+  ].join('\n');
+  const sportsFailoverLiveData = await mergeLocalEvidenceIntoLiveData(
+    sportsTask,
+    { dynamic_sources: { articles: [] } },
+  );
+  const failoverArticles = (
+    (sportsFailoverLiveData?.dynamic_sources as { articles?: EvidenceDocument[] })?.articles ?? []
+  );
+  assert.deepEqual(
+    failoverArticles.map((article) => article.title),
+    [
+      'Spain and Argentina advance to the World Cup final',
+      'England 1-2 Argentina sets up World Cup final against Spain',
+      'World Cup title odds: Spain favored over Argentina in final',
+    ],
+    'an expired cache entry may be reused only while its dated sports result remains inside the gate freshness window',
+  );
+  const cachedSportsAssessment = assessFastReportEvidence({
+    task: sportsTask,
+    research: null,
+    liveData: sportsFailoverLiveData,
+  });
+  assert.equal(
+    cachedSportsAssessment.ok,
+    true,
+    `expected cached, still-fresh sports results to clear the pre-Analyst gate: ${cachedSportsAssessment.issues.join('; ')}`,
+  );
 
   const indexed = await indexFastResearchEvidence('latest example topic', {
     dynamic_sources: {

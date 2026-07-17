@@ -940,6 +940,8 @@ function buildLiveDataSourceGrounding(
     const articleText = [
       asString(article?.title),
       asString(article?.summary),
+      asString(article?.snippet),
+      asString(article?.description),
       asString(article?.publisher),
       asString(article?.url),
     ]
@@ -953,11 +955,22 @@ function buildLiveDataSourceGrounding(
     pushGroundedSource(grounding, task, {
       name: asString(article?.publisher) ?? asString(article?.title) ?? 'Dynamic source',
       usedFor:
-        [asString(article?.title), asString(article?.summary)].filter(Boolean).join('; ') ||
+        [
+          asString(article?.title),
+          asString(article?.summary) ?? asString(article?.snippet) ?? asString(article?.description),
+        ].filter(Boolean).join('; ') ||
         'Live Data article snapshot',
       url,
       trustedLiveData: true,
-      ...(asString(article?.seen_at) ? { publishedAt: asString(article?.seen_at)! } : {}),
+      ...(asString(article?.seen_at) ?? asString(article?.published_at) ?? asString(article?.date)
+        ? {
+            publishedAt: (
+              asString(article?.seen_at) ??
+              asString(article?.published_at) ??
+              asString(article?.date)
+            )!,
+          }
+        : {}),
       ...(snapshotAt ? { accessedAt: snapshotAt } : {}),
     });
   }

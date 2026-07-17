@@ -288,11 +288,35 @@ export async function mergeLocalEvidenceIntoLiveData(
   liveData: Record<string, unknown> | null,
 ): Promise<Record<string, unknown> | null> {
   if (!isLocalEvidenceIndexEnabled() || !task.trim()) return liveData;
-  const hits = await searchLocalEvidence(task, { limit: 8 }).catch((error) => {
+  const isSportsWinnerTask =
+    /\b(world cup|fifa|champions league|nba|nfl|mlb|nhl|tennis)\b/i.test(task) &&
+    /\b(win|winner|champion|title|world cup)\b/i.test(task);
+  const sportsStateSignal = (value: string) =>
+    /\b(match report|latest results?|semi[- ]?final results?|finalists?|final|advanced to (?:the )?final|booked (?:a|their) place in (?:the )?final|qualified|eliminated|beat|defeated|lost to|fixtures?|bracket|standings)\b/i.test(
+      value,
+    );
+  const hits = await searchLocalEvidence(task, {
+    limit: isSportsWinnerTask ? 20 : 8,
+    // A fast sports run can outlive the generic 12-hour cache TTL while the
+    // source itself is still inside the stricter 2.25-day event-state window.
+    // Inspect those documents below instead of discarding them blindly.
+    includeExpired: isSportsWinnerTask,
+  }).catch((error) => {
     console.warn('[research-index] local lookup skipped:', error instanceof Error ? error.message : String(error));
     return [];
   });
-  if (!hits.length) return liveData;
+  const now = Date.now();
+  const reusableHits = hits.filter((hit) => {
+    const expiresAt = Date.parse(hit.expires_at);
+    if (!Number.isFinite(expiresAt) || expiresAt > now) return true;
+    if (!isSportsWinnerTask || hit.reliability === 'low') return false;
+    const publishedAt = Date.parse(hit.published_at || '');
+    if (!Number.isFinite(publishedAt)) return false;
+    const ageDays = (now - publishedAt) / 86_400_000;
+    if (ageDays < -0.5 || ageDays > 2.25) return false;
+    return sportsStateSignal(`${hit.title} ${hit.content}`);
+  });
+  if (!reusableHits.length) return liveData;
 
   const base = liveData ?? {};
   const dynamic = objectValue(base.dynamic_sources) ?? {};
@@ -303,24 +327,70 @@ export async function mergeLocalEvidenceIntoLiveData(
       .filter(Boolean)
       .map(canonicalizeUrl),
   );
-  const localArticles = hits
+  const reusableByUrl = new Map(
+    reusableHits.map((hit) => [canonicalizeUrl(hit.url), hit] as const),
+  );
+  const enrichedExisting = existing.map((raw) => {
+    if (!raw || typeof raw !== 'object') return raw;
+    const item = raw as Record<string, unknown>;
+    const url = stringValue(item.url);
+    const hit = url ? reusableByUrl.get(canonicalizeUrl(url)) : undefined;
+    if (!hit) return raw;
+    return {
+      ...item,
+      title: stringValue(item.title) || hit.title,
+      publisher: stringValue(item.publisher) || hit.publisher || hit.domain,
+      snippet:
+        stringValue(item.snippet) ||
+        stringValue(item.summary) ||
+        stringValue(item.description) ||
+        hit.content.slice(0, 1_200),
+      summary:
+        stringValue(item.summary) ||
+        stringValue(item.snippet) ||
+        stringValue(item.description) ||
+        hit.content.slice(0, 1_200),
+      published_at:
+        stringValue(item.published_at) ||
+        stringValue(item.seen_at) ||
+        hit.published_at,
+      seen_at:
+        stringValue(item.seen_at) ||
+        stringValue(item.published_at) ||
+        hit.published_at,
+      retrieval_provider:
+        stringValue(item.retrieval_provider) || 'local_evidence_index',
+    };
+  });
+  const localArticles = reusableHits
     .filter((hit) => !existingUrls.has(canonicalizeUrl(hit.url)))
-    .map((hit) => ({
-      title: hit.title,
-      publisher: hit.publisher || hit.domain,
-      url: hit.url,
-      snippet: hit.content.slice(0, 1_200),
-      published_at: hit.published_at,
-      fetched_at: hit.fetched_at,
-      retrieval_provider: 'local_evidence_index',
-      evidence_fresh_until: hit.expires_at,
-    }));
+    .map((hit) => {
+      const publishedAt = Date.parse(hit.published_at || '');
+      const sportsFreshUntil = Number.isFinite(publishedAt)
+        ? new Date(publishedAt + 2.25 * 86_400_000).toISOString()
+        : hit.expires_at;
+      return {
+        title: hit.title,
+        publisher: hit.publisher || hit.domain,
+        url: hit.url,
+        snippet: hit.content.slice(0, 1_200),
+        summary: hit.content.slice(0, 1_200),
+        published_at: hit.published_at,
+        seen_at: hit.published_at,
+        fetched_at: hit.fetched_at,
+        retrieval_provider: 'local_evidence_index',
+        evidence_fresh_until:
+          isSportsWinnerTask && sportsStateSignal(`${hit.title} ${hit.content}`)
+            ? sportsFreshUntil
+            : hit.expires_at,
+      };
+    });
 
   return {
     ...base,
     dynamic_sources: {
       ...dynamic,
-      articles: [...existing, ...localArticles].slice(0, 30),
+      articles: [...enrichedExisting, ...localArticles].slice(0, 30),
       local_evidence_count: localArticles.length,
     },
   };
@@ -383,6 +453,15 @@ function inferTtlMs(
   publishedAt: string | null,
   sensitivity?: ResearchBrief['time_sensitivity'],
 ): number {
+  if (
+    /\b(world cup|fifa|champions league|nba|nfl|mlb|nhl|tennis)\b/i.test(task) &&
+    /\b(win|winner|champion|title|world cup)\b/i.test(task)
+  ) {
+    // Align cached sports event evidence with the report gate's freshness
+    // window so a transient search outage does not erase a still-current
+    // verified bracket/result source.
+    return 2.25 * 24 * 60 * 60 * 1_000;
+  }
   if (sensitivity === 'live' || /\b(?:today|breaking|latest|current|price|market)\b/i.test(task)) {
     return 12 * 60 * 60 * 1_000;
   }
