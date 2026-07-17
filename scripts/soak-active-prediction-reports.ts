@@ -58,12 +58,18 @@ function marketAssertions(market: MarketSummary, markdown: string): string[] {
     if (/france\s+(?:vs\.?|versus|against|faces?)\s+spain[^.\n]{0,80}\bfinal\b/i.test(normalized)) {
       failures.push('France-Spain is incorrectly presented as the final.');
     }
+    if (/\b(?:bts|k-?pop|concert (?:schedule|tour)|world music tour)\b/i.test(sources)) {
+      failures.push('Music or concert evidence leaked into the World Cup report.');
+    }
   }
   if (/xaut|tether gold/i.test(market.title)) {
     if (!/xaut|tether gold/i.test(markdown) || !/4,?750|gold/i.test(markdown)) {
       failures.push('XAUT $4,750 underlying subject is not preserved.');
     }
     if (/\bXAUTH\b/.test(markdown)) failures.push('XAUT symbol was misspelled as XAUTH.');
+    if (/\b2\.15\s*%|100-point-\$|approximately\s+\$?100\b/i.test(markdown)) {
+      failures.push('XAUT target math contains the previously observed contradictory increase.');
+    }
     if (/fifa\.com|world cup/i.test(sources)) failures.push('World Cup evidence leaked into the XAUT report.');
   }
   return failures;
@@ -79,6 +85,11 @@ function validateReport(market: MarketSummary, markdown: string, completedSteps:
     if (!completedSteps.includes(step)) errors.push(`Missing completed ${step} stage.`);
   }
   if (markdown.trim().length < 300) errors.push('Final report is missing or too short.');
+  const nonemptyLines = markdown.split(/\r?\n/).filter((line) => line.trim());
+  const h1Count = nonemptyLines.filter((line) => /^#\s+/.test(line)).length;
+  if (!/^#\s+/.test(nonemptyLines[0] || '') || h1Count !== 1) {
+    errors.push(`Report must start with exactly one H1 title; found ${h1Count}.`);
+  }
   if (!/^##\s+Sources\s*$/im.test(markdown)) errors.push('Sources section is missing.');
   const sourceUrls = markdown.match(/https?:\/\/[^)\s]+/g) || [];
   if (new Set(sourceUrls).size < 2) errors.push('Fewer than two source URLs survived.');

@@ -457,7 +457,7 @@ function isFreshDatedSportsStateSnapshot(
 
 function hasSportsWinnerOffTopicSignal(haystack: string): boolean {
   return (
-    /\b(golden boot|golden glove|top scorer|top goalscorer|player of the tournament|most (?:fifa )?world cup appearances|women'?s world cup|u-?17|u-?20|under-17|under-20|half[- ]?time show|halftime show|quiz|red cards?|yellow cards?|disciplinary|goalkeeper profile|in profile|closing ceremony|match balls?|new ball|live match (?:blog|updates?)|live updates? on today'?s matches|player ratings?|box score|fcs football|college football|buck buchanan|british open|open championship|golf|2030 world cup|quarter[- ]?final wins)\b/i.test(
+    /\b(golden boot|golden glove|top scorer|top goalscorer|player of the tournament|most (?:fifa )?world cup appearances|women'?s world cup|u-?17|u-?20|under-17|under-20|half[- ]?time show|halftime show|quiz|red cards?|yellow cards?|disciplinary|goalkeeper profile|in profile|closing ceremony|match balls?|new ball|live match (?:blog|updates?)|live updates? on today'?s matches|player ratings?|box score|fcs football|college football|buck buchanan|british open|open championship|golf|2030 world cup|quarter[- ]?final wins|bts|k-?pop|concert (?:schedule|tour)|world music tour)\b/i.test(
       haystack,
     ) ||
     /\b(?:coach|manager|role|post|job)\b[^.\n]{0,50}\b(?:exit|exits|leaves|leaving|resigns|resigned|steps down)\b/i.test(
