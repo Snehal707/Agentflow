@@ -310,6 +310,19 @@ function shouldPreferHeuristicEntity(
     // an LLM-produced entity contract to introduce homonyms or unstable avoid terms.
     return true;
   }
+  if (
+    /\bPrediction market category in AgentFlow:\s*Crypto\b/i.test(task) &&
+    /\b(?:bitcoin|btc)\b/i.test(task) &&
+    /\bmarket cap(?:italization)?\b/i.test(task) &&
+    /\bbitcoin\b/i.test(
+      `${heuristic.subject} ${heuristic.entity?.canonicalName || ''} ${(heuristic.entity?.aliases || []).join(' ')}`,
+    )
+  ) {
+    // Bitcoin is a deterministic, globally recognized asset. Do not let an
+    // LLM-produced entity contract turn an explicit Bitcoin market into a
+    // high-ambiguity token/homonym lookup.
+    return true;
+  }
   if (/\b(xaut|tether gold)\b/i.test(task)) {
     const currentContract = [
       current.subject,
@@ -367,8 +380,12 @@ export function mergeUnderstandingWithHeuristic(
   const useHeuristicEntity = shouldPreferHeuristicEntity(task, current, heuristic);
   return {
     subject: useHeuristicEntity ? heuristic.subject : current.subject,
-    underlying: current.underlying ?? heuristic.underlying,
-    questionType: current.questionType === 'other' ? heuristic.questionType : current.questionType,
+    underlying: useHeuristicEntity ? heuristic.underlying : current.underlying ?? heuristic.underlying,
+    questionType: useHeuristicEntity
+      ? heuristic.questionType
+      : current.questionType === 'other'
+        ? heuristic.questionType
+        : current.questionType,
     resolutionDate: current.resolutionDate ?? heuristic.resolutionDate,
     searchQueries: uniqueQueries([...heuristic.searchQueries, ...current.searchQueries]),
     entity: useHeuristicEntity ? heuristic.entity : current.entity,
@@ -484,6 +501,34 @@ function heuristicUnderstanding(task: string, now: Date): MarketUnderstanding | 
         avoidTerms: ['wikipedia'],
         ambiguity: 'low',
         rationale: 'This should be researched as a sports winner market with team strength and odds evidence.',
+      }),
+    };
+  }
+
+  if (
+    /\b(?:bitcoin|btc)\b/i.test(lower) &&
+    /\bmarket cap(?:italization)?\b/i.test(lower)
+  ) {
+    return {
+      subject: 'Bitcoin market capitalization threshold',
+      underlying: null,
+      questionType: 'metric_threshold',
+      resolutionDate,
+      searchQueries: uniqueQueries([
+        'Bitcoin market cap current',
+        'Bitcoin price and market capitalization latest',
+        'Bitcoin ETF flows latest',
+        'Bitcoin market outlook 2026',
+        'site:coingecko.com bitcoin market cap',
+        'site:reuters.com bitcoin market outlook',
+      ]),
+      entity: makeEntity('Bitcoin', {
+        aliases: ['Bitcoin', 'BTC'],
+        officialDomains: ['bitcoin.org', 'coingecko.com'],
+        avoidTerms: ['bitcoin cash', 'bitcoin sv'],
+        ambiguity: 'low',
+        rationale:
+          'The market explicitly names Bitcoin and asks about its market capitalization, so BTC is deterministically resolved.',
       }),
     };
   }

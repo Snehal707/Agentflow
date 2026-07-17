@@ -1563,7 +1563,10 @@ async function fetchPredictionMarketOfficialSearchEvidence(
       addUniqueQuery(queries, `site:${domain} ${canonical} latest results`);
       addUniqueQuery(queries, `site:${domain} ${canonical} finalists final`);
     }
-    if (understanding.questionType === 'launch_milestone') {
+    if (
+      understanding.questionType === 'launch_milestone' ||
+      understanding.questionType === 'release_date'
+    ) {
       if (category === 'games' || category === 'gaming') {
         addUniqueQuery(queries, `site:${domain} ${canonical} release date`);
         addUniqueQuery(queries, `site:${domain} ${canonical} launch`);
@@ -7904,6 +7907,33 @@ export async function fetchLiveData(
             predictionMarketUnderstanding,
           ).catch(() => [] as FirecrawlArticleSnapshot[])
         : [];
+    // A single self-hosted Firecrawl worker can be starved by the broad search,
+    // registry, current-events, and official-source jobs all starting together.
+    // Launch/release markets depend heavily on first-party status evidence, so
+    // acquire that evidence before starting the broad discovery burst.
+    const shouldPreloadOfficialLaunchEvidence =
+      isPredictionMarketTask &&
+      extractPredictionMarketCategory(contextTask) !== 'sports' &&
+      /\b(mainnet|launch|release|ship)\b/i.test(contextTask);
+    const preloadedOfficialSearchEvidence = shouldPreloadOfficialLaunchEvidence
+      ? await fetchPredictionMarketOfficialSearchEvidence(
+          contextTask,
+          predictionMarketUnderstanding,
+        ).catch(() => [] as FirecrawlArticleSnapshot[])
+      : [];
+    const expectedOfficialDomains = predictionMarketUnderstanding?.entity?.officialDomains ?? [];
+    const preloadedSearchHasOfficialMatch = preloadedOfficialSearchEvidence.some((snapshot) =>
+      expectedOfficialDomains.some((domain) =>
+        `${snapshot.publisher || ''} ${snapshot.url}`.toLowerCase().includes(domain.toLowerCase()),
+      ),
+    );
+    const preloadedOfficialFallbackEvidence =
+      shouldPreloadOfficialLaunchEvidence && !preloadedSearchHasOfficialMatch
+        ? await fetchPredictionMarketOfficialFallbackEvidence(
+            contextTask,
+            predictionMarketUnderstanding,
+          ).catch(() => [] as FirecrawlArticleSnapshot[])
+        : [];
     const [firecrawlEvidence, registryArticleEvidence, sportsAuthorityEvidence, officialSearchEvidence, officialFallbackEvidence, wikipedia, currentEvents] = await Promise.all([
       (
         shouldFetchCurrentEvents && !shouldAlsoFetchFirecrawl
@@ -7923,16 +7953,20 @@ export async function fetchLiveData(
         ? Promise.resolve(preloadedSportsAuthorityEvidence)
         : Promise.resolve([] as FirecrawlArticleSnapshot[]),
       isPredictionMarketTask
-        ? fetchPredictionMarketOfficialSearchEvidence(
-            contextTask,
-            predictionMarketUnderstanding,
-          ).catch(() => [] as FirecrawlArticleSnapshot[])
+        ? shouldPreloadOfficialLaunchEvidence
+          ? Promise.resolve(preloadedOfficialSearchEvidence)
+          : fetchPredictionMarketOfficialSearchEvidence(
+              contextTask,
+              predictionMarketUnderstanding,
+            ).catch(() => [] as FirecrawlArticleSnapshot[])
         : Promise.resolve([] as FirecrawlArticleSnapshot[]),
       isPredictionMarketTask
-        ? fetchPredictionMarketOfficialFallbackEvidence(
-            contextTask,
-            predictionMarketUnderstanding,
-          ).catch(() => [] as FirecrawlArticleSnapshot[])
+        ? shouldPreloadOfficialLaunchEvidence
+          ? Promise.resolve(preloadedOfficialFallbackEvidence)
+          : fetchPredictionMarketOfficialFallbackEvidence(
+              contextTask,
+              predictionMarketUnderstanding,
+            ).catch(() => [] as FirecrawlArticleSnapshot[])
         : Promise.resolve([] as FirecrawlArticleSnapshot[]),
       fetchWikipediaData(
         predictionMarketUnderstanding?.subject || lookupTask,
