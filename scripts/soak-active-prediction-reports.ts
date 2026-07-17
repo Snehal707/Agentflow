@@ -92,6 +92,12 @@ function marketAssertions(market: MarketSummary, markdown: string): string[] {
     if (/Argentina[^.\n]{0,100}\b(?:front[- ]?runner|favou?rite)\b/i.test(markdown) && /Spain[^.\n]{0,100}\bfavou?red over Argentina/i.test(markdown)) {
       failures.push('World Cup report contradicts the current Spain-favored evidence.');
     }
+    if (/\bArgentina\b[^.\n]{0,100}\b(?:front[- ]?runner|favou?rite|most likely)\b/i.test(markdown) && /foxsports\.com\/stories\/soccer\/world-cup-2026-champion-odds/i.test(sources)) {
+      failures.push('World Cup report presents Argentina as favorite despite the retained current odds source.');
+    }
+    if (/\bSpain\b[^.\n]{0,100}\b(?:defeat(?:ed|ing)?|beat|victory over)\s+Germany\b/i.test(markdown)) {
+      failures.push('World Cup report contains the unsupported Spain-Germany semifinal claim.');
+    }
   }
   if (/xaut|tether gold/i.test(market.title)) {
     if (!/xaut|tether gold/i.test(markdown) || !/4,?750|gold/i.test(markdown)) {
