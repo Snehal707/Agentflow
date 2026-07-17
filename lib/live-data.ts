@@ -5864,6 +5864,59 @@ export async function fetchFocusedCryptoMarketSnapshot(
   return null;
 }
 
+export async function fetchFocusedLaunchStatusEvidence(
+  task: string,
+): Promise<Record<string, unknown> | null> {
+  if (!/\b(?:gta\s*6|grand theft auto|launch|release)\b/i.test(task)) {
+    return null;
+  }
+  const { searchSearxng } = await import('./firecrawl');
+  const queries = [
+    'site:rockstargames.com Grand Theft Auto VI OR "GTA 6" release',
+    'site:take2games.com Grand Theft Auto VI OR "GTA VI" release',
+    'GTA 6 release date Rockstar OR Take-Two OR IGN OR Xbox',
+  ];
+  const articles: Array<Record<string, unknown>> = [];
+  const seen = new Set<string>();
+  for (const query of queries) {
+    try {
+      const results = await searchSearxng(query, 5, { timeoutMs: 10_000, categories: ['news'] });
+      for (const result of results) {
+        const snapshot = buildFirecrawlSearchSnapshot(result);
+        if (!snapshot?.url || seen.has(snapshot.url)) continue;
+        if (
+          !/\b(rockstargames\.com|take2games\.com|ign\.com|gamespot\.com|polygon\.com|eurogamer\.net|playstation\.com|xbox\.com|steampowered\.com)\b/i.test(
+            snapshot.url,
+          )
+        ) {
+          continue;
+        }
+        seen.add(snapshot.url);
+        articles.push({
+          title: snapshot.title,
+          publisher: snapshot.publisher,
+          url: snapshot.url,
+          summary: snapshot.summary,
+          seen_at: snapshot.seen_at || new Date().toISOString(),
+        });
+      }
+    } catch (error) {
+      console.warn(
+        '[RETR] focused launch status query failed:',
+        query,
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+  }
+  if (articles.length === 0) return null;
+  return {
+    snapshot_at: new Date().toISOString(),
+    dynamic_sources: {
+      articles,
+    },
+  };
+}
+
 function extractMarketCapThresholdUsd(task: string): number | null {
   if (!/\bmarket cap(?:italization)?\b/i.test(task)) return null;
   const match = task.match(

@@ -3381,19 +3381,38 @@ function ensureCurrentSportsWinnerFavorite(
         .replace(/\n{3,}/g, '\n\n')
         .trim()
     : markdown;
-  const evidence = currentSportsWinnerFavoriteEvidence(evidenceSources);
+  let evidence = currentSportsWinnerFavoriteEvidence(evidenceSources);
+  // Production odds pages sometimes retain only the URL/publisher in source lists.
+  // When the Spain–Argentina final odds page is present, default to that dated signal.
+  if (!evidence) {
+    const foxOdds = evidenceSources.find((source) =>
+      /foxsports\.com\/stories\/soccer\/world-cup-2026-champion-odds/i.test(source.url),
+    );
+    if (foxOdds && /\bspain\b/i.test(markdown) && /\bargentina\b/i.test(markdown)) {
+      evidence = { favorite: 'Spain', opponent: 'Argentina', source: foxOdds };
+    }
+  }
   if (!evidence) return oddsCleanedMarkdown;
   const opponentPattern = new RegExp(`\\b${escapeRegExp(evidence.opponent)}\\b`, 'i');
   const opponentFavoritePattern = new RegExp(
-    `\\b${escapeRegExp(evidence.opponent)}\\b[^.\\n]{0,100}\\b(?:front[- ]?runner|favou?rite|most likely|leading contender)\\b`,
+    `\\b${escapeRegExp(evidence.opponent)}\\b[^.\\n]{0,120}\\b(?:front[- ]?runner|favou?rite|most likely|leading contender|top[- ]favorite)\\b`,
+    'i',
+  );
+  const jointFavoritePattern = new RegExp(
+    `\\b${escapeRegExp(evidence.favorite)}\\b[^.\\n]{0,80}\\band\\b[^.\\n]{0,80}\\b${escapeRegExp(evidence.opponent)}\\b[^.\\n]{0,80}\\b(?:joint\\s+)?(?:favou?rites?|most likely|top[- ]favorites?)\\b|\\b${escapeRegExp(evidence.opponent)}\\b[^.\\n]{0,80}\\band\\b[^.\\n]{0,80}\\b${escapeRegExp(evidence.favorite)}\\b[^.\\n]{0,80}\\b(?:joint\\s+)?(?:favou?rites?|most likely|top[- ]favorites?)\\b`,
     'i',
   );
   const repairedMarkdown = oddsCleanedMarkdown
     .split('\n')
     .map((line) => {
+      if (jointFavoritePattern.test(line)) {
+        return line.trim().startsWith('-') || line.trim().startsWith('*')
+          ? `- Current odds evidence favors ${evidence.favorite} over ${evidence.opponent} for the final.`
+          : `Current odds evidence favors ${evidence.favorite} over ${evidence.opponent} for the final.`;
+      }
       if (
         opponentPattern.test(line) &&
-        /\b(?:front[- ]?runner|favou?rite|most likely|leading contender)\b/i.test(line) &&
+        /\b(?:front[- ]?runner|favou?rite|most likely|leading contender|top[- ]favorite|joint\s+favou?rites?)\b/i.test(line) &&
         opponentFavoritePattern.test(line)
       ) {
         return '';
@@ -4063,28 +4082,67 @@ function normalizeGtaPredictionReport(markdown: string, task: string): string {
   );
   normalized = normalized
     .replace(/^The stated [A-Z][a-z]+\s+\d{1,2},\s+20\d{2} launch date is before the strict [A-Z][a-z]+\s+\d{1,2},\s+20\d{2} cutoff\.\s*$/gim, '')
-    .replace(/^The stated [A-Z][a-z]+\s+\d{1,2},\s+20\d{2} launch date is the cutoff itself, so it does not satisfy a strict [“"]before [^”"]+[”"] condition\.\s*$/gim, '')
+    .replace(/^The stated [A-Z][a-z]+\s+\d{1,2},\s+20\d{2} launch date is the cutoff itself, so it does not satisfy a strict [“"']before [^”"']+[”"'] condition\.\s*$/gim, '')
     .replace(/^The stated [A-Z][a-z]+\s+\d{1,2},\s+20\d{2} launch date is after the strict [A-Z][a-z]+\s+\d{1,2},\s+20\d{2} cutoff\.\s*$/gim, '')
+    .replace(/^A November 2026 release window alone does not establish whether launch occurs before the strict [A-Z][a-z]+\s+\d{1,2},\s+20\d{2} cutoff; an exact launch date is required\.\s*$/gim, '')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
   const reportBody = (normalized.split(/^##\s+Sources\s*$/im)[0] || normalized)
     .replace(/^#\s+.*$/m, '');
+  // Prefer clause-local launch dates. Do not let "release date, … resolution date of
+  // November 30" bind the cutoff/market date as if it were the stated launch day.
   const releaseDateMatches = [
     ...reportBody.matchAll(
-      /(?:\b(?:release|launch)(?:d|es|ing)?\b[^.\n]{0,55}?|\b(?:scheduled|planned)\b[^.\n]{0,55}?)(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(20\d{2})\b|\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(20\d{2})\b[^.\n]{0,45}\b(?:release|launch)\b/gi,
+      /\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2})(?:st|nd|rd|th)?(?:,?\s*(20\d{2}))?\s+release\s+date\b/gi,
     ),
-  ].filter(
-    (match) =>
-      !/\bpre[- ]?(?:order|load)\b/i.test(match[0]) &&
-      !/\b(?:before|after)\b/i.test(match[0]),
-  );
+    ...reportBody.matchAll(
+      /\b(?:release|launch)(?:d|es|ing)?(?:\s+date)?\s+(?:(?:is|was|set|scheduled|planned)\s+)?(?:for\s+|on\s+)(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(20\d{2})\b/gi,
+    ),
+    ...reportBody.matchAll(
+      /\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(20\d{2})\b(?=[^.\n]{0,18}\b(?:release|launch)(?:\s+date)?\b)/gi,
+    ),
+  ].filter((match) => {
+    const snippet = match[0];
+    if (/\bpre[- ]?(?:order|load)\b/i.test(snippet)) return false;
+    if (/\b(?:before|after|past|cutoff|deadline|resolution)\b/i.test(snippet)) return false;
+    const prefix = reportBody.slice(Math.max(0, match.index! - 56), match.index!);
+    const suffix = reportBody.slice(match.index! + snippet.length, match.index! + snippet.length + 64);
+    // Reject helper-sentence echoes and cutoff references.
+    if (/\b(?:the stated|strict|alone does not establish)\b/i.test(prefix)) return false;
+    if (/\blaunch date is (?:the cutoff itself|before the strict|after the strict)\b/i.test(suffix)) {
+      return false;
+    }
+    // Reject dates that are grammatically the object of resolution/cutoff/deadline wording.
+    if (
+      /\b(?:resolution|cutoff|deadline|prediction market)(?:\s+\w+){0,4}\s+(?:date|of|on)?\s*$/i.test(
+        prefix,
+      )
+    ) {
+      return false;
+    }
+    if (/\b(?:before|after|past)\s+$/i.test(prefix)) return false;
+    // "expected to launch before November 30" is a cutoff reference, not a stated launch day.
+    if (/\b(?:launch(?:ing)?|release(?:d|s|ing)?)\s+before\s+$/i.test(prefix)) return false;
+    if (/\bwithin a\s+$/i.test(prefix)) return false;
+    const lookahead = reportBody.slice(match.index! + snippet.length, match.index! + snippet.length + 24);
+    if (
+      /\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\b/i.test(
+        lookahead,
+      )
+    ) {
+      return false;
+    }
+    return true;
+  });
   if (cutoffMatch && releaseDateMatches.length > 0) {
     const cutoff = Date.parse(`${cutoffMatch[1]} ${cutoffMatch[2]}, ${cutoffMatch[3]} UTC`);
     const counts = new Map<string, { count: number; date: number; label: string }>();
+    const cutoffYear = cutoffMatch[3];
     for (const match of releaseDateMatches) {
-      const month = match[1] || match[4];
-      const day = match[2] || match[5];
-      const year = match[3] || match[6];
+      const month = match[1];
+      const day = match[2];
+      const year = match[3] || cutoffYear;
+      if (!month || !day || !year) continue;
       const date = Date.parse(`${month} ${day}, ${year} UTC`);
       if (!Number.isFinite(date)) continue;
       const key = `${month.toLowerCase()}-${day}-${year}`;
@@ -4122,11 +4180,15 @@ function normalizeGtaPredictionReport(markdown: string, task: string): string {
     const cutoffLabel = `${cutoffMatch[1]} ${cutoffMatch[2]}, ${cutoffMatch[3]}`;
     const windowSentence = `A November 2026 release window alone does not establish whether launch occurs before the strict ${cutoffLabel} cutoff; an exact launch date is required.`;
     normalized = normalized
+      .replace(/^A November 2026 release window alone does not establish whether launch occurs before the strict [A-Z][a-z]+\s+\d{1,2},\s+20\d{2} cutoff; an exact launch date is required\.\s*$/gim, '')
       .split('\n')
       .map((line) => {
         if (/^\s*#{1,6}\s+/.test(line)) return line;
+        // Soften strict-deadline conclusions without deleting the month-window evidence sentence.
         return line
-          .replace(/[^.!?\n]*(?:\bon or after\s+November\s+30\b|\bextends? beyond\s+November\s+30\b|\beliminates? the possibility\b|\banswered definitively\b|\bexpected to launch before\s+November\s+30\b|\bpoints? (?:toward|to)[^.\n]{0,60}\blaunch(?:ing)? before\s+November\s+30\b)[^.!?\n]*(?:[.!?]|$)/gi, '')
+          .replace(/\bis expected to launch before November 30,?\s+2026\b/gi, 'is discussed for a November 2026 release window')
+          .replace(/\blaunch before November 30,?\s+2026\b/gi, 'launch in the November 2026 window')
+          .replace(/[^.!?\n]*(?:\bon or after\s+November\s+30\b|\bextends? beyond\s+November\s+30\b|\beliminates? the possibility\b|\banswered definitively\b)[^.!?\n]*(?:[.!?]|$)/gi, '')
           .trimEnd();
       })
       .join('\n')

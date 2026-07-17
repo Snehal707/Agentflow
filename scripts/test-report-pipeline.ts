@@ -2194,6 +2194,52 @@ assert.doesNotMatch(sportsPredmarketRepairsFavoriteAndResultDate.markdown, /\(Ju
 assert.doesNotMatch(sportsPredmarketRepairsFavoriteAndResultDate.markdown, /Argentina[^.\n]{0,100}strong favorite|Spain advanced by defeating Germany/i);
 assert.match(sportsPredmarketRepairsFavoriteAndResultDate.markdown, /Spain was favored over Argentina for the final/i);
 
+const sportsPredmarketRepairsJointFavoriteWithoutTitleSignal = finalizeReportMarkdown({
+  task: worldCupEvidenceTask,
+  writerMarkdown: `# Who Will Win the FIFA World Cup 2026?
+
+Summary
+Spain and Argentina are still the clear joint favorites to win the FIFA World Cup 2026.
+Multiple outlets, including foxsports.com and BBC, reported that Spain and Argentina hold current top-favorite status.
+
+## Sources
+
+- [foxsports.com](https://www.foxsports.com/stories/soccer/world-cup-2026-champion-odds)
+- [The Analyst](https://theanalyst.com/articles/2026-world-cup-bracket-opta-supercomputer)
+`,
+  research: null,
+  analysis: null,
+  liveData: {
+    snapshot_at: '2026-07-17T00:00:00.000Z',
+    dynamic_sources: {
+      articles: [
+        {
+          title: 'World Cup champion odds',
+          publisher: 'Fox Sports',
+          url: 'https://www.foxsports.com/stories/soccer/world-cup-2026-champion-odds',
+          summary: 'Latest title odds for the World Cup final.',
+          seen_at: '2026-07-16T12:26:00.000Z',
+        },
+        {
+          title: 'England 1-2 Argentina stats',
+          publisher: 'The Analyst',
+          url: 'https://theanalyst.com/articles/england-vs-argentina-stats-world-cup-2026',
+          summary: 'Argentina beat England and reached the final against Spain.',
+          seen_at: '2026-07-15T23:00:00.000Z',
+        },
+      ],
+    },
+  },
+});
+assert.doesNotMatch(
+  sportsPredmarketRepairsJointFavoriteWithoutTitleSignal.markdown,
+  /joint favorites|Argentina hold current top-favorite|Argentina[^.\n]{0,100}favou?rite/i,
+);
+assert.match(
+  sportsPredmarketRepairsJointFavoriteWithoutTitleSignal.markdown,
+  /Spain was favored over Argentina for the final|favors Spain over Argentina/i,
+);
+
 const gtaPredmarketRepairsInternalContradictionAndEmptyHeading = finalizeReportMarkdown({
   task: 'research the prediction market topic: Will GTA 6 launch before November 30, 2026?',
   writerMarkdown: `# Will GTA 6 launch before November 30, 2026?
@@ -2303,6 +2349,68 @@ assert.match(
 assert.doesNotMatch(
   gtaWindowOnlyDoesNotTreatCutoffAsLaunchDate.markdown,
   /expected to launch before November 30, 2026/i,
+);
+
+const gtaDoesNotBindCutoffViaReleaseClause = finalizeReportMarkdown({
+  task: `research the prediction market topic: Will GTA 6 launch before November 30, 2026?
+Prediction market category in AgentFlow: Games.`,
+  writerMarkdown: `# Will GTA 6 launch before November 30, 2026?
+
+Official communications point to a November 2026 release window. The November 19 date mentioned in a May 21, 2026 earnings report remains the best indicator of a specific date within that window. While multiple sources report a November 19 release date, the prediction market resolution date of November 30, 2026 is not officially supported.
+
+## Sources`,
+  research: null,
+  analysis: null,
+  liveData: {
+    snapshot_at: '2026-07-17T00:00:00.000Z',
+    source_diagnostics: {
+      has_sufficient_diversity: true,
+      unique_source_domains: 2,
+      unresolved_entity: false,
+      drift_risk: 'low',
+    },
+    prediction_market_understanding: {
+      questionType: 'release_date',
+      entity: {
+        canonicalName: 'GTA 6',
+        ambiguity: 'low',
+        officialDomains: ['rockstargames.com', 'take2games.com'],
+      },
+    },
+    dynamic_sources: {
+      articles: [
+        {
+          title: 'Take-Two earnings mention November 19',
+          publisher: 'Take-Two Interactive',
+          url: 'https://www.take2games.com/ir/news/gta-vi-november-19',
+          summary: 'November 19 release date discussion.',
+          seen_at: '2026-07-17T00:00:00.000Z',
+        },
+        {
+          title: 'Rockstar GTA 6 release outlook',
+          publisher: 'Rockstar Games',
+          url: 'https://www.rockstargames.com/newswire/article/example/gta-6-release-outlook',
+          summary: 'Official release-window communications.',
+          seen_at: '2026-07-17T00:00:00.000Z',
+        },
+        {
+          title: 'GTA 6 release date update',
+          publisher: 'IGN',
+          url: 'https://www.ign.com/articles/gta-6-release-date-update',
+          summary: 'Current reporting discusses a November 19 release date.',
+          seen_at: '2026-07-17T00:00:00.000Z',
+        },
+      ],
+    },
+  },
+});
+assert.doesNotMatch(
+  gtaDoesNotBindCutoffViaReleaseClause.markdown,
+  /The stated November 30, 2026 launch date is the cutoff itself/i,
+);
+assert.match(
+  gtaDoesNotBindCutoffViaReleaseClause.markdown,
+  /The stated November 19, 2026 launch date is before the strict November 30, 2026 cutoff/i,
 );
 
 const gtaBeforeCutoffDateRemovesOppositeConclusion = finalizeReportMarkdown({

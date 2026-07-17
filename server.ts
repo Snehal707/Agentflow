@@ -53,6 +53,7 @@ import {
 import {
   detectForecastingIntent,
   fetchFocusedCryptoMarketSnapshot,
+  fetchFocusedLaunchStatusEvidence,
   fetchLiveData,
   shouldGatherCurrentEvents,
 } from './lib/live-data';
@@ -16788,6 +16789,11 @@ function createPublicApp(): express.Express {
         const needsFocusedCryptoRefresh = evidenceAssessment.issues.some((issue) =>
           /lacks a current numeric price and market-cap snapshot/i.test(issue),
         );
+        const needsFocusedLaunchRefresh = evidenceAssessment.issues.some(
+          (issue) =>
+            /lacks official or sufficiently strong status evidence/i.test(issue) ||
+            /lacks evidence from the resolved entity or its expected official domains/i.test(issue),
+        );
         if (!evidenceAssessment.ok && needsFocusedCryptoRefresh) {
           sendEvent({
             delta: 'Refreshing the current crypto price and market-cap snapshot before evidence review.\n',
@@ -16804,6 +16810,53 @@ function createPublicApp(): express.Express {
             parsedLiveData = {
               ...(parsedLiveData ?? {}),
               ...focusedSnapshot,
+            };
+            actualSources = summarizeLiveDataSourceNames(parsedLiveData, task);
+            evidenceAssessment = assessFastReportEvidence({
+              task,
+              research: null,
+              liveData: parsedLiveData,
+            });
+          }
+        }
+        if (!evidenceAssessment.ok && needsFocusedLaunchRefresh) {
+          sendEvent({
+            delta: 'Refreshing official launch-status sources before evidence review.\n',
+          });
+          const focusedLaunch = await withTimeout(
+            fetchFocusedLaunchStatusEvidence(task),
+            15_000,
+            'Focused launch status refresh timed out after 15s',
+          ).catch((error) => {
+            console.warn('[pipeline] focused launch status refresh failed:', getErrorMessage(error));
+            return null;
+          });
+          if (focusedLaunch) {
+            const existingDynamic =
+              parsedLiveData?.dynamic_sources &&
+              typeof parsedLiveData.dynamic_sources === 'object' &&
+              !Array.isArray(parsedLiveData.dynamic_sources)
+                ? (parsedLiveData.dynamic_sources as Record<string, unknown>)
+                : {};
+            const existingArticles = Array.isArray(existingDynamic.articles)
+              ? existingDynamic.articles
+              : [];
+            const focusedDynamic =
+              focusedLaunch.dynamic_sources &&
+              typeof focusedLaunch.dynamic_sources === 'object' &&
+              !Array.isArray(focusedLaunch.dynamic_sources)
+                ? (focusedLaunch.dynamic_sources as Record<string, unknown>)
+                : {};
+            const refreshedArticles = Array.isArray(focusedDynamic.articles)
+              ? focusedDynamic.articles
+              : [];
+            parsedLiveData = {
+              ...(parsedLiveData ?? {}),
+              ...focusedLaunch,
+              dynamic_sources: {
+                ...existingDynamic,
+                articles: [...existingArticles, ...refreshedArticles],
+              },
             };
             actualSources = summarizeLiveDataSourceNames(parsedLiveData, task);
             evidenceAssessment = assessFastReportEvidence({
