@@ -47,6 +47,12 @@ function marketAssertions(market: MarketSummary, markdown: string): string[] {
     if (/official\s+Rockstar/i.test(markdown) && /has not been officially confirmed|lack of[^.\n]{0,40}official confirmation/i.test(markdown)) {
       failures.push('GTA report contradicts its own official-release evidence.');
     }
+    if (/\b(?:hacker|hacking)\b[^.\n]{0,100}\b(?:prison|sentenced|hospital|custody|jail)\b/i.test(markdown)) {
+      failures.push('Hacker custody news leaked into the GTA launch report.');
+    }
+    if (/\b(?:release|launch)(?:d|es|ing)?\b[^.\n]{0,50}\bNovember\s+30,?\s+2026\b/i.test(markdown) && !/does not satisfy a strict [“"]before November 30, 2026[”"] condition/i.test(markdown)) {
+      failures.push('GTA report does not apply strict before-deadline semantics to a cutoff-day launch.');
+    }
   }
   if (/bitcoin/i.test(market.title)) {
     if (!/bitcoin|\bbtc\b/i.test(markdown) || !/market cap|market capitalization|\$?2\s*trillion/i.test(markdown)) {
@@ -106,6 +112,7 @@ function validateReport(market: MarketSummary, markdown: string, completedSteps:
     errors.push(`Report must start with exactly one H1 title; found ${h1Count}.`);
   }
   if (!/^##\s+Sources\s*$/im.test(markdown)) errors.push('Sources section is missing.');
+  if (/^#{1,6}\s+Key Sources\s*$/im.test(markdown)) errors.push('Duplicate pre-final source section survived.');
   const sourceUrls = markdown.match(/https?:\/\/[^)\s]+/g) || [];
   if (new Set(sourceUrls).size < 2) errors.push('Fewer than two source URLs survived.');
   if (

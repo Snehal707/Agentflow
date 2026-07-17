@@ -1127,6 +1127,8 @@ XAUT is trading at $4,006.70 and needs to reach $4,750, a gap of $743.30 or abou
 
 Spot gold must increase approximately 100-point-$, or about 2.15%, to reach the target.
 
+Uncertainty and Coverage Limits
+
 ## Sources
 
 - [CoinGecko](https://www.coingecko.com/en/coins/tether-gold) - live XAUT price
@@ -1160,6 +1162,7 @@ Spot gold must increase approximately 100-point-$, or about 2.15%, to reach the 
 });
 assert.match(xautPredmarketRepairsContradictoryTargetMath.markdown, /\$743\.30 increase, or 18\.6%/);
 assert.doesNotMatch(xautPredmarketRepairsContradictoryTargetMath.markdown, /2\.15%|100-point-\$/i);
+assert.doesNotMatch(xautPredmarketRepairsContradictoryTargetMath.markdown, /^Uncertainty and Coverage Limits$/im);
 assert.equal(
   xautPredmarketRepairsContradictoryTargetMath.markdown.split('\n').filter((line) => /^#\s+/.test(line)).length,
   1,
@@ -1874,6 +1877,11 @@ Bitcoin currently holds a $12.7 trillion market cap, $729 billion (57.4%) short 
 
 - Bitcoin needs a $99.032k price for a $2T cap with 100.97B fixed "supply".
 
+## Key Sources
+
+1. [CoinGecko](https://www.coingecko.com/en/coins/bitcoin)
+2. [CoinDesk](https://www.coindesk.com/markets/example)
+
 ## Sources`,
   research: null,
   analysis: null,
@@ -1903,6 +1911,7 @@ Bitcoin currently holds a $12.7 trillion market cap, $729 billion (57.4%) short 
 });
 assert.doesNotMatch(repairedBitcoinOrderOfMagnitudeError.markdown, /\$12\.7 trillion|100\.97B/i);
 assert.match(repairedBitcoinOrderOfMagnitudeError.markdown, /\$1\.27T market-cap baseline/);
+assert.doesNotMatch(repairedBitcoinOrderOfMagnitudeError.markdown, /^## Key Sources$/im);
 assert.match(repairedBitcoinThresholdMath.markdown, /54\.7% increase/i);
 assert.match(repairedBitcoinThresholdMath.markdown, /\$99,728 per coin/i);
 assert.doesNotMatch(repairedBitcoinThresholdMath.markdown, /\b(?:double|doubling)\b/i);
@@ -2102,7 +2111,7 @@ const gtaPredmarketRepairsInternalContradictionAndEmptyHeading = finalizeReportM
   task: 'research the prediction market topic: Will GTA 6 launch before November 30, 2026?',
   writerMarkdown: `# Will GTA 6 launch before November 30, 2026?
 
-The official Rockstar Games website indicates pre-orders opened for a November release.
+The official Rockstar Games website indicates a November 30, 2026 console release.
 
 ## Risks
 
@@ -2111,6 +2120,8 @@ The official Rockstar Games website indicates pre-orders opened for a November r
 ## Takeaway
 
 This aligns with the contractual deadline for the '[quarter containing] March 31, 2025' fiscal result.
+
+- Hacker relocated to prison on June 30.
 
 ## Conclusion
 
@@ -2135,11 +2146,27 @@ This aligns with the contractual deadline for the '[quarter containing] March 31
           summary: 'Current release reporting.',
           seen_at: '2026-07-17T00:00:00.000Z',
         },
+        {
+          title: 'GTA 6 hacker moved to prison',
+          publisher: 'Yahoo News',
+          url: 'https://www.yahoo.com/news/us/articles/gta-6-hacker-moved-prison-example.html',
+          summary: 'The hacker was moved from a secure hospital to prison.',
+          seen_at: '2026-07-17T00:00:00.000Z',
+        },
       ],
     },
   },
 });
 assert.doesNotMatch(gtaPredmarketRepairsInternalContradictionAndEmptyHeading.markdown, /has not been officially confirmed|contractual deadline|^## Conclusion$/im);
+assert.doesNotMatch(gtaPredmarketRepairsInternalContradictionAndEmptyHeading.markdown, /hacker|prison/i);
+assert.match(
+  gtaPredmarketRepairsInternalContradictionAndEmptyHeading.markdown,
+  /November 30, 2026 launch date is the cutoff itself, so it does not satisfy a strict “before November 30, 2026” condition/i,
+);
+assert.doesNotMatch(
+  gtaPredmarketRepairsInternalContradictionAndEmptyHeading.markdown,
+  /yahoo\.com\/news\/us\/articles\/gta-6-hacker/i,
+);
 
 const sportsPredmarketPrioritizesDecisionEvidence = finalizeReportMarkdown({
   task: worldCupEvidenceTask,
