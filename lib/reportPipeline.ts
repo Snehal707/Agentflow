@@ -548,7 +548,7 @@ function isPredictionMarketOffTopicSource(task: string, text: string): boolean {
   if (
     /\bPrediction market category in AgentFlow:\s*Sports\b/i.test(task) &&
     /\b(world cup|fifa|winner|champion|title)\b/i.test(task) &&
-    (/\b(golden boot|golden glove|top scorer|top goalscorer|player of the tournament|most (?:fifa )?world cup appearances|women'?s world cup|u-?17|u-?20|under-17|under-20|half[- ]?time show|halftime show|quiz|red cards?|yellow cards?|disciplinary|goalkeeper profile|in profile|closing ceremony|match balls?|new ball|live match (?:blog|updates?)|live updates? on today'?s matches|player ratings?|box score|fcs football|college football|buck buchanan|british open|open championship|golf|2030 world cup|quarter[- ]?final wins)\b/i.test(
+    (/\b(golden boot|golden glove|top scorer|top goalscorer|player of the tournament|most (?:fifa )?world cup appearances|women'?s world cup|u-?17|u-?20|under-17|under-20|half[- ]?time show|halftime show|quiz|red cards?|yellow cards?|disciplinary|goalkeeper profile|in profile|closing ceremony|match balls?|new ball|live match (?:blog|updates?)|live updates? on today'?s matches|player ratings?|box score|fcs football|college football|buck buchanan|british open|open championship|golf|2030 world cup|quarter[- ]?final wins|bts|k-?pop|concert (?:schedule|tour)|world music tour)\b/i.test(
       haystack,
     ) ||
       /\b(?:coach|manager|role|post|job)\b[^.\n]{0,50}\b(?:exit|exits|leaves|leaving|resigns|resigned|steps down)\b/i.test(
@@ -3032,7 +3032,7 @@ function normalizePredictionMarketMarkdown(markdown: string, task: string): stri
       .replace(/[^\p{L}\p{N}]+/gu, ' ')
       .trim()
       .toLowerCase();
-    return normalized
+    const normalizedBody = normalized
       .replace(/^#\s+.*$/m, `# ${cleanTopic}`)
       .split('\n')
       .filter((line) => {
@@ -3045,9 +3045,12 @@ function normalizePredictionMarketMarkdown(markdown: string, task: string): stri
           .toLowerCase();
         return headingKey !== normalizedTopicKey;
       })
+      .map((line) => (/^#\s+/.test(line) ? line.replace(/^#\s+/, '## ') : line))
+      .filter((line) => line.trim() !== `## ${cleanTopic}`)
       .join('\n')
       .replace(/\n{3,}/g, '\n\n')
       .trim();
+    return `# ${cleanTopic}\n\n${normalizedBody}`.trim();
   }
   if (!headingReplaced && normalized) {
     return `# ${cleanTopic}\n\n${normalized}`.trim();
@@ -3900,6 +3903,57 @@ function normalizeMarketCapThresholdMath(markdown: string, liveData: Obj | null)
   return normalized;
 }
 
+function normalizeDirectPriceTargetMath(markdown: string, task: string, liveData: Obj | null): string {
+  if (!/\b(?:xaut|tether gold)\b/i.test(task)) return markdown;
+  const targetMatch = task.match(/\$\s*([\d,]+(?:\.\d+)?)/);
+  const targetPrice = targetMatch ? Number(targetMatch[1].replace(/,/g, '')) : Number.NaN;
+  const asset = asArray(asObject(liveData?.coingecko)?.assets)
+    .map(asObject)
+    .find(
+      (entry) =>
+        /^xaut$/i.test(asString(entry?.symbol) || '') ||
+        /^tether-gold$/i.test(asString(entry?.coinId) || ''),
+    );
+  const currentPrice = Number(asset?.price_usd);
+  if (!Number.isFinite(targetPrice) || !Number.isFinite(currentPrice) || targetPrice <= 0 || currentPrice <= 0) {
+    return markdown;
+  }
+
+  const gap = targetPrice - currentPrice;
+  const requiredChangePct = (gap / currentPrice) * 100;
+  const formatMoney = (value: number) =>
+    `$${value.toLocaleString('en-US', {
+      minimumFractionDigits: Number.isInteger(value) ? 0 : 2,
+      maximumFractionDigits: 2,
+    })}`;
+  const canonicalSentence = `At the ${formatMoney(currentPrice)} XAUT price snapshot, reaching ${formatMoney(targetPrice)} requires a ${formatMoney(gap)} increase, or ${requiredChangePct.toFixed(1)}%.`;
+  const isTargetRequirementLine = (line: string): boolean => {
+    if (/^\s*#{1,6}\s+/.test(line)) return false;
+    if (!/\b(?:xaut|tether gold|spot gold|gold price|target|threshold)\b/i.test(line)) return false;
+    if (!/\b(?:reach|reaching|require|requires|required|need|needs|needed|must rise|would rise|would need|increase|upside|gap)\b/i.test(line)) {
+      return false;
+    }
+    return /%|\$|point/i.test(line);
+  };
+
+  let insertedCanonical = false;
+  const normalizedLines = markdown.split('\n').flatMap((line) => {
+    if (!isTargetRequirementLine(line)) return [line];
+    if (insertedCanonical) return [];
+    insertedCanonical = true;
+    return [line.trim().startsWith('-') ? `- **Threshold math:** ${canonicalSentence}` : canonicalSentence];
+  });
+  let normalized = normalizedLines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  if (!insertedCanonical) {
+    const section = `## Threshold Math\n\n${canonicalSentence}\n\n`;
+    const sourceHeading = normalized.search(/^##\s+Sources\s*$/im);
+    normalized = sourceHeading >= 0
+      ? `${normalized.slice(0, sourceHeading)}${section}${normalized.slice(sourceHeading)}`.trim()
+      : `${normalized}\n\n${section}`.trim();
+  }
+  return normalized;
+}
+
 function stripUnrequestedPortfolioSections(markdown: string, liveData: Obj | null): string {
   if (liveData?.portfolio_impact === true) return markdown;
   const lines = markdown.split('\n');
@@ -4482,8 +4536,9 @@ export function finalizeReportMarkdown(params: FinalizeParams): {
         params.research,
         params.analysis,
       );
-  const sanitizedWriterMarkdown = normalizeMarketCapThresholdMath(
-    sanitizeWriterMarkdown(params.writerMarkdown),
+  const sanitizedWriterMarkdown = normalizeDirectPriceTargetMath(
+    normalizeMarketCapThresholdMath(sanitizeWriterMarkdown(params.writerMarkdown), params.liveData),
+    params.task,
     params.liveData,
   );
   const normalizedWriterMarkdown = isPredictionMarketResearchTask(params.task)
@@ -4546,6 +4601,7 @@ export function finalizeReportMarkdown(params: FinalizeParams): {
     removeRedundantPreSourcesLinkList(normalizedPredictionMarketMarkdown),
     params.liveData,
   );
+  cleanedMarkdown = normalizeDirectPriceTargetMath(cleanedMarkdown, params.task, params.liveData);
   cleanedMarkdown = stripUnrequestedPortfolioSections(cleanedMarkdown, params.liveData);
   if (repairedMarkdown !== markdown || hasMojibakeMarkers(markdown)) {
     console.warn('[reportPipeline] repaired mojibake in final markdown');

@@ -1115,6 +1115,61 @@ assert.match(
   /underlying gold-market evidence/i,
 );
 
+const xautPredmarketRepairsContradictoryTargetMath = finalizeReportMarkdown({
+  task: 'research the prediction market topic: Will Tether Gold (XAUT) reach $4,750 by July 31st?',
+  writerMarkdown: `## Conclusion on the $4,750 target
+
+XAUT is trading at $4,006.70 and needs to reach $4,750, a gap of $743.30 or about 18.5%.
+
+# Will Tether Gold (XAUT) reach $4,750 by July 31st?
+
+# Why It Matters
+
+Spot gold must increase approximately 100-point-$, or about 2.15%, to reach the target.
+
+## Sources
+
+- [CoinGecko](https://www.coingecko.com/en/coins/tether-gold) - live XAUT price
+- [Kitco](https://www.kitco.com/markets/gold) - gold-market context`,
+  research: null,
+  analysis: null,
+  liveData: {
+    snapshot_at: '2026-07-17T00:00:00.000Z',
+    coingecko: {
+      assets: [
+        {
+          symbol: 'xaut',
+          coinId: 'tether-gold',
+          price_usd: 4006.7,
+          last_updated_at: '2026-07-17T00:00:00.000Z',
+        },
+      ],
+    },
+    dynamic_sources: {
+      articles: [
+        {
+          title: 'Gold market outlook',
+          publisher: 'Kitco',
+          url: 'https://www.kitco.com/markets/gold',
+          summary: 'Current spot-gold price drivers.',
+          seen_at: '2026-07-17T00:00:00.000Z',
+        },
+      ],
+    },
+  },
+});
+assert.match(xautPredmarketRepairsContradictoryTargetMath.markdown, /\$743\.30 increase, or 18\.6%/);
+assert.doesNotMatch(xautPredmarketRepairsContradictoryTargetMath.markdown, /2\.15%|100-point-\$/i);
+assert.equal(
+  xautPredmarketRepairsContradictoryTargetMath.markdown.split('\n').filter((line) => /^#\s+/.test(line)).length,
+  1,
+  xautPredmarketRepairsContradictoryTargetMath.markdown,
+);
+assert.match(
+  xautPredmarketRepairsContradictoryTargetMath.markdown,
+  /^# Will Tether Gold \(XAUT\) reach \$4,750 by July 31st\?/,
+);
+
 const worldCupPredmarketRequiresFreshStateEvidence = finalizeReportMarkdown({
   task: 'research the prediction market topic: Who Will Win the FIFA World Cup 2026?',
   writerMarkdown: `## Summary
@@ -1920,6 +1975,50 @@ France, Argentina, and Brazil remain the main contenders.
 assert.match(sportsPredmarketRetainsNonWhitelistedSources.markdown, /espn\.com\/soccer\/story/i);
 assert.match(sportsPredmarketRetainsNonWhitelistedSources.markdown, /abcnews\.go\.com\/sports/i);
 assert.match(sportsPredmarketRetainsNonWhitelistedSources.markdown, /usatoday\.com\/story\/sports\/soccer/i);
+
+const sportsPredmarketDropsConcertSourceDrift = finalizeReportMarkdown({
+  task: worldCupEvidenceTask,
+  writerMarkdown: `# Who Will Win the FIFA World Cup 2026?
+
+Spain and Argentina will contest the final.
+
+## Sources
+
+- [Fox Sports](https://www.foxsports.com/stories/soccer/world-cup-2026-champion-odds) - final odds
+- [The Analyst](https://theanalyst.com/articles/england-vs-argentina-stats-world-cup-2026) - semifinal result
+- [Sporting News](https://www.sportingnews.com/us/tickets/news/bts-2026-27-prices-seats-concert-schedule-world-tour/example) - BTS concert schedule`,
+  research: null,
+  analysis: null,
+  liveData: {
+    snapshot_at: '2026-07-17T00:00:00.000Z',
+    dynamic_sources: {
+      articles: [
+        {
+          title: 'Spain favored over Argentina in final',
+          publisher: 'Fox Sports',
+          url: 'https://www.foxsports.com/stories/soccer/world-cup-2026-champion-odds',
+          summary: 'Spain and Argentina will contest the World Cup final.',
+          seen_at: '2026-07-16T12:26:00.000Z',
+        },
+        {
+          title: 'England 1-2 Argentina stats',
+          publisher: 'The Analyst',
+          url: 'https://theanalyst.com/articles/england-vs-argentina-stats-world-cup-2026',
+          summary: 'Argentina beat England and reached the final against Spain.',
+          seen_at: '2026-07-15T23:00:00.000Z',
+        },
+        {
+          title: 'BTS 2026-27 prices, seats, concert schedule and world tour',
+          publisher: 'Sporting News',
+          url: 'https://www.sportingnews.com/us/tickets/news/bts-2026-27-prices-seats-concert-schedule-world-tour/example',
+          summary: 'Music tour ticket information.',
+          seen_at: '2026-07-16T10:00:00.000Z',
+        },
+      ],
+    },
+  },
+});
+assert.doesNotMatch(sportsPredmarketDropsConcertSourceDrift.markdown, /\bbts\b|concert-schedule/i);
 
 const sportsPredmarketPrioritizesDecisionEvidence = finalizeReportMarkdown({
   task: worldCupEvidenceTask,
