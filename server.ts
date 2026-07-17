@@ -114,6 +114,10 @@ import {
   assessFastReportEvidence,
   finalizeReportMarkdown,
 } from './lib/reportPipeline';
+import {
+  indexFastResearchEvidence,
+  mergeLocalEvidenceIntoLiveData,
+} from './lib/local-evidence-index';
 import { maybeImproveFastReport } from './lib/fast-report-supervisor';
 import { buildPredictionTopicResearchPrompt } from './lib/predmarket-research-context';
 import { setWalletForUser } from './lib/walletStore';
@@ -1058,10 +1062,18 @@ function researchLiveDataReuseKey(task: string): string {
 }
 
 function shouldUsePersistentResearchLiveDataCache(task: string): boolean {
+  if (!isExplicitResearchRequest(task)) return false;
+  if (!looksLikePredictionMarketResearch(task) && !/\bprediction market\b/i.test(task)) {
+    return true;
+  }
+
+  // Sports winner reports are unusually sensitive to a transient search outage:
+  // one missed result can make a completed semi-final look like a future match.
+  // Cache only payloads that pass the same strict evidence gate used before the
+  // paid Analyst stage. Other prediction-market categories remain uncached.
   return (
-    isExplicitResearchRequest(task) &&
-    !looksLikePredictionMarketResearch(task) &&
-    !/\bprediction market\b/i.test(task)
+    /\bPrediction market category in AgentFlow:\s*Sports\b/i.test(task) &&
+    /\b(world cup|fifa|winner|champions league|nba|nfl|mlb|nhl|tennis)\b/i.test(task)
   );
 }
 
@@ -1076,8 +1088,15 @@ function liveDataArticleEvidenceCount(payload: Record<string, unknown> | null): 
   );
 }
 
-function hasReusableResearchLiveDataEvidence(payload: Record<string, unknown> | null): boolean {
-  return liveDataArticleEvidenceCount(payload) > 0;
+function hasReusableResearchLiveDataEvidence(
+  task: string,
+  payload: Record<string, unknown> | null,
+): boolean {
+  if (liveDataArticleEvidenceCount(payload) === 0) return false;
+  if (/\bPrediction market category in AgentFlow:\s*Sports\b/i.test(task)) {
+    return assessFastReportEvidence({ task, research: null, liveData: payload }).ok;
+  }
+  return true;
 }
 
 async function loadReusableResearchLiveData(task: string): Promise<string | null> {
@@ -1086,7 +1105,7 @@ async function loadReusableResearchLiveData(task: string): Promise<string | null
     const raw = await getRedis().get(researchLiveDataReuseKey(task));
     const liveData = typeof raw === 'string' ? raw.trim() : '';
     if (!liveData) return null;
-    if (!hasReusableResearchLiveDataEvidence(parseLiveDataPayload(liveData))) return null;
+    if (!hasReusableResearchLiveDataEvidence(task, parseLiveDataPayload(liveData))) return null;
     return liveData;
   } catch (error) {
     console.warn('[Research] reusable live-data load failed:', getErrorMessage(error));
@@ -1098,7 +1117,7 @@ async function storeReusableResearchLiveData(task: string, liveData: string): Pr
   if (!shouldUsePersistentResearchLiveDataCache(task)) return;
   const trimmed = liveData.trim();
   if (!trimmed) return;
-  if (!hasReusableResearchLiveDataEvidence(parseLiveDataPayload(trimmed))) return;
+  if (!hasReusableResearchLiveDataEvidence(task, parseLiveDataPayload(trimmed))) return;
   try {
     await getRedis().set(
       researchLiveDataReuseKey(task),
@@ -17134,8 +17153,12 @@ async function start(): Promise<void> {
     } catch (liveDataError) {
       console.warn('[Research] Live data enrichment skipped:', getErrorMessage(liveDataError));
     }
-    const freshLiveDataPayload = parseLiveDataPayload(liveData);
-    if (hasReusableResearchLiveDataEvidence(freshLiveDataPayload)) {
+    let freshLiveDataPayload = parseLiveDataPayload(liveData);
+    freshLiveDataPayload = await mergeLocalEvidenceIntoLiveData(task, freshLiveDataPayload);
+    if (freshLiveDataPayload) {
+      liveData = JSON.stringify(freshLiveDataPayload);
+    }
+    if (hasReusableResearchLiveDataEvidence(task, freshLiveDataPayload)) {
       await storeReusableResearchLiveData(task, liveData);
     } else {
       const reusableLiveData = await loadReusableResearchLiveData(task);
@@ -17144,6 +17167,12 @@ async function start(): Promise<void> {
         liveData = reusableLiveData;
       }
     }
+    const indexedLiveDataPayload = parseLiveDataPayload(liveData);
+    void indexFastResearchEvidence(task, indexedLiveDataPayload).then((count) => {
+      if (count > 0) console.log(`[research-index] embedded fast evidence queued documents=${count}`);
+    }).catch((error) => {
+      console.warn('[research-index] embedded fast persist skipped:', getErrorMessage(error));
+    });
     const asOf = new Date().toISOString();
     if (!liveData.trim() && requiresLiveEvidence(task)) {
       return {

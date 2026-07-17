@@ -7,6 +7,7 @@ import {
   type FirecrawlSearchResult,
 } from '../lib/firecrawl';
 import { fetchLiveData } from '../lib/live-data';
+import { assessFastReportEvidence } from '../lib/reportPipeline';
 
 const DEFAULT_TASKS = [
   'future of AI in China latest report',
@@ -160,6 +161,9 @@ async function diagnoseTask(task: string): Promise<Record<string, unknown>> {
       ok: Boolean(liveData),
       latencyMs: Date.now() - liveDataStartedAt,
       error: liveDataError,
+      evidenceAssessment: liveData
+        ? assessFastReportEvidence({ task, research: null, liveData })
+        : null,
       sectionCounts: liveData ? sectionCounts(liveData) : {},
       urlCount: uniqueUrls.length,
       distinctDomains: new Set(uniqueUrls.map((entry) => entry.domain).filter(Boolean)).size,
