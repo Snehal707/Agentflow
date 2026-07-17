@@ -41,12 +41,21 @@ function marketAssertions(market: MarketSummary, markdown: string): string[] {
       failures.push('GTA 6 subject is missing from the report.');
     }
     if (/fifa\.com|world cup/i.test(sources)) failures.push('World Cup evidence leaked into the GTA report.');
+    if (/contractual deadline[^.\n]{0,180}March\s+31,?\s+2025/i.test(markdown)) {
+      failures.push('Malformed historical fiscal deadline appeared in the GTA report.');
+    }
+    if (/official\s+Rockstar/i.test(markdown) && /has not been officially confirmed|lack of[^.\n]{0,40}official confirmation/i.test(markdown)) {
+      failures.push('GTA report contradicts its own official-release evidence.');
+    }
   }
   if (/bitcoin/i.test(market.title)) {
     if (!/bitcoin|\bbtc\b/i.test(markdown) || !/market cap|market capitalization|\$?2\s*trillion/i.test(markdown)) {
       failures.push('Bitcoin $2T market-cap subject is not preserved.');
     }
     if (/fifa\.com|world cup/i.test(sources)) failures.push('World Cup evidence leaked into the Bitcoin report.');
+    if (/\$\s*12\.7\s*trillion|100\.97\s*b(?:illion)?[^.\n]{0,30}(?:fixed|circulating)?\s*supply/i.test(markdown)) {
+      failures.push('Bitcoin report contains the previously observed order-of-magnitude baseline or supply error.');
+    }
   }
   if (/world cup|fifa/i.test(market.title)) {
     if (!/world cup|fifa/i.test(markdown) || !/spain/i.test(markdown) || !/argentina/i.test(markdown)) {
@@ -60,6 +69,12 @@ function marketAssertions(market: MarketSummary, markdown: string): string[] {
     }
     if (/\b(?:bts|k-?pop|concert (?:schedule|tour)|world music tour)\b/i.test(sources)) {
       failures.push('Music or concert evidence leaked into the World Cup report.');
+    }
+    if (/\bJuly\s+17(?:,\s*2026)?\s+semi[- ]?final/i.test(markdown)) {
+      failures.push('World Cup report attached the retrieval/publication date to a semifinal result.');
+    }
+    if (/Argentina[^.\n]{0,100}\b(?:front[- ]?runner|favou?rite)\b/i.test(markdown) && /Spain[^.\n]{0,100}\bfavou?red over Argentina/i.test(markdown)) {
+      failures.push('World Cup report contradicts the current Spain-favored evidence.');
     }
   }
   if (/xaut|tether gold/i.test(market.title)) {
@@ -110,6 +125,15 @@ function validateReport(market: MarketSummary, markdown: string, completedSteps:
   if (/[\u3400-\u9fff]/u.test(markdown)) errors.push('Unexpected CJK localization text leaked.');
   if (/generated ranking was withheld|no current winner ranking is published/i.test(markdown)) {
     warnings.push('Report fell back to a withheld-ranking template.');
+  }
+  const lines = markdown.split(/\r?\n/);
+  for (let index = 0; index < lines.length; index += 1) {
+    if (!/^#{2,6}\s+\S/.test(lines[index].trim()) && !/^\*\*[^*]+\*\*\s*$/.test(lines[index].trim())) continue;
+    let next = index + 1;
+    while (next < lines.length && !lines[next].trim()) next += 1;
+    if (next >= lines.length || /^#{1,6}\s+\S/.test(lines[next].trim())) {
+      errors.push(`Empty report section survived: ${lines[index].trim()}`);
+    }
   }
   errors.push(...marketAssertions(market, markdown));
   return { errors, warnings };
