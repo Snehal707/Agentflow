@@ -3010,7 +3010,7 @@ function normalizePredictionMarketMarkdown(markdown: string, task: string): stri
     rebuilt.push(originalLine);
   }
 
-  const normalized = rebuilt
+  let normalized = rebuilt
     .join('\n')
     .replace(/\bresearch the prediction market topic:[^\n]*/gi, '')
     .replace(/\bListed outcomes in AgentFlow:[^\n]*/gi, '')
@@ -3023,6 +3023,9 @@ function normalizePredictionMarketMarkdown(markdown: string, task: string): stri
     .replace(/^.*\bFocus on current facts\b.*$/gim, '')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
+  if (/\b(?:xaut|tether gold)\b/i.test(task)) {
+    normalized = normalized.replace(/\bXAUTH\b/g, 'XAUT');
+  }
   if (/^#\s+/m.test(normalized)) {
     const normalizedTopicKey = cleanTopic
       .normalize('NFKC')
@@ -3897,6 +3900,40 @@ function normalizeMarketCapThresholdMath(markdown: string, liveData: Obj | null)
   return normalized;
 }
 
+function stripUnrequestedPortfolioSections(markdown: string, liveData: Obj | null): string {
+  if (liveData?.portfolio_impact === true) return markdown;
+  const lines = markdown.split('\n');
+  const output: string[] = [];
+  let skipping = false;
+  let skippedBoldSection = false;
+  const portfolioHeading = (line: string) =>
+    /^(?:#{1,6}\s+|\*\*)[^\n]*(?:portfolio impact|your portfolio|your holdings|your positions|affects? your portfolio)[^\n]*(?:\*\*)?\s*$/i.test(
+      line.trim(),
+    );
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (portfolioHeading(line)) {
+      skipping = true;
+      skippedBoldSection = /^\*\*/.test(trimmed);
+      continue;
+    }
+    if (skipping) {
+      const nextMarkdownHeading = /^#{1,6}\s+/.test(trimmed);
+      const nextBoldHeading = /^\*\*[^*\n]+:\*\*\s*$/.test(trimmed);
+      if (nextMarkdownHeading || (skippedBoldSection && nextBoldHeading)) {
+        skipping = false;
+        skippedBoldSection = false;
+      } else {
+        continue;
+      }
+    }
+    output.push(line);
+  }
+
+  return output.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
 function predictionMarketValidationIssues(
   task: string,
   markdown: string,
@@ -4509,6 +4546,7 @@ export function finalizeReportMarkdown(params: FinalizeParams): {
     removeRedundantPreSourcesLinkList(normalizedPredictionMarketMarkdown),
     params.liveData,
   );
+  cleanedMarkdown = stripUnrequestedPortfolioSections(cleanedMarkdown, params.liveData);
   if (repairedMarkdown !== markdown || hasMojibakeMarkers(markdown)) {
     console.warn('[reportPipeline] repaired mojibake in final markdown');
   }

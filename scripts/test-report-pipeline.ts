@@ -199,6 +199,56 @@ assert.match(
   'Expected writer input to personalize even when event evidence is thin.',
 );
 
+const unrequestedPortfolioSectionIsRemoved = finalizeReportMarkdown({
+  task: 'Research Bitcoin market conditions',
+  writerMarkdown: `# Bitcoin Market Conditions
+
+## Overview
+
+Bitcoin market conditions remain volatile.
+
+**Portfolio Impact Clarification:**
+
+While the portfolio context is not available, were it to include Bitcoin exposure, this move would represent upside potential.
+
+## Sources
+
+- [CoinGecko](https://www.coingecko.com/en/coins/bitcoin)
+- [Reuters](https://www.reuters.com/technology/bitcoin-market-update/)`,
+  research: null,
+  analysis: null,
+  liveData: {
+    portfolio_impact: false,
+    snapshot_at: '2026-07-17T00:00:00.000Z',
+    dynamic_sources: {
+      articles: [
+        {
+          title: 'Bitcoin market update',
+          publisher: 'Reuters',
+          url: 'https://www.reuters.com/technology/bitcoin-market-update/',
+          summary: 'Current Bitcoin market reporting.',
+          seen_at: '2026-07-17T00:00:00.000Z',
+        },
+      ],
+    },
+    coingecko: {
+      assets: [
+        {
+          coinId: 'bitcoin',
+          price_usd: 63_000,
+          market_cap_usd: 1_260_000_000_000,
+          last_updated_at: '2026-07-17T00:00:00.000Z',
+        },
+      ],
+    },
+  },
+});
+assert.doesNotMatch(
+  unrequestedPortfolioSectionIsRemoved.markdown,
+  /portfolio impact|portfolio context|bitcoin exposure/i,
+  'Expected portfolio-oriented prose to be removed when portfolio_impact is false.',
+);
+
 const repeatedAiChinaReportQueries = buildPrimaryFirecrawlQueryVariants(
   'research on future of AI in china and make a latest report on future of AI',
   'research on future of AI in china and make a latest report on future of AI',
