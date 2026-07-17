@@ -1744,6 +1744,46 @@ assert.deepEqual(mergedWorldCupUnderstanding?.entity?.avoidTerms, ['wikipedia'])
 const bitcoinMarketCapTask = `research the prediction market topic: Will Bitcoin Reach a $2 Trillion Market Cap Before December 31, 2026?
 Listed outcomes in AgentFlow: Yes / No.
 Prediction market category in AgentFlow: Crypto.`;
+const deterministicBitcoinUnderstanding: MarketUnderstanding = {
+  subject: 'Bitcoin market capitalization threshold',
+  underlying: null,
+  questionType: 'metric_threshold',
+  resolutionDate: '2026-12-31',
+  searchQueries: ['Bitcoin market cap current'],
+  entity: {
+    canonicalName: 'Bitcoin',
+    aliases: ['Bitcoin', 'BTC'],
+    officialDomains: ['bitcoin.org', 'coingecko.com'],
+    avoidTerms: ['bitcoin cash', 'bitcoin sv'],
+    ambiguity: 'low',
+    rationale: 'Explicit Bitcoin market-cap question.',
+  },
+};
+const driftedBitcoinUnderstanding: MarketUnderstanding = {
+  ...deterministicBitcoinUnderstanding,
+  subject: 'Unresolved Bitcoin-named token',
+  questionType: 'price_target',
+  searchQueries: ['Bitcoin-named token price'],
+  entity: {
+    canonicalName: 'Unresolved Bitcoin-named token',
+    aliases: ['BITCOIN'],
+    officialDomains: [],
+    avoidTerms: ['bitcoin', 'btc'],
+    ambiguity: 'high',
+    rationale: 'Incorrect model-produced ambiguity.',
+  },
+};
+const mergedBitcoinUnderstanding = mergeUnderstandingWithHeuristic(
+  bitcoinMarketCapTask,
+  driftedBitcoinUnderstanding,
+  deterministicBitcoinUnderstanding,
+);
+assert.equal(mergedBitcoinUnderstanding?.subject, 'Bitcoin market capitalization threshold');
+assert.equal(mergedBitcoinUnderstanding?.questionType, 'metric_threshold');
+assert.equal(mergedBitcoinUnderstanding?.entity?.canonicalName, 'Bitcoin');
+assert.equal(mergedBitcoinUnderstanding?.entity?.ambiguity, 'low');
+assert.deepEqual(mergedBitcoinUnderstanding?.entity?.avoidTerms, ['bitcoin cash', 'bitcoin sv']);
+
 const thinBitcoinMarketCapEvidence = assessFastReportEvidence({
   task: bitcoinMarketCapTask,
   research: null,
