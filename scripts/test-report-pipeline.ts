@@ -1386,6 +1386,84 @@ assert.equal(
   `Expected decision-grade World Cup evidence, got: ${decisionGradeWorldCupEvidence.issues.join('; ')}`,
 );
 
+const freshSportsStateBeyondInitialSourceWindow = assessFastReportEvidence({
+  task: worldCupEvidenceTask,
+  research: null,
+  liveData: {
+    snapshot_at: '2026-07-17T12:00:00.000Z',
+    dynamic_sources: {
+      articles: [
+        {
+          title: 'Are England better off with their current manager?',
+          publisher: 'The Analyst',
+          url: 'https://theanalyst.com/articles/england-manager-world-cup-2026',
+          summary: 'Post-tournament discussion about England.',
+          seen_at: '2026-07-17T09:00:00.000Z',
+        },
+        {
+          title: 'British Open cut line and golf leaderboard',
+          publisher: 'Sporting News',
+          url: 'https://www.sportingnews.com/us/golf/news/british-open-cut-line-2026',
+          summary: 'Open Championship golf leaderboard and projected cut.',
+          seen_at: '2026-07-17T09:00:00.000Z',
+        },
+        {
+          title: 'Could the World Cup final decide the Ballon d\'Or?',
+          publisher: 'BBC News',
+          url: 'https://www.bbc.com/sport/football/articles/ballon-dor-world-cup',
+          summary: 'The award race could be affected by the final.',
+          seen_at: '2026-07-17T09:00:00.000Z',
+        },
+        {
+          title: 'World Cup winner odds',
+          publisher: 'ESPN',
+          url: 'https://www.espn.com/soccer/story/_/id/world-cup-winner-odds',
+          summary: 'Current qualitative title odds.',
+          seen_at: '2026-07-17T09:00:00.000Z',
+        },
+        {
+          title: 'World Cup championship odds',
+          publisher: 'Fox Sports',
+          url: 'https://www.foxsports.com/stories/soccer/world-cup-2026-champion-odds',
+          summary: 'Spain is favored over Argentina in the final.',
+          seen_at: '2026-07-17T09:00:00.000Z',
+        },
+        {
+          title: 'Who will win the World Cup?',
+          publisher: 'BBC News',
+          url: 'https://www.bbc.com/sport/football/articles/world-cup-preview',
+          summary: 'A qualitative tournament preview.',
+          seen_at: '2026-07-14T09:00:00.000Z',
+        },
+        {
+          title: 'FIFA World Cup 2026 final schedule',
+          publisher: 'FIFA',
+          url: 'https://www.fifa.com/en/tournaments/mens/worldcup/canadamexicousa2026/articles/final-schedule',
+          summary: 'The official FIFA schedule lists Spain against Argentina in the confirmed final.',
+          seen_at: '2026-07-17T09:00:00.000Z',
+        },
+        {
+          title: 'England suffer semi-final loss as Argentina reach World Cup final',
+          publisher: 'CBS Sports',
+          url: 'https://www.cbssports.com/soccer/news/england-argentina-world-cup-semifinal-result/',
+          summary: 'Argentina advanced after England\'s semi-final loss.',
+          seen_at: '2026-07-16T09:00:00.000Z',
+        },
+      ],
+    },
+  },
+});
+assert.equal(
+  freshSportsStateBeyondInitialSourceWindow.ok,
+  true,
+  `Expected fresh result evidence beyond the initial six articles to survive source selection, got: ${freshSportsStateBeyondInitialSourceWindow.issues.join('; ')}`,
+);
+assert.equal(
+  freshSportsStateBeyondInitialSourceWindow.sources.some((source) => /british open|golf/i.test(`${source.name} ${source.url} ${source.usedFor || ''}`)),
+  false,
+  'Expected unrelated golf coverage from a sports-authority domain to be filtered out.',
+);
+
 const awardMarketIsNotWinnerEvidence = assessFastReportEvidence({
   task: worldCupEvidenceTask,
   research: null,
