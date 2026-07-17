@@ -378,8 +378,8 @@ function collectFastLiveDataSourceHints(liveData: Record<string, unknown>, task 
     addSource(
       article.publisher ?? article.title,
       article.url,
-      `${article.title ?? ''} ${article.summary ?? ''}`,
-      article.seen_at,
+      `${article.title ?? ''} ${article.summary ?? article.snippet ?? article.description ?? ''}`,
+      article.seen_at ?? article.published_at ?? article.date,
     );
   }
 
