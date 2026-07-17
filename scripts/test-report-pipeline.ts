@@ -2071,6 +2071,7 @@ const sportsPredmarketRepairsFavoriteAndResultDate = finalizeReportMarkdown({
   writerMarkdown: `# Who Will Win the FIFA World Cup 2026?
 
 - Argentina defeated England 2-1 in their July 17 semifinal after a late comeback.
+- Semi-final match result: Argentina 2-1 England (July 16, 2026).
 - Pre-match odds for the final are not available, but Argentina is emerging as a strong frontrunner.
 
 ## Sources`,
@@ -2100,11 +2101,19 @@ const sportsPredmarketRepairsFavoriteAndResultDate = finalizeReportMarkdown({
           summary: 'Argentina defeated England 2-1 and advanced to the final against Spain.',
           seen_at: '2026-07-15T23:00:00.000Z',
         },
+        {
+          title: 'Ex-Mets and Padres swingman leaves MLB to pitch in Japan',
+          publisher: 'Sporting News',
+          url: 'https://www.sportingnews.com/us/mlb/news/ex-mets-padres-swingman-leaves-mlb-pitch-japan/example',
+          summary: 'A baseball player moved to Japan.',
+          seen_at: '2026-07-17T10:00:00.000Z',
+        },
       ],
     },
   },
 });
 assert.doesNotMatch(sportsPredmarketRepairsFavoriteAndResultDate.markdown, /July 17 semifinal|odds for the final are not available|Argentina[^.\n]{0,100}frontrunner/i);
+assert.doesNotMatch(sportsPredmarketRepairsFavoriteAndResultDate.markdown, /\(July 16, 2026\)|ex-mets|padres|\bmlb\b/i);
 assert.match(sportsPredmarketRepairsFavoriteAndResultDate.markdown, /Spain was favored over Argentina for the final/i);
 
 const gtaPredmarketRepairsInternalContradictionAndEmptyHeading = finalizeReportMarkdown({
