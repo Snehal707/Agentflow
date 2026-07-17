@@ -546,6 +546,12 @@ function isPredictionMarketOffTopicSource(task: string, text: string): boolean {
     return true;
   }
   if (
+    /\b(?:gta\s*6|grand theft auto\s*(?:vi|6))\b/i.test(task) &&
+    /\b(?:hacker|hacking)\b[^.\n]{0,100}\b(?:prison|sentenced|hospital|custody|jail)\b|\b(?:prison|jail)\b[^.\n]{0,100}\b(?:hacker|hacking)\b/i.test(haystack)
+  ) {
+    return true;
+  }
+  if (
     /\bPrediction market category in AgentFlow:\s*Sports\b/i.test(task) &&
     /\b(world cup|fifa|winner|champion|title)\b/i.test(task) &&
     (/\b(golden boot|golden glove|top scorer|top goalscorer|player of the tournament|most (?:fifa )?world cup appearances|women'?s world cup|u-?17|u-?20|under-17|under-20|half[- ]?time show|halftime show|quiz|red cards?|yellow cards?|disciplinary|goalkeeper profile|in profile|closing ceremony|match balls?|new ball|live match (?:blog|updates?)|live updates? on today'?s matches|player ratings?|box score|fcs football|college football|buck buchanan|british open|open championship|golf|2030 world cup|quarter[- ]?final wins|bts|k-?pop|concert (?:schedule|tour)|world music tour)\b/i.test(
@@ -3085,7 +3091,23 @@ function isLooseSourceLinkBullet(line: string): boolean {
 }
 
 function removeRedundantPreSourcesLinkList(markdown: string): string {
-  const lines = markdown.replace(/\r\n/g, '\n').split('\n');
+  let lines = markdown.replace(/\r\n/g, '\n').split('\n');
+  let finalSourcesHeadingIndex = -1;
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    if (isSourcesHeadingLine(lines[index])) {
+      finalSourcesHeadingIndex = index;
+      break;
+    }
+  }
+  const keySourcesHeadingIndex = lines.findIndex(
+    (line, index) => index < finalSourcesHeadingIndex && /^#{1,6}\s+Key Sources\s*$/i.test(line.trim()),
+  );
+  if (keySourcesHeadingIndex >= 0 && finalSourcesHeadingIndex > keySourcesHeadingIndex) {
+    lines = [
+      ...lines.slice(0, keySourcesHeadingIndex),
+      ...lines.slice(finalSourcesHeadingIndex),
+    ];
+  }
   const sourceHeadingIndex = lines.findIndex((line) => isSourcesHeadingLine(line));
   if (sourceHeadingIndex <= 0) {
     return markdown.trim();
@@ -3961,10 +3983,11 @@ function normalizeGtaPredictionReport(markdown: string, task: string): string {
   if (!/\b(?:gta\s*6|grand theft auto\s*(?:vi|6))\b/i.test(task)) return markdown;
   const claimsOfficialReleaseEvidence =
     /\b(?:official\s+Rockstar|Rockstar(?: Games)?['’]s official|confirmed by[^.\n]{0,60}Rockstar)\b/i.test(markdown);
-  return markdown
+  let normalized = markdown
     .split('\n')
     .map((line) => {
       if (/contractual deadline[^.\n]{0,180}March\s+31,?\s+2025/i.test(line)) return '';
+      if (/\b(?:hacker|hacking)\b[^.\n]{0,100}\b(?:prison|sentenced|hospital|custody|jail)\b|\b(?:prison|jail)\b[^.\n]{0,100}\b(?:hacker|hacking)\b/i.test(line)) return '';
       if (
         claimsOfficialReleaseEvidence &&
         /\b(?:has not been officially confirmed|lack of (?:a )?(?:very recent )?official confirmation|no official (?:statement|confirmation))\b/i.test(line)
@@ -3978,6 +4001,46 @@ function normalizeGtaPredictionReport(markdown: string, task: string): string {
     .join('\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
+
+  const cutoffMatch = task.match(
+    /\bbefore\s+(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(20\d{2})\b/i,
+  );
+  const reportBody = normalized.split(/^##\s+Sources\s*$/im)[0] || normalized;
+  const releaseDateMatches = [
+    ...reportBody.matchAll(
+      /(?:\b(?:release|launch)(?:d|es|ing)?\b[^.\n]{0,55}?|\b(?:scheduled|planned)\b[^.\n]{0,55}?)(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(20\d{2})\b|\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(20\d{2})\b[^.\n]{0,45}\b(?:release|launch)\b/gi,
+    ),
+  ];
+  if (cutoffMatch && releaseDateMatches.length > 0) {
+    const cutoff = Date.parse(`${cutoffMatch[1]} ${cutoffMatch[2]}, ${cutoffMatch[3]} UTC`);
+    const counts = new Map<string, { count: number; date: number; label: string }>();
+    for (const match of releaseDateMatches) {
+      const month = match[1] || match[4];
+      const day = match[2] || match[5];
+      const year = match[3] || match[6];
+      const date = Date.parse(`${month} ${day}, ${year} UTC`);
+      if (!Number.isFinite(date)) continue;
+      const key = `${month.toLowerCase()}-${day}-${year}`;
+      const current = counts.get(key);
+      counts.set(key, { count: (current?.count || 0) + 1, date, label: `${month} ${day}, ${year}` });
+    }
+    const statedRelease = [...counts.values()].sort((left, right) => right.count - left.count)[0];
+    if (statedRelease && Number.isFinite(cutoff)) {
+      const cutoffLabel = `${cutoffMatch[1]} ${cutoffMatch[2]}, ${cutoffMatch[3]}`;
+      const satisfies = statedRelease.date < cutoff;
+      const boundarySentence = satisfies
+        ? `The stated ${statedRelease.label} launch date is before the strict ${cutoffLabel} cutoff.`
+        : statedRelease.date === cutoff
+          ? `The stated ${statedRelease.label} launch date is the cutoff itself, so it does not satisfy a strict “before ${cutoffLabel}” condition.`
+          : `The stated ${statedRelease.label} launch date is after the strict ${cutoffLabel} cutoff.`;
+      normalized = normalized
+        .replace(/[^.!?\n]*\bfalls?\s+before\b[^.!?\n]*(?:[.!?]|$)/gi, '')
+        .replace(/^#\s+.*$/m, (heading) => `${heading}\n\n${boundarySentence}`)
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+    }
+  }
+  return normalized;
 }
 
 function stripEmptyMarkdownSections(markdown: string): string {
@@ -3985,10 +4048,11 @@ function stripEmptyMarkdownSections(markdown: string): string {
   return lines
     .filter((line, index) => {
       const trimmed = line.trim();
-      if (!/^#{2,6}\s+\S/.test(trimmed) && !/^\*\*[^*]+\*\*\s*$/.test(trimmed)) return true;
+      const plainSectionLabel = /^(?:Summary|Conclusion|Takeaway|Uncertainty and Coverage Limits|Risks and Uncertainties|Analysis and Implications)$/i.test(trimmed);
+      if (!/^#{2,6}\s+\S/.test(trimmed) && !/^\*\*[^*]+\*\*\s*$/.test(trimmed) && !plainSectionLabel) return true;
       let next = index + 1;
       while (next < lines.length && !lines[next].trim()) next += 1;
-      return next < lines.length && !/^#{1,6}\s+\S/.test(lines[next].trim());
+      return next < lines.length && !/^#{1,6}\s+\S/.test(lines[next].trim()) && !isSourcesHeadingLine(lines[next]);
     })
     .join('\n')
     .replace(/\n{3,}/g, '\n\n')
