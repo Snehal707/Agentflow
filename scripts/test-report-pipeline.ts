@@ -1784,6 +1784,41 @@ assert.equal(mergedBitcoinUnderstanding?.entity?.canonicalName, 'Bitcoin');
 assert.equal(mergedBitcoinUnderstanding?.entity?.ambiguity, 'low');
 assert.deepEqual(mergedBitcoinUnderstanding?.entity?.avoidTerms, ['bitcoin cash', 'bitcoin sv']);
 
+const xautMarketTask = `research the prediction market topic: Will Tether Gold (XAUT) reach $4,750 by July 31st?
+Listed outcomes in AgentFlow: Yes / No.
+Prediction market category in AgentFlow: Crypto.`;
+const deterministicXautUnderstanding: MarketUnderstanding = {
+  subject: 'Tether Gold (XAUT) price target',
+  underlying: 'gold',
+  questionType: 'price_target',
+  resolutionDate: '2026-07-31',
+  searchQueries: ['XAUT price latest', 'gold market outlook'],
+  entity: {
+    canonicalName: 'Tether Gold (XAUT)',
+    aliases: ['XAUT', 'Tether Gold'],
+    officialDomains: ['tether.to', 'coingecko.com', 'kitco.com'],
+    avoidTerms: ['tp-link'],
+    ambiguity: 'low',
+    rationale: 'Ticker XAUT deterministically maps to Tether Gold.',
+  },
+};
+const unstableXautUnderstanding: MarketUnderstanding = {
+  ...deterministicXautUnderstanding,
+  entity: {
+    ...deterministicXautUnderstanding.entity!,
+    avoidTerms: ['usdt', 'tether usd', 'physical gold'],
+    rationale: 'Model-produced avoid terms reject legitimate related coverage.',
+  },
+};
+const mergedXautUnderstanding = mergeUnderstandingWithHeuristic(
+  xautMarketTask,
+  unstableXautUnderstanding,
+  deterministicXautUnderstanding,
+);
+assert.equal(mergedXautUnderstanding?.underlying, 'gold');
+assert.equal(mergedXautUnderstanding?.entity?.canonicalName, 'Tether Gold (XAUT)');
+assert.deepEqual(mergedXautUnderstanding?.entity?.avoidTerms, ['tp-link']);
+
 const thinBitcoinMarketCapEvidence = assessFastReportEvidence({
   task: bitcoinMarketCapTask,
   research: null,

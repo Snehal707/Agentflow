@@ -324,26 +324,9 @@ function shouldPreferHeuristicEntity(
     return true;
   }
   if (/\b(xaut|tether gold)\b/i.test(task)) {
-    const currentContract = [
-      current.subject,
-      current.entity?.canonicalName,
-      ...(current.entity?.aliases ?? []),
-      ...(current.entity?.officialDomains ?? []),
-    ]
-      .join(' ')
-      .toLowerCase();
-    const currentAvoidTerms = (current.entity?.avoidTerms ?? []).join(' ').toLowerCase();
-    const hasGoldContract =
-      /\bxaut\b|\btether gold\b/.test(currentContract) &&
-      /\bgold\b/i.test(current.underlying || currentContract);
-    const hasTrustedGoldDomain = /\b(tether\.to|kitco\.com|lbma\.org\.uk|goldprice\.org|gold\.org)\b/.test(
-      currentContract,
-    );
-    if (!hasGoldContract || !hasTrustedGoldDomain || /\bphysical gold\b/.test(currentAvoidTerms)) {
-      return true;
-    }
-  }
-  if (/\b(xaut|tether gold)\b/i.test(task) && current.underlying?.toLowerCase() !== 'gold') {
+    // XAUT is a deterministic asset/ticker mapping. Related Tether products
+    // may appear in legitimate coverage, so an LLM-produced avoid-term list
+    // must not be allowed to destabilize the resolved entity contract.
     return true;
   }
   if (
@@ -416,7 +399,7 @@ function heuristicUnderstanding(task: string, now: Date): MarketUnderstanding | 
       entity: makeEntity('Tether Gold (XAUT)', {
         aliases: ['XAUT', 'Tether Gold'],
         officialDomains: ['tether.to', 'coingecko.com', 'goldprice.org', 'kitco.com', 'lbma.org.uk'],
-        avoidTerms: ['usdt', 'tether usd', 'tp-link'],
+        avoidTerms: ['tp-link'],
         ambiguity: 'low',
         rationale: 'Ticker XAUT maps to Tether Gold and should be researched through gold-market drivers.',
       }),
