@@ -207,9 +207,9 @@ const unrequestedPortfolioSectionIsRemoved = finalizeReportMarkdown({
 
 Bitcoin market conditions remain volatile.
 
-**Portfolio Impact Clarification:**
+**Portfolio Context:**
 
-While the portfolio context is not available, were it to include Bitcoin exposure, this move would represent upside potential.
+*(Personalized portfolio impact analysis would be included here if wallet context were available.)*
 
 ## Sources
 
