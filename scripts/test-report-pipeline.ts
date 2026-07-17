@@ -2113,6 +2113,8 @@ const gtaPredmarketRepairsInternalContradictionAndEmptyHeading = finalizeReportM
 
 The official Rockstar Games website indicates a November 30, 2026 console release.
 
+Pre-orders opening June 25, 2026 reflect launch preparation.
+
 ## Risks
 
 - The November date has not been officially confirmed by a recent Rockstar announcement.
@@ -2162,6 +2164,10 @@ assert.doesNotMatch(gtaPredmarketRepairsInternalContradictionAndEmptyHeading.mar
 assert.match(
   gtaPredmarketRepairsInternalContradictionAndEmptyHeading.markdown,
   /November 30, 2026 launch date is the cutoff itself, so it does not satisfy a strict “before November 30, 2026” condition/i,
+);
+assert.equal(
+  gtaPredmarketRepairsInternalContradictionAndEmptyHeading.markdown.match(/launch date is the cutoff itself/gi)?.length,
+  1,
 );
 assert.doesNotMatch(
   gtaPredmarketRepairsInternalContradictionAndEmptyHeading.markdown,

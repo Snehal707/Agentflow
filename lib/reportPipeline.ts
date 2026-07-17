@@ -4005,12 +4005,18 @@ function normalizeGtaPredictionReport(markdown: string, task: string): string {
   const cutoffMatch = task.match(
     /\bbefore\s+(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(20\d{2})\b/i,
   );
+  normalized = normalized
+    .replace(/^The stated [A-Z][a-z]+\s+\d{1,2},\s+20\d{2} launch date is before the strict [A-Z][a-z]+\s+\d{1,2},\s+20\d{2} cutoff\.\s*$/gim, '')
+    .replace(/^The stated [A-Z][a-z]+\s+\d{1,2},\s+20\d{2} launch date is the cutoff itself, so it does not satisfy a strict [“"]before [^”"]+[”"] condition\.\s*$/gim, '')
+    .replace(/^The stated [A-Z][a-z]+\s+\d{1,2},\s+20\d{2} launch date is after the strict [A-Z][a-z]+\s+\d{1,2},\s+20\d{2} cutoff\.\s*$/gim, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
   const reportBody = normalized.split(/^##\s+Sources\s*$/im)[0] || normalized;
   const releaseDateMatches = [
     ...reportBody.matchAll(
       /(?:\b(?:release|launch)(?:d|es|ing)?\b[^.\n]{0,55}?|\b(?:scheduled|planned)\b[^.\n]{0,55}?)(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(20\d{2})\b|\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(20\d{2})\b[^.\n]{0,45}\b(?:release|launch)\b/gi,
     ),
-  ];
+  ].filter((match) => !/\bpre[- ]?(?:order|load)\b/i.test(match[0]));
   if (cutoffMatch && releaseDateMatches.length > 0) {
     const cutoff = Date.parse(`${cutoffMatch[1]} ${cutoffMatch[2]}, ${cutoffMatch[3]} UTC`);
     const counts = new Map<string, { count: number; date: number; label: string }>();
