@@ -1866,6 +1866,43 @@ Bitcoin would need to double to about $130,000 per BTC.
     },
   },
 });
+const repairedBitcoinOrderOfMagnitudeError = finalizeReportMarkdown({
+  task: bitcoinMarketCapTask,
+  writerMarkdown: `# Will Bitcoin Reach a $2 Trillion Market Cap Before December 31?
+
+Bitcoin currently holds a $12.7 trillion market cap, $729 billion (57.4%) short of the $2 trillion target.
+
+- Bitcoin needs a $99.032k price for a $2T cap with 100.97B fixed "supply".
+
+## Sources`,
+  research: null,
+  analysis: null,
+  liveData: {
+    snapshot_at: '2026-07-17T00:00:00.000Z',
+    prediction_market_metrics: {
+      metric: 'market_cap_threshold',
+      symbol: 'btc',
+      target_market_cap_usd: 2_000_000_000_000,
+      current_market_cap_usd: 1_271_000_000_000,
+      current_price_usd: 63_348,
+      required_increase_pct: 57.356,
+      equivalent_price_usd: 99_682.14,
+    },
+    coingecko: {
+      assets: [
+        {
+          symbol: 'btc',
+          coinId: 'bitcoin',
+          price_usd: 63_348,
+          market_cap_usd: 1_271_000_000_000,
+          last_updated_at: '2026-07-17T00:00:00.000Z',
+        },
+      ],
+    },
+  },
+});
+assert.doesNotMatch(repairedBitcoinOrderOfMagnitudeError.markdown, /\$12\.7 trillion|100\.97B/i);
+assert.match(repairedBitcoinOrderOfMagnitudeError.markdown, /\$1\.27T market-cap baseline/);
 assert.match(repairedBitcoinThresholdMath.markdown, /54\.7% increase/i);
 assert.match(repairedBitcoinThresholdMath.markdown, /\$99,728 per coin/i);
 assert.doesNotMatch(repairedBitcoinThresholdMath.markdown, /\b(?:double|doubling)\b/i);
@@ -2019,6 +2056,90 @@ Spain and Argentina will contest the final.
   },
 });
 assert.doesNotMatch(sportsPredmarketDropsConcertSourceDrift.markdown, /\bbts\b|concert-schedule/i);
+
+const sportsPredmarketRepairsFavoriteAndResultDate = finalizeReportMarkdown({
+  task: worldCupEvidenceTask,
+  writerMarkdown: `# Who Will Win the FIFA World Cup 2026?
+
+- Argentina defeated England 2-1 in their July 17 semifinal after a late comeback.
+- Pre-match odds for the final are not available, but Argentina is emerging as a strong frontrunner.
+
+## Sources`,
+  research: null,
+  analysis: null,
+  liveData: {
+    snapshot_at: '2026-07-17T00:00:00.000Z',
+    source_diagnostics: {
+      has_sufficient_diversity: true,
+      unique_source_domains: 2,
+      unresolved_entity: false,
+      drift_risk: 'low',
+    },
+    dynamic_sources: {
+      articles: [
+        {
+          title: 'World Cup Title Odds: Spain Favored Over Argentina In Final',
+          publisher: 'Fox Sports',
+          url: 'https://www.foxsports.com/stories/soccer/world-cup-2026-champion-odds',
+          summary: 'Spain favored over Argentina in the final.',
+          seen_at: '2026-07-16T12:26:00.000Z',
+        },
+        {
+          title: 'England 1-2 Argentina Stats',
+          publisher: 'The Analyst',
+          url: 'https://theanalyst.com/articles/england-vs-argentina-stats-world-cup-2026',
+          summary: 'Argentina defeated England 2-1 and advanced to the final against Spain.',
+          seen_at: '2026-07-15T23:00:00.000Z',
+        },
+      ],
+    },
+  },
+});
+assert.doesNotMatch(sportsPredmarketRepairsFavoriteAndResultDate.markdown, /July 17 semifinal|odds for the final are not available|Argentina[^.\n]{0,100}frontrunner/i);
+assert.match(sportsPredmarketRepairsFavoriteAndResultDate.markdown, /Spain was favored over Argentina for the final/i);
+
+const gtaPredmarketRepairsInternalContradictionAndEmptyHeading = finalizeReportMarkdown({
+  task: 'research the prediction market topic: Will GTA 6 launch before November 30, 2026?',
+  writerMarkdown: `# Will GTA 6 launch before November 30, 2026?
+
+The official Rockstar Games website indicates pre-orders opened for a November release.
+
+## Risks
+
+- The November date has not been officially confirmed by a recent Rockstar announcement.
+
+## Takeaway
+
+This aligns with the contractual deadline for the '[quarter containing] March 31, 2025' fiscal result.
+
+## Conclusion
+
+## Sources`,
+  research: null,
+  analysis: null,
+  liveData: {
+    snapshot_at: '2026-07-17T00:00:00.000Z',
+    dynamic_sources: {
+      articles: [
+        {
+          title: 'Pre-order Grand Theft Auto VI',
+          publisher: 'Rockstar Games',
+          url: 'https://www.rockstargames.com/newswire/article/example/pre-order-grand-theft-auto-vi',
+          summary: 'Official pre-order and release information.',
+          seen_at: '2026-07-17T00:00:00.000Z',
+        },
+        {
+          title: 'GTA 6 release outlook',
+          publisher: 'IGN',
+          url: 'https://www.ign.com/articles/gta-6-release-outlook',
+          summary: 'Current release reporting.',
+          seen_at: '2026-07-17T00:00:00.000Z',
+        },
+      ],
+    },
+  },
+});
+assert.doesNotMatch(gtaPredmarketRepairsInternalContradictionAndEmptyHeading.markdown, /has not been officially confirmed|contractual deadline|^## Conclusion$/im);
 
 const sportsPredmarketPrioritizesDecisionEvidence = finalizeReportMarkdown({
   task: worldCupEvidenceTask,

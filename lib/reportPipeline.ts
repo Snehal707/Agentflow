@@ -556,6 +556,9 @@ function isPredictionMarketOffTopicSource(task: string, text: string): boolean {
       ) ||
       /\b(?:exit|exits|leaves|leaving|left|resigns|resigned|steps down)\b[^.\n]{0,50}\b(?:coach|manager|role|post|job)\b/i.test(
         haystack,
+      ) ||
+      /\b(?:coach|manager)\b[^.\n]{0,80}\b(?:sack|sacked|keep|kept|job security)\b/i.test(
+        haystack,
       ))
   ) {
     return true;
@@ -3317,9 +3320,28 @@ function ensureCurrentSportsWinnerFavorite(
   markdown: string,
   sources: NormalizedReportSource[],
 ): string {
-  const reportBody = markdown.split(/^##\s+Sources\b/im)[0] || markdown;
   const evidence = currentSportsWinnerFavoriteEvidence(sources);
   if (!evidence) return markdown;
+  const opponentPattern = new RegExp(`\\b${escapeRegExp(evidence.opponent)}\\b`, 'i');
+  const repairedMarkdown = markdown
+    .split('\n')
+    .map((line) => {
+      if (
+        opponentPattern.test(line) &&
+        /\b(?:front[- ]?runner|favou?rite|most likely|leading contender)\b/i.test(line) &&
+        !new RegExp(`\\b${escapeRegExp(evidence.favorite)}\\b`, 'i').test(line)
+      ) {
+        return '';
+      }
+      if (/\b(?:pre[- ]?match|final) odds?\b[^.\n]{0,80}\b(?:not available|unavailable|were not retrieved|are not available)\b/i.test(line)) {
+        return '';
+      }
+      return line;
+    })
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  const reportBody = repairedMarkdown.split(/^##\s+Sources\b/im)[0] || repairedMarkdown;
   const normalizedBody = reportBody.toLowerCase().replace(/[^a-z0-9]+/g, '');
   const sourceToken = evidence.source.name
     .toLowerCase()
@@ -3333,13 +3355,13 @@ function ensureCurrentSportsWinnerFavorite(
     Boolean(sourceToken && normalizedBody.includes(sourceToken)) &&
     Boolean(favoriteToken && normalizedBody.includes(favoriteToken)) &&
     Boolean(opponentToken && normalizedBody.includes(opponentToken));
-  if (alreadyUsesCurrentEvidence) return markdown;
+  if (alreadyUsesCurrentEvidence) return repairedMarkdown;
   const date = evidence.source.publishedAt ? ` on ${evidence.source.publishedAt}` : '';
   const sentence = `${evidence.source.name} reported${date} that ${evidence.favorite} was favored over ${evidence.opponent} for the final. This is a dated qualitative odds signal, not a numerical probability or guarantee.`;
-  if (/^#\s+.*$/m.test(markdown)) {
-    return markdown.replace(/^#\s+.*$/m, (heading) => `${heading}\n\n${sentence}`);
+  if (/^#\s+.*$/m.test(repairedMarkdown)) {
+    return repairedMarkdown.replace(/^#\s+.*$/m, (heading) => `${heading}\n\n${sentence}`);
   }
-  return `${sentence}\n\n${markdown}`.trim();
+  return `${sentence}\n\n${repairedMarkdown}`.trim();
 }
 
 function stripUnsupportedSportsResultDates(
@@ -3354,7 +3376,7 @@ function stripUnsupportedSportsResultDates(
     .map((source) => source.usedFor || '')
     .join(' \n ');
 
-  return markdown
+  const withoutUnsupportedFullDates = markdown
     .split('\n')
     .map((line) => {
       if (!resultSignal.test(line) || !resultDatePattern.test(line)) {
@@ -3372,6 +3394,25 @@ function stripUnsupportedSportsResultDates(
           Boolean(isoDate && resultEvidence.includes(isoDate));
         return explicitlySupported ? full : '';
       });
+    })
+    .join('\n');
+  const shortResultDatePattern = new RegExp(
+    `\\s+(?:on\\s+|in\\s+(?:their|the)\\s+)?(${MONTH_NAMES.join('|')})\\s+(\\d{1,2})(?:,\\s*(20\\d{2}))?(?=\\s+(?:semi[- ]?final|quarter[- ]?final|final|match|victory|win|loss|defeat))`,
+    'gi',
+  );
+  return withoutUnsupportedFullDates
+    .split('\n')
+    .map((line) => {
+      if (!resultSignal.test(line)) return line;
+      return line.replace(
+        shortResultDatePattern,
+        (full, month: string, day: string, year: string | undefined) => {
+          const supported = resultEvidence.toLowerCase().includes(
+            `${month} ${day}${year ? `, ${year}` : ''}`.toLowerCase(),
+          );
+          return supported ? full : full.replace(new RegExp(`${escapeRegExp(month)}\\s+${day}(?:,\\s*${year || '20\\d{2}'})?`, 'i'), '');
+        },
+      );
     })
     .join('\n');
 }
@@ -3869,7 +3910,20 @@ function normalizeMarketCapThresholdMath(markdown: string, liveData: Obj | null)
   const thresholdSentence = `At the ${compactCap(currentMarketCap)} market-cap baseline and ${money(currentPrice)} spot price, a ${compactCap(targetMarketCap)} market cap implies about ${money(equivalentPrice)} per coin, or a ${pct}% increase, assuming circulating supply is unchanged.`;
   const wrongRequirementLine = (line: string): boolean => {
     const lower = line.toLowerCase();
-    if (!/\b(require|required|needed|need to|implies|equivalent|double|doubling|to hit|to reach)\b/.test(lower)) {
+    const symbol = asString(metrics?.symbol)?.toLowerCase() || '';
+    if (symbol === 'btc' && /\b(?:fixed|circulating)\s+['"]?supply['"]?\b/i.test(line) && /\b\d+(?:\.\d+)?\s*b(?:illion)?\b/i.test(line)) {
+      return true;
+    }
+    const currentCapMatch = line.match(/\$\s*([\d,.]+)\s*(trillion|billion|tn|bn|t|b)\b[^.\n]{0,50}\bmarket cap\b|\bmarket cap\b[^.\n]{0,50}\$\s*([\d,.]+)\s*(trillion|billion|tn|bn|t|b)\b/i);
+    if (currentCapMatch && /\b(?:current|currently|holds?|sits?|baseline)\b/i.test(line)) {
+      const value = Number((currentCapMatch[1] || currentCapMatch[3]).replace(/,/g, ''));
+      const unit = (currentCapMatch[2] || currentCapMatch[4]).toLowerCase();
+      const parsedCap = value * (/^(?:trillion|tn|t)$/.test(unit) ? 1_000_000_000_000 : 1_000_000_000);
+      if (Number.isFinite(parsedCap) && Math.abs(parsedCap - currentMarketCap) / currentMarketCap > 0.05) {
+        return true;
+      }
+    }
+    if (!/\b(require|required|needed|need to|implies|equivalent|double|doubling|to hit|to reach|short|gap|current|currently|holds|sits)\b/.test(lower)) {
       return false;
     }
     if (/\bdouble|doubling\b/.test(lower) && requiredIncrease < 90) return true;
@@ -3901,6 +3955,44 @@ function normalizeMarketCapThresholdMath(markdown: string, liveData: Obj | null)
       : `${normalized}\n\n${section}`.trim();
   }
   return normalized;
+}
+
+function normalizeGtaPredictionReport(markdown: string, task: string): string {
+  if (!/\b(?:gta\s*6|grand theft auto\s*(?:vi|6))\b/i.test(task)) return markdown;
+  const claimsOfficialReleaseEvidence =
+    /\b(?:official\s+Rockstar|Rockstar(?: Games)?['’]s official|confirmed by[^.\n]{0,60}Rockstar)\b/i.test(markdown);
+  return markdown
+    .split('\n')
+    .map((line) => {
+      if (/contractual deadline[^.\n]{0,180}March\s+31,?\s+2025/i.test(line)) return '';
+      if (
+        claimsOfficialReleaseEvidence &&
+        /\b(?:has not been officially confirmed|lack of (?:a )?(?:very recent )?official confirmation|no official (?:statement|confirmation))\b/i.test(line)
+      ) {
+        return line
+          .replace(/[^.!?\n]*(?:has not been officially confirmed|lack of (?:a )?(?:very recent )?official confirmation|no official (?:statement|confirmation))[^.!?\n]*(?:[.!?]|$)/gi, '')
+          .trim();
+      }
+      return line;
+    })
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+function stripEmptyMarkdownSections(markdown: string): string {
+  const lines = markdown.split('\n');
+  return lines
+    .filter((line, index) => {
+      const trimmed = line.trim();
+      if (!/^#{2,6}\s+\S/.test(trimmed) && !/^\*\*[^*]+\*\*\s*$/.test(trimmed)) return true;
+      let next = index + 1;
+      while (next < lines.length && !lines[next].trim()) next += 1;
+      return next < lines.length && !/^#{1,6}\s+\S/.test(lines[next].trim());
+    })
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }
 
 function normalizeDirectPriceTargetMath(markdown: string, task: string, liveData: Obj | null): string {
@@ -4602,7 +4694,9 @@ export function finalizeReportMarkdown(params: FinalizeParams): {
     params.liveData,
   );
   cleanedMarkdown = normalizeDirectPriceTargetMath(cleanedMarkdown, params.task, params.liveData);
+  cleanedMarkdown = normalizeGtaPredictionReport(cleanedMarkdown, params.task);
   cleanedMarkdown = stripUnrequestedPortfolioSections(cleanedMarkdown, params.liveData);
+  cleanedMarkdown = stripEmptyMarkdownSections(cleanedMarkdown);
   if (repairedMarkdown !== markdown || hasMojibakeMarkers(markdown)) {
     console.warn('[reportPipeline] repaired mojibake in final markdown');
   }
@@ -4691,6 +4785,10 @@ export function finalizeReportMarkdown(params: FinalizeParams): {
       ]),
     ];
   }
+
+  cleanedMarkdown = stripEmptyMarkdownSections(
+    normalizeGtaPredictionReport(cleanedMarkdown, params.task),
+  );
 
   return {
     markdown: cleanedMarkdown,

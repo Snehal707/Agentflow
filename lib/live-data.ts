@@ -465,6 +465,9 @@ function hasSportsWinnerOffTopicSignal(haystack: string): boolean {
     ) ||
     /\b(?:exit|exits|leaves|leaving|left|resigns|resigned|steps down)\b[^.\n]{0,50}\b(?:coach|manager|role|post|job)\b/i.test(
       haystack,
+    ) ||
+    /\b(?:coach|manager)\b[^.\n]{0,80}\b(?:sack|sacked|keep|kept|job security)\b/i.test(
+      haystack,
     )
   );
 }
