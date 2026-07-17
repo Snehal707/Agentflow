@@ -2073,6 +2073,8 @@ const sportsPredmarketRepairsFavoriteAndResultDate = finalizeReportMarkdown({
 - Argentina defeated England 2-1 in their July 17 semifinal after a late comeback.
 - Semi-final match result: Argentina 2-1 England (July 16, 2026).
 - Pre-match odds for the final are not available, but Argentina is emerging as a strong frontrunner.
+- Argentina is the strong favorite to win the final against Spain.
+- Spain advanced by defeating Germany.
 
 ## Sources`,
   research: null,
@@ -2114,6 +2116,7 @@ const sportsPredmarketRepairsFavoriteAndResultDate = finalizeReportMarkdown({
 });
 assert.doesNotMatch(sportsPredmarketRepairsFavoriteAndResultDate.markdown, /July 17 semifinal|odds for the final are not available|Argentina[^.\n]{0,100}frontrunner/i);
 assert.doesNotMatch(sportsPredmarketRepairsFavoriteAndResultDate.markdown, /\(July 16, 2026\)|ex-mets|padres|\bmlb\b/i);
+assert.doesNotMatch(sportsPredmarketRepairsFavoriteAndResultDate.markdown, /Argentina[^.\n]{0,100}strong favorite|Spain advanced by defeating Germany/i);
 assert.match(sportsPredmarketRepairsFavoriteAndResultDate.markdown, /Spain was favored over Argentina for the final/i);
 
 const gtaPredmarketRepairsInternalContradictionAndEmptyHeading = finalizeReportMarkdown({
@@ -2181,6 +2184,42 @@ assert.equal(
 assert.doesNotMatch(
   gtaPredmarketRepairsInternalContradictionAndEmptyHeading.markdown,
   /yahoo\.com\/news\/us\/articles\/gta-6-hacker/i,
+);
+
+const gtaWindowOnlyDoesNotTreatCutoffAsLaunchDate = finalizeReportMarkdown({
+  task: 'research the prediction market topic: Will GTA 6 launch before November 30, 2026?',
+  writerMarkdown: `# Will GTA 6 launch before November 30, 2026?
+
+Current reporting says GTA 6 is expected to launch before November 30, 2026, within a November release window.
+
+## Sources`,
+  research: null,
+  analysis: null,
+  liveData: {
+    snapshot_at: '2026-07-17T00:00:00.000Z',
+    dynamic_sources: {
+      articles: [
+        {
+          title: 'GTA 6 November release window',
+          publisher: 'IGN',
+          url: 'https://www.ign.com/articles/gta-6-november-release-window',
+          summary: 'Current release-window reporting.',
+          seen_at: '2026-07-17T00:00:00.000Z',
+        },
+        {
+          title: 'Grand Theft Auto VI launch outlook',
+          publisher: 'Take-Two Interactive',
+          url: 'https://www.take2games.com/ir/news/gta-vi-launch-outlook',
+          summary: 'Publisher launch outlook.',
+          seen_at: '2026-07-17T00:00:00.000Z',
+        },
+      ],
+    },
+  },
+});
+assert.doesNotMatch(
+  gtaWindowOnlyDoesNotTreatCutoffAsLaunchDate.markdown,
+  /The stated November 30, 2026 launch date is the cutoff itself/i,
 );
 
 const sportsPredmarketPrioritizesDecisionEvidence = finalizeReportMarkdown({

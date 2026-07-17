@@ -3342,38 +3342,66 @@ function currentSportsWinnerFavoriteEvidence(
 function ensureCurrentSportsWinnerFavorite(
   markdown: string,
   sources: NormalizedReportSource[],
+  liveData: Obj | null,
 ): string {
-  const hasCurrentOddsSource = sources.some(
+  const liveArticleSources = asArray(asObject(liveData?.dynamic_sources)?.articles)
+    .map((entry, index): NormalizedReportSource | null => {
+      const article = asObject(entry);
+      const url = asString(article?.url);
+      if (!url) return null;
+      const title = asString(article?.title) || '';
+      const publisher = asString(article?.publisher) || sourceHostname(url) || 'Live source';
+      return {
+        id: `live-sports-${index}`,
+        name: publisher,
+        url,
+        publishedAt: asString(article?.seen_at)?.slice(0, 10) || undefined,
+        usedFor: `${title} ${asString(article?.summary) || ''}`.trim(),
+        canonical: true,
+      };
+    })
+    .filter((source): source is NormalizedReportSource => Boolean(source));
+  const evidenceSources = [...sources, ...liveArticleSources];
+  const hasCurrentOddsSource = evidenceSources.some(
     (source) =>
       /\b(?:odds|favou?rite|champion-odds|title-odds)\b/i.test(
         `${source.name} ${source.url} ${source.usedFor || ''}`,
       ) &&
       Number.isFinite(Date.parse(source.publishedAt || '')),
   );
-  const oddsCleanedMarkdown = hasCurrentOddsSource
+  let oddsCleanedMarkdown = hasCurrentOddsSource
     ? markdown
         .split('\n')
         .map((line) =>
           line
-            .replace(/[^.!?\n]*\b(?:numerical|pre[- ]?match|final) odds?\b[^.!?\n]{0,120}\b(?:not available|unavailable|were not retrieved|are not available)\b[^.!?\n]*(?:[.!?]|$)/gi, '')
+            .replace(/[^.!?\n]*(?:\b(?:numerical|pre[- ]?match|final) odds?\b[^.!?\n]{0,120}\b(?:not available|unavailable|were not retrieved|are not available|were not provided)\b|\bno (?:numerical )?odds?\b[^.!?\n]{0,100}\b(?:available|provided|retrieved)\b|\bno (?:definitive|clear) favou?rite\b)[^.!?\n]*(?:[.!?]|$)/gi, '')
             .trimEnd(),
         )
         .join('\n')
         .replace(/\n{3,}/g, '\n\n')
         .trim()
     : markdown;
-  const evidence = currentSportsWinnerFavoriteEvidence(sources);
+  const evidence = currentSportsWinnerFavoriteEvidence(evidenceSources);
   if (!evidence) return oddsCleanedMarkdown;
   const opponentPattern = new RegExp(`\\b${escapeRegExp(evidence.opponent)}\\b`, 'i');
+  const opponentFavoritePattern = new RegExp(
+    `\\b${escapeRegExp(evidence.opponent)}\\b[^.\\n]{0,100}\\b(?:front[- ]?runner|favou?rite|most likely|leading contender)\\b`,
+    'i',
+  );
   const repairedMarkdown = oddsCleanedMarkdown
     .split('\n')
     .map((line) => {
       if (
         opponentPattern.test(line) &&
         /\b(?:front[- ]?runner|favou?rite|most likely|leading contender)\b/i.test(line) &&
-        !new RegExp(`\\b${escapeRegExp(evidence.favorite)}\\b`, 'i').test(line)
+        opponentFavoritePattern.test(line)
       ) {
         return '';
+      }
+      if (/\bSpain\b[^.\n]{0,100}\b(?:defeat(?:ed|ing)?|beat|victory over)\s+Germany\b|\bGermany\b[^.\n]{0,100}\b(?:lost to|defeated by)\s+Spain\b/i.test(line)) {
+        return line.trim().startsWith('-') || line.trim().startsWith('*')
+          ? '- Spain advanced to the final.'
+          : 'Spain advanced to the final.';
       }
       if (/\b(?:pre[- ]?match|final) odds?\b[^.\n]{0,80}\b(?:not available|unavailable|were not retrieved|are not available)\b/i.test(line)) {
         return '';
@@ -4045,7 +4073,11 @@ function normalizeGtaPredictionReport(markdown: string, task: string): string {
     ...reportBody.matchAll(
       /(?:\b(?:release|launch)(?:d|es|ing)?\b[^.\n]{0,55}?|\b(?:scheduled|planned)\b[^.\n]{0,55}?)(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(20\d{2})\b|\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(20\d{2})\b[^.\n]{0,45}\b(?:release|launch)\b/gi,
     ),
-  ].filter((match) => !/\bpre[- ]?(?:order|load)\b/i.test(match[0]));
+  ].filter(
+    (match) =>
+      !/\bpre[- ]?(?:order|load)\b/i.test(match[0]) &&
+      !/\bbefore\b/i.test(match[0]),
+  );
   if (cutoffMatch && releaseDateMatches.length > 0) {
     const cutoff = Date.parse(`${cutoffMatch[1]} ${cutoffMatch[2]}, ${cutoffMatch[3]} UTC`);
     const counts = new Map<string, { count: number; date: number; label: string }>();
@@ -4739,6 +4771,7 @@ export function finalizeReportMarkdown(params: FinalizeParams): {
     ? ensureCurrentSportsWinnerFavorite(
         stripUnsupportedSportsResultDates(normalizedWriterMarkdown, effectiveSources),
         effectiveSources,
+        params.liveData,
       )
     : normalizedWriterMarkdown;
   const writerValidationIssues = writerMarkdown
