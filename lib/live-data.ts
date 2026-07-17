@@ -5827,6 +5827,37 @@ async function fetchCoinGeckoData(task: string): Promise<CoinGeckoAssetSnapshot[
   return setTimedCache(coinGeckoCache, cacheKey, snapshots, COINGECKO_CACHE_TTL_MS);
 }
 
+export async function fetchFocusedCryptoMarketSnapshot(
+  task: string,
+): Promise<Record<string, unknown> | null> {
+  let lastError: unknown = null;
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    try {
+      const assets = await fetchCoinGeckoData(normalizeLiveDataSearchTask(task));
+      if (assets.length === 0) return null;
+      const thresholdMetrics = buildMarketCapThresholdMetrics(task, assets);
+      return {
+        snapshot_at: new Date().toISOString(),
+        coingecko: {
+          source: 'CoinGecko simple price API',
+          assets,
+        },
+        ...(thresholdMetrics ? { prediction_market_metrics: thresholdMetrics } : {}),
+      };
+    } catch (error) {
+      lastError = error;
+      if (attempt < 2) {
+        await new Promise<void>((resolve) => setTimeout(resolve, 750));
+      }
+    }
+  }
+  console.warn(
+    '[RETR] focused CoinGecko refresh failed:',
+    lastError instanceof Error ? lastError.message : String(lastError),
+  );
+  return null;
+}
+
 function extractMarketCapThresholdUsd(task: string): number | null {
   if (!/\bmarket cap(?:italization)?\b/i.test(task)) return null;
   const match = task.match(
