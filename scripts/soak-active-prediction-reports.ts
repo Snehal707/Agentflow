@@ -57,6 +57,13 @@ function marketAssertions(market: MarketSummary, markdown: string): string[] {
     }
     const deadlineSemanticsLines = gtaBody.match(/^The stated .+? (?:launch date|cutoff)[^.]*\.$/gim) || [];
     if (deadlineSemanticsLines.length > 1) failures.push('GTA deadline semantics sentence was duplicated.');
+    const beforeBoundary = gtaBody.match(/The stated ([A-Z][a-z]+\s+\d{1,2},\s+20\d{2}) launch date is before the strict November 30, 2026 cutoff/i);
+    if (beforeBoundary && /\b(?:will|does|would)\s+not\s+launch\s+before\s+November\s+30\b|\bdate\b[^.\n]{0,60}\b(?:later than|on or after)\s+November\s+30\b/i.test(gtaBody)) {
+      failures.push('GTA report contradicts its own before-cutoff launch date.');
+    }
+    if (/\bNovember\s+2026\s+(?:release|launch)\s+window\b/i.test(gtaBody) && !/\b(?:release|launch)(?:d|es|ing)?(?:\s+date)?\s+(?:on\s+|for\s+)?[A-Z][a-z]+\s+\d{1,2},\s+20\d{2}\b/i.test(gtaBody) && !/release window alone does not establish whether launch occurs before/i.test(gtaBody)) {
+      failures.push('GTA report draws a strict deadline conclusion from only a month-level window.');
+    }
   }
   if (/bitcoin/i.test(market.title)) {
     if (!/bitcoin|\bbtc\b/i.test(markdown) || !/market cap|market capitalization|\$?2\s*trillion/i.test(markdown)) {

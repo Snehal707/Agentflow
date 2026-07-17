@@ -2190,7 +2190,7 @@ const gtaWindowOnlyDoesNotTreatCutoffAsLaunchDate = finalizeReportMarkdown({
   task: 'research the prediction market topic: Will GTA 6 launch before November 30, 2026?',
   writerMarkdown: `# Will GTA 6 launch before November 30, 2026?
 
-Current reporting says GTA 6 is expected to launch before November 30, 2026, within a November release window.
+Current reporting says GTA 6 is expected to launch before November 30, 2026, within a November 2026 release window.
 
 ## Sources`,
   research: null,
@@ -2220,6 +2220,71 @@ Current reporting says GTA 6 is expected to launch before November 30, 2026, wit
 assert.doesNotMatch(
   gtaWindowOnlyDoesNotTreatCutoffAsLaunchDate.markdown,
   /The stated November 30, 2026 launch date is the cutoff itself/i,
+);
+assert.match(
+  gtaWindowOnlyDoesNotTreatCutoffAsLaunchDate.markdown,
+  /release window alone does not establish whether launch occurs before the strict November 30, 2026 cutoff/i,
+);
+assert.doesNotMatch(
+  gtaWindowOnlyDoesNotTreatCutoffAsLaunchDate.markdown,
+  /expected to launch before November 30, 2026/i,
+);
+
+const gtaBeforeCutoffDateRemovesOppositeConclusion = finalizeReportMarkdown({
+  task: 'research the prediction market topic: Will GTA 6 launch before November 30, 2026?',
+  writerMarkdown: `# Will GTA 6 launch before November 30, 2026?
+
+GTA 6 is officially scheduled to launch on November 26, 2026.
+
+- Given the official launch date is November 26, this directly implies the game will not launch before November 30.
+
+The November 26 date is later than November 30, meaning the answer is no.
+
+## Sources`,
+  research: null,
+  analysis: null,
+  liveData: {
+    snapshot_at: '2026-07-17T00:00:00.000Z',
+    source_diagnostics: {
+      has_sufficient_diversity: true,
+      unique_source_domains: 3,
+      unresolved_entity: false,
+      drift_risk: 'low',
+    },
+    dynamic_sources: {
+      articles: [
+        {
+          title: 'GTA 6 scheduled to launch on November 26, 2026',
+          publisher: 'IGN',
+          url: 'https://www.ign.com/articles/gta-6-release-date-update',
+          summary: 'Current reporting states a November 26, 2026 launch date.',
+          seen_at: '2026-07-17T00:00:00.000Z',
+        },
+        {
+          title: 'Grand Theft Auto VI November 26 launch update',
+          publisher: 'Take-Two Interactive',
+          url: 'https://www.take2games.com/ir/news/gta-vi-launch-update',
+          summary: 'Publisher launch update confirms November 26, 2026.',
+          seen_at: '2026-07-17T00:00:00.000Z',
+        },
+        {
+          title: 'GTA 6 console launch date is November 26, 2026',
+          publisher: 'GameSpot',
+          url: 'https://www.gamespot.com/articles/gta-6-console-launch-date-update/',
+          summary: 'Console launch reporting for November 26, 2026.',
+          seen_at: '2026-07-17T00:00:00.000Z',
+        },
+      ],
+    },
+  },
+});
+assert.match(
+  gtaBeforeCutoffDateRemovesOppositeConclusion.markdown,
+  /November 26, 2026 launch date is before the strict November 30, 2026 cutoff/i,
+);
+assert.doesNotMatch(
+  gtaBeforeCutoffDateRemovesOppositeConclusion.markdown,
+  /will not launch before November 30|November 26 date is later than November 30/i,
 );
 
 const sportsPredmarketPrioritizesDecisionEvidence = finalizeReportMarkdown({

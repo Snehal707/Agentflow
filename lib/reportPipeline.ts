@@ -4076,7 +4076,7 @@ function normalizeGtaPredictionReport(markdown: string, task: string): string {
   ].filter(
     (match) =>
       !/\bpre[- ]?(?:order|load)\b/i.test(match[0]) &&
-      !/\bbefore\b/i.test(match[0]),
+      !/\b(?:before|after)\b/i.test(match[0]),
   );
   if (cutoffMatch && releaseDateMatches.length > 0) {
     const cutoff = Date.parse(`${cutoffMatch[1]} ${cutoffMatch[2]}, ${cutoffMatch[3]} UTC`);
@@ -4102,10 +4102,37 @@ function normalizeGtaPredictionReport(markdown: string, task: string): string {
           : `The stated ${statedRelease.label} launch date is after the strict ${cutoffLabel} cutoff.`;
       normalized = normalized
         .replace(/[^.!?\n]*\bfalls?\s+before\b[^.!?\n]*(?:[.!?]|$)/gi, '')
+        .split('\n')
+        .map((line) => {
+          if (/^\s*#{1,6}\s+/.test(line)) return line;
+          const contradictionPattern = satisfies
+            ? /[^.!?\n]*(?:\b(?:will|does|would)\s+not\s+launch\s+before\b|\bdate\b[^.!?\n]{0,60}\b(?:later than|on or after)\b[^.!?\n]{0,40}\bcutoff\b)[^.!?\n]*(?:[.!?]|$)/gi
+            : /[^.!?\n]*\b(?:will|is expected to|appears set to|points? (?:toward|to))\b[^.!?\n]{0,80}\blaunch\s+before\b[^.!?\n]*(?:[.!?]|$)/gi;
+          return line.replace(contradictionPattern, '').trimEnd();
+        })
+        .join('\n')
         .replace(/^#\s+.*$/m, (heading) => `${heading}\n\n${boundarySentence}`)
         .replace(/\n{3,}/g, '\n\n')
         .trim();
     }
+  } else if (
+    cutoffMatch &&
+    /\b(?:release|launch)(?:d|es|ing)?\b[^.\n]{0,80}\bNovember\s+2026\b|\bNovember\s+2026\b[^.\n]{0,80}\b(?:release|launch)\b/i.test(reportBody)
+  ) {
+    const cutoffLabel = `${cutoffMatch[1]} ${cutoffMatch[2]}, ${cutoffMatch[3]}`;
+    const windowSentence = `A November 2026 release window alone does not establish whether launch occurs before the strict ${cutoffLabel} cutoff; an exact launch date is required.`;
+    normalized = normalized
+      .split('\n')
+      .map((line) => {
+        if (/^\s*#{1,6}\s+/.test(line)) return line;
+        return line
+          .replace(/[^.!?\n]*(?:\bon or after\s+November\s+30\b|\bextends? beyond\s+November\s+30\b|\beliminates? the possibility\b|\banswered definitively\b|\bexpected to launch before\s+November\s+30\b|\bpoints? (?:toward|to)[^.\n]{0,60}\blaunch(?:ing)? before\s+November\s+30\b)[^.!?\n]*(?:[.!?]|$)/gi, '')
+          .trimEnd();
+      })
+      .join('\n')
+      .replace(/^#\s+.*$/m, (heading) => `${heading}\n\n${windowSentence}`)
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
   }
   return normalized;
 }
