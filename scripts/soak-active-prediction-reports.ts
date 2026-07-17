@@ -13,6 +13,7 @@ const userAddress = (
 const repeats = Math.max(1, Number(process.env.SOAK_REPEATS || 2));
 const timeoutMs = Math.max(60_000, Number(process.env.SOAK_RUN_TIMEOUT_MS || 300_000));
 const outputDir = path.resolve(process.env.SOAK_OUTPUT_DIR || 'tmp/prediction-report-soak');
+const marketFilter = (process.env.SOAK_MARKET_FILTER || '').trim().toLowerCase();
 
 type SseEvent = Record<string, unknown> & { type?: string };
 
@@ -79,8 +80,14 @@ function marketAssertions(market: MarketSummary, markdown: string): string[] {
     if (/\b(?:bts|k-?pop|concert (?:schedule|tour)|world music tour)\b/i.test(sources)) {
       failures.push('Music or concert evidence leaked into the World Cup report.');
     }
+    if (/\b(?:mlb|baseball|mets|padres)\b/i.test(sources)) {
+      failures.push('Unrelated baseball evidence leaked into the World Cup report.');
+    }
     if (/\bJuly\s+17(?:,\s*2026)?\s+semi[- ]?final/i.test(markdown)) {
       failures.push('World Cup report attached the retrieval/publication date to a semifinal result.');
+    }
+    if (/semi[- ]?final match result[^.\n]{0,100}\(July\s+1[67](?:,\s*2026)?\)/i.test(markdown)) {
+      failures.push('World Cup report attached an unsupported parenthetical date to a semifinal result.');
     }
     if (/Argentina[^.\n]{0,100}\b(?:front[- ]?runner|favou?rite)\b/i.test(markdown) && /Spain[^.\n]{0,100}\bfavou?red over Argentina/i.test(markdown)) {
       failures.push('World Cup report contradicts the current Spain-favored evidence.');
@@ -237,7 +244,12 @@ async function runReport(market: MarketSummary, iteration: number): Promise<RunR
 
 async function main(): Promise<void> {
   await mkdir(outputDir, { recursive: true });
-  const markets = await listAllMarkets({ stage: 'active' });
+  const allMarkets = await listAllMarkets({ stage: 'active' });
+  const markets = marketFilter
+    ? allMarkets.filter((market) =>
+        `${market.title} ${market.category}`.toLowerCase().includes(marketFilter),
+      )
+    : allMarkets;
   if (markets.length === 0) throw new Error('No active prediction markets were returned.');
   process.stdout.write(`[soak] active markets=${markets.length} repeats=${repeats} planned runs=${markets.length * repeats}\n`);
   const results: RunResult[] = [];

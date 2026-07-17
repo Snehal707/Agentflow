@@ -514,6 +514,7 @@ function articleMatchesPrimaryTopic(
 function isPredictionMarketOffTopicSource(task: string, text: string): boolean {
   if (!isPredictionMarketResearchTask(task)) return false;
   const haystack = text.toLowerCase();
+  if (/%20\(|%20%28/i.test(haystack)) return true;
   if (
     /\bPrediction market category in AgentFlow:\s*Crypto\b/i.test(task) &&
     /\barc\b/i.test(task) &&
@@ -554,7 +555,7 @@ function isPredictionMarketOffTopicSource(task: string, text: string): boolean {
   if (
     /\bPrediction market category in AgentFlow:\s*Sports\b/i.test(task) &&
     /\b(world cup|fifa|winner|champion|title)\b/i.test(task) &&
-    (/\b(golden boot|golden glove|top scorer|top goalscorer|player of the tournament|most (?:fifa )?world cup appearances|women'?s world cup|u-?17|u-?20|under-17|under-20|half[- ]?time show|halftime show|quiz|red cards?|yellow cards?|disciplinary|goalkeeper profile|in profile|closing ceremony|match balls?|new ball|live match (?:blog|updates?)|live updates? on today'?s matches|player ratings?|box score|fcs football|college football|buck buchanan|british open|open championship|golf|2030 world cup|quarter[- ]?final wins|bts|k-?pop|concert (?:schedule|tour)|world music tour)\b/i.test(
+    (/\b(golden boot|golden glove|top scorer|top goalscorer|player of the tournament|most (?:fifa )?world cup appearances|women'?s world cup|u-?17|u-?20|under-17|under-20|half[- ]?time show|halftime show|quiz|red cards?|yellow cards?|disciplinary|goalkeeper profile|in profile|closing ceremony|match balls?|new ball|live match (?:blog|updates?)|live updates? on today'?s matches|player ratings?|box score|fcs football|college football|buck buchanan|british open|open championship|golf|mlb|baseball|mets|padres|2030 world cup|quarter[- ]?final wins|bts|k-?pop|concert (?:schedule|tour)|world music tour)\b/i.test(
       haystack,
     ) ||
       /\b(?:coach|manager|role|post|job)\b[^.\n]{0,50}\b(?:exit|exits|leaves|leaving|resigns|resigned|steps down)\b/i.test(
@@ -3342,10 +3343,29 @@ function ensureCurrentSportsWinnerFavorite(
   markdown: string,
   sources: NormalizedReportSource[],
 ): string {
+  const hasCurrentOddsSource = sources.some(
+    (source) =>
+      /\b(?:odds|favou?rite|champion-odds|title-odds)\b/i.test(
+        `${source.name} ${source.url} ${source.usedFor || ''}`,
+      ) &&
+      Number.isFinite(Date.parse(source.publishedAt || '')),
+  );
+  const oddsCleanedMarkdown = hasCurrentOddsSource
+    ? markdown
+        .split('\n')
+        .map((line) =>
+          line
+            .replace(/[^.!?\n]*\b(?:numerical|pre[- ]?match|final) odds?\b[^.!?\n]{0,120}\b(?:not available|unavailable|were not retrieved|are not available)\b[^.!?\n]*(?:[.!?]|$)/gi, '')
+            .trimEnd(),
+        )
+        .join('\n')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim()
+    : markdown;
   const evidence = currentSportsWinnerFavoriteEvidence(sources);
-  if (!evidence) return markdown;
+  if (!evidence) return oddsCleanedMarkdown;
   const opponentPattern = new RegExp(`\\b${escapeRegExp(evidence.opponent)}\\b`, 'i');
-  const repairedMarkdown = markdown
+  const repairedMarkdown = oddsCleanedMarkdown
     .split('\n')
     .map((line) => {
       if (
@@ -3392,7 +3412,7 @@ function stripUnsupportedSportsResultDates(
 ): string {
   const resultDatePattern =
     /\s+on\s+((?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},\s+20\d{2})/gi;
-  const resultSignal = /\b(beat|beats|defeated|eliminated|advanced|qualified|reached|booked|secured|clinched|lost to)\b/i;
+  const resultSignal = /\b(beat|beats|defeated|eliminated|advanced|qualified|reached|booked|secured|clinched|lost to|match result|final score|semi[- ]?final result)\b/i;
   const resultEvidence = sources
     .filter((source) => sportsStateEvidenceSignal(`${source.name} ${source.usedFor || ''}`))
     .map((source) => source.usedFor || '')
@@ -3426,7 +3446,7 @@ function stripUnsupportedSportsResultDates(
     .split('\n')
     .map((line) => {
       if (!resultSignal.test(line)) return line;
-      return line.replace(
+      const withoutShortDate = line.replace(
         shortResultDatePattern,
         (full, month: string, day: string, year: string | undefined) => {
           const supported = resultEvidence.toLowerCase().includes(
@@ -3435,8 +3455,16 @@ function stripUnsupportedSportsResultDates(
           return supported ? full : full.replace(new RegExp(`${escapeRegExp(month)}\\s+${day}(?:,\\s*${year || '20\\d{2}'})?`, 'i'), '');
         },
       );
+      return withoutShortDate.replace(
+        new RegExp(`\\s*\\((?:${MONTH_NAMES.join('|')})\\s+\\d{1,2}(?:,\\s*20\\d{2})?\\)`, 'gi'),
+        (full) => {
+          const dateText = full.replace(/[()]/g, '').trim();
+          return resultEvidence.toLowerCase().includes(dateText.toLowerCase()) ? full : '';
+        },
+      );
     })
-    .join('\n');
+    .join('\n')
+    .replace(/ {2,}/g, ' ');
 }
 
 function sportsWinnerNumericEvidenceSignal(value: string): boolean {
@@ -4011,7 +4039,8 @@ function normalizeGtaPredictionReport(markdown: string, task: string): string {
     .replace(/^The stated [A-Z][a-z]+\s+\d{1,2},\s+20\d{2} launch date is after the strict [A-Z][a-z]+\s+\d{1,2},\s+20\d{2} cutoff\.\s*$/gim, '')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
-  const reportBody = normalized.split(/^##\s+Sources\s*$/im)[0] || normalized;
+  const reportBody = (normalized.split(/^##\s+Sources\s*$/im)[0] || normalized)
+    .replace(/^#\s+.*$/m, '');
   const releaseDateMatches = [
     ...reportBody.matchAll(
       /(?:\b(?:release|launch)(?:d|es|ing)?\b[^.\n]{0,55}?|\b(?:scheduled|planned)\b[^.\n]{0,55}?)(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(20\d{2})\b|\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(20\d{2})\b[^.\n]{0,45}\b(?:release|launch)\b/gi,
