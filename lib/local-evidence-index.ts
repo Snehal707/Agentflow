@@ -307,6 +307,7 @@ export async function mergeLocalEvidenceIntoLiveData(
   });
   const now = Date.now();
   const reusableHits = hits.filter((hit) => {
+    if (!isEvidenceHitRelevantToTask(task, hit)) return false;
     const expiresAt = Date.parse(hit.expires_at);
     if (!Number.isFinite(expiresAt) || expiresAt > now) return true;
     if (!isSportsWinnerTask || hit.reliability === 'low') return false;
@@ -394,6 +395,54 @@ export async function mergeLocalEvidenceIntoLiveData(
       local_evidence_count: localArticles.length,
     },
   };
+}
+
+function isEvidenceHitRelevantToTask(task: string, hit: LocalEvidenceSearchResult): boolean {
+  if (!/\bprediction market\b/i.test(task)) return true;
+  const evidence = normalizeEvidenceText(
+    `${hit.title} ${hit.content} ${hit.publisher} ${hit.domain} ${hit.url}`,
+  );
+
+  // Prediction-market prompts share a large amount of routing boilerplate. A
+  // lexical index can therefore rank a fresh article from another market above
+  // the requested underlying. Require the real-world subject to match before a
+  // cached document is allowed into LIVE DATA.
+  if (/\b(?:gta\s*6|grand theft auto\s*(?:vi|6))\b/i.test(task)) {
+    return /\b(?:gta\s*6|grand theft auto\s*(?:vi|6))\b/i.test(evidence);
+  }
+  if (/\b(?:bitcoin|btc)\b/i.test(task)) {
+    return /\b(?:bitcoin|btc)\b/i.test(evidence);
+  }
+  if (/\b(?:xaut|tether gold)\b/i.test(task)) {
+    return /\b(?:xaut|tether gold|gold|bullion)\b/i.test(evidence);
+  }
+  if (/\b(?:fifa|world cup)\b/i.test(task)) {
+    return /\b(?:fifa|world cup)\b/i.test(evidence);
+  }
+  if (/\bethereum|\beth\b/i.test(task)) {
+    return /\bethereum|\beth\b/i.test(evidence);
+  }
+  if (/\bsolana|\bsol\b/i.test(task)) {
+    return /\bsolana|\bsol\b/i.test(evidence);
+  }
+  if (/\bxrp\b/i.test(task)) return /\bxrp\b/i.test(evidence);
+  if (/\barc\b/i.test(task) && /\b(mainnet|testnet|launch)\b/i.test(task)) {
+    return /\barc\b/i.test(evidence) && /\b(blockchain|mainnet|testnet|chain|crypto)\b/i.test(evidence);
+  }
+
+  const subject = task
+    .split(/\r?\n/, 1)[0]
+    .replace(/^\s*research\s+(?:the\s+)?prediction market topic:\s*/i, '')
+    .trim();
+  const generic = new Set([
+    'before', 'after', 'will', 'would', 'could', 'should', 'reach', 'reaches',
+    'launch', 'market', 'prediction', 'price', 'million', 'billion', 'trillion',
+    'january', 'february', 'march', 'april', 'may', 'june', 'july', 'august',
+    'september', 'october', 'november', 'december', '2025', '2026', '2027',
+  ]);
+  const anchors = (subject.toLowerCase().match(/[a-z][a-z0-9.-]{2,}/g) ?? [])
+    .filter((term) => !generic.has(term));
+  return anchors.length === 0 || anchors.some((anchor) => evidence.toLowerCase().includes(anchor));
 }
 
 function sourceToEvidenceDocument(

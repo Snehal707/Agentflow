@@ -268,6 +268,48 @@ try {
     `expected cached, still-fresh sports results to clear the pre-Analyst gate: ${cachedSportsAssessment.issues.join('; ')}`,
   );
 
+  const unrelatedFreshWorldCupEvidence: EvidenceDocument = {
+    ...fresh,
+    id: 'fresh-world-cup-for-wrong-market',
+    canonical_url: 'https://www.fifa.com/world-cup/final',
+    url: 'https://www.fifa.com/world-cup/final',
+    domain: 'fifa.com',
+    title: 'Spain and Argentina meet in the FIFA World Cup final',
+    publisher: 'FIFA',
+    content: 'The confirmed World Cup final is Spain against Argentina.',
+    published_at: new Date(now - 60_000).toISOString(),
+    expires_at: new Date(now + 60_000).toISOString(),
+  };
+  const relevantFreshGtaEvidence: EvidenceDocument = {
+    ...fresh,
+    id: 'fresh-gta-release',
+    canonical_url: 'https://www.rockstargames.com/gta-vi/release',
+    url: 'https://www.rockstargames.com/gta-vi/release',
+    domain: 'rockstargames.com',
+    title: 'Grand Theft Auto VI release update',
+    publisher: 'Rockstar Games',
+    content: 'Rockstar published a GTA 6 release update for consoles.',
+    published_at: new Date(now - 60_000).toISOString(),
+    expires_at: new Date(now + 60_000).toISOString(),
+  };
+  searchHits = [unrelatedFreshWorldCupEvidence, relevantFreshGtaEvidence];
+  const gtaTask = [
+    'research the prediction market topic: Will GTA 6 launch before November 30, 2026?',
+    'Prediction market category in AgentFlow: Games.',
+  ].join('\n');
+  const gtaLiveData = await mergeLocalEvidenceIntoLiveData(
+    gtaTask,
+    { dynamic_sources: { articles: [] } },
+  );
+  const gtaArticles = (
+    (gtaLiveData?.dynamic_sources as { articles?: Array<{ title: string }> })?.articles ?? []
+  );
+  assert.deepEqual(
+    gtaArticles.map((article) => article.title),
+    ['Grand Theft Auto VI release update'],
+    'cached evidence from a different prediction-market underlying must not leak into GTA research',
+  );
+
   const indexed = await indexFastResearchEvidence('latest example topic', {
     dynamic_sources: {
       articles: [
