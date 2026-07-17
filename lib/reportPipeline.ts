@@ -4053,7 +4053,7 @@ function stripUnrequestedPortfolioSections(markdown: string, liveData: Obj | nul
   let skipping = false;
   let skippedBoldSection = false;
   const portfolioHeading = (line: string) =>
-    /^(?:#{1,6}\s+|\*\*)[^\n]*(?:portfolio impact|your portfolio|your holdings|your positions|affects? your portfolio)[^\n]*(?:\*\*)?\s*$/i.test(
+    /^(?:#{1,6}\s+|\*\*)[^\n]*(?:portfolio (?:impact|context)|your portfolio|your holdings|your positions|affects? your portfolio)[^\n]*(?:\*\*)?\s*$/i.test(
       line.trim(),
     );
 
