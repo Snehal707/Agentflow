@@ -548,7 +548,7 @@ function isPredictionMarketOffTopicSource(task: string, text: string): boolean {
   if (
     /\bPrediction market category in AgentFlow:\s*Sports\b/i.test(task) &&
     /\b(world cup|fifa|winner|champion|title)\b/i.test(task) &&
-    (/\b(golden boot|golden glove|top scorer|top goalscorer|player of the tournament|most (?:fifa )?world cup appearances|women'?s world cup|u-?17|u-?20|under-17|under-20|half[- ]?time show|halftime show|quiz|red cards?|yellow cards?|disciplinary|goalkeeper profile|in profile|closing ceremony|match balls?|new ball|live match (?:blog|updates?)|live updates? on today'?s matches|player ratings?|box score|fcs football|college football|buck buchanan|2030 world cup|quarter[- ]?final wins)\b/i.test(
+    (/\b(golden boot|golden glove|top scorer|top goalscorer|player of the tournament|most (?:fifa )?world cup appearances|women'?s world cup|u-?17|u-?20|under-17|under-20|half[- ]?time show|halftime show|quiz|red cards?|yellow cards?|disciplinary|goalkeeper profile|in profile|closing ceremony|match balls?|new ball|live match (?:blog|updates?)|live updates? on today'?s matches|player ratings?|box score|fcs football|college football|buck buchanan|british open|open championship|golf|2030 world cup|quarter[- ]?final wins)\b/i.test(
       haystack,
     ) ||
       /\b(?:coach|manager|role|post|job)\b[^.\n]{0,50}\b(?:exit|exits|leaves|leaving|resigns|resigned|steps down)\b/i.test(
@@ -1218,6 +1218,14 @@ function addSupplementalLiveEvidenceSources(
   ) => {
     const rawUrl = normalizeUrl(asString(url));
     if (!rawUrl) return;
+    if (
+      isPredictionMarketOffTopicSource(
+        task,
+        `${asString(name) || ''} ${rawUrl} ${asString(usedFor) || ''}`,
+      )
+    ) {
+      return;
+    }
     const priority = sourcePriority(rawUrl, asString(name) ?? undefined);
     if (priority < 20) return;
     sources.add(name, rawUrl, usedFor, {
@@ -1270,8 +1278,36 @@ function addSupplementalLiveEvidenceSources(
     );
   }
 
+  const prioritizeSportsStateEntries = (entries: unknown[]): unknown[] => {
+    if (!isSportsWinnerPredictionMarketReport(task)) return entries;
+    const score = (entry: unknown): number => {
+      const article = asObject(entry);
+      const evidence = [
+        asString(article?.title),
+        asString(article?.summary),
+        asString(article?.publisher),
+        asString(article?.url),
+      ].filter(Boolean).join(' ');
+      const seenAt = Date.parse(
+        asString(article?.seen_at) || asString(article?.published_at) || '',
+      );
+      const ageDays = Number.isFinite(seenAt)
+        ? (Date.now() - seenAt) / 86_400_000
+        : Infinity;
+      return (
+        (sportsStateEvidenceSignal(evidence) ? 1_000 : 0) +
+        (ageDays >= -0.5 && ageDays <= 2.25 ? 100 : 0) +
+        sourcePriority(
+          asString(article?.url) || '',
+          asString(article?.publisher) || '',
+        )
+      );
+    };
+    return [...entries].sort((left, right) => score(right) - score(left));
+  };
+
   const dynamicSources = asObject(liveData?.dynamic_sources);
-  for (const entry of asArray(dynamicSources?.articles).slice(0, 6)) {
+  for (const entry of prioritizeSportsStateEntries(asArray(dynamicSources?.articles)).slice(0, 6)) {
     const article = asObject(entry);
     const articleText = [
       asString(article?.title),
@@ -1298,10 +1334,10 @@ function addSupplementalLiveEvidenceSources(
   }
 
   const events = currentEvents(liveData);
-  for (const entry of [
+  for (const entry of prioritizeSportsStateEntries([
     ...asArray(events?.article_snapshots),
     ...asArray(events?.articles),
-  ].slice(0, 6)) {
+  ]).slice(0, 6)) {
     const article = asObject(entry);
     const articleText = [
       asString(article?.title),
@@ -3183,7 +3219,7 @@ function isSportsWinnerPredictionMarketReport(task: string): boolean {
 function sportsStateEvidenceSignal(value: string): boolean {
   const normalized = value.replace(/\s+/g, ' ');
   const resultVerb =
-    /\b(beat|beats|defeated|eliminated|advanced|advances|qualified|reached|booked|secured|clinched|lost to)\b/i.test(
+    /\b(beat|beats|defeated|eliminated|advanced|advances|qualified|reached|booked|secured|clinched|lost to|semi[- ]?final loss|knocked out)\b/i.test(
       normalized,
     );
   const competitionStage = /\b(semi[- ]?finals?|finals?|finalists?|title match|championship match)\b/i.test(
