@@ -1192,6 +1192,7 @@ export function filterFastResearchDynamicEvidence(
     if (isLowValueSocialSourceUrl(snapshot.url) || isLowValueVideoUrl(snapshot.url)) return false;
     if (isGoogleNewsUrl(snapshot.url) || isGoogleConsentUrl(snapshot.url)) return false;
     const haystack = `${snapshot.title} ${snapshot.summary} ${snapshot.publisher || ''} ${snapshot.url}`.toLowerCase();
+    if (!articleMatchesFedMeetingResearch(task, haystack)) return false;
     if (anchorGroups.length > 0) {
       return anchorGroups.every((group) => group.some((term) => containsAnchorTerm(haystack, term)));
     }
@@ -2775,7 +2776,7 @@ function buildAiResearchFirecrawlVariants(baseQuery: string): string[] {
 }
 
 /** Federal Reserve / FOMC meeting research — not Federal News Network retirement articles. */
-function isFedMeetingResearchQuery(query: string): boolean {
+export function isFedMeetingResearchQuery(query: string): boolean {
   const text = query.replace(/\s+/g, ' ').trim();
   if (!text) return false;
   if (/\bfederal\s+news\s+network\b/i.test(text)) return false;
@@ -2788,6 +2789,29 @@ function isFedMeetingResearchQuery(query: string): boolean {
   );
 }
 
+/**
+ * Bare "fed" matches the sports verb ("fed the ball"). For FOMC tasks, require
+ * Federal Reserve / rate-policy language — not just fed + meeting.
+ */
+export function articleMatchesFedMeetingResearch(task: string, haystack: string): boolean {
+  if (!isFedMeetingResearchQuery(task)) return true;
+  const text = haystack.toLowerCase();
+  if (
+    /\b(?:federal\s+reserve|fomc|federal\s+open\s+market|fed\s+funds|interest\s+rates?|monetary\s+policy|central\s+bank)\b/i.test(
+      text,
+    )
+  ) {
+    return true;
+  }
+  // Allow short "Fed" only with rate-policy co-signals (not sports "fed" + "meeting").
+  return (
+    /\bfed\b/i.test(text) &&
+    /\b(?:rate|rates|hike|cut|cuts|minutes|powell|warsh|fomc|treasury|inflation|hawkish|dovish)\b/i.test(
+      text,
+    )
+  );
+}
+
 function buildFedMeetingFirecrawlVariants(baseQuery: string): string[] {
   const variants: string[] = [];
   if (!isFedMeetingResearchQuery(baseQuery)) return variants;
@@ -2795,14 +2819,21 @@ function buildFedMeetingFirecrawlVariants(baseQuery: string): string[] {
   const year = new Date().getUTCFullYear();
   addUniqueQuery(variants, 'Federal Reserve FOMC meeting schedule');
   addUniqueQuery(variants, `next FOMC meeting date ${year}`);
+  addUniqueQuery(variants, 'Federal Reserve FOMC calendar federalreserve.gov');
+  addUniqueQuery(variants, 'site:federalreserve.gov/monetarypolicy/fomccalendars.htm');
   addUniqueQuery(variants, 'Federal Reserve interest rate decision latest');
   addUniqueQuery(variants, 'site:federalreserve.gov FOMC meeting');
   addUniqueQuery(variants, 'site:federalreserve.gov monetary policy');
   addUniqueQuery(variants, 'site:reuters.com Federal Reserve FOMC meeting');
   addUniqueQuery(variants, 'site:cnbc.com next Fed meeting FOMC');
   addUniqueQuery(variants, 'site:bloomberg.com Federal Reserve rate decision');
+  // Prefer disambiguated Federal Reserve wording over bare "fed" (sports verb collision).
+  addUniqueQuery(variants, 'next Federal Reserve FOMC meeting date');
   // Disambiguate away from federalnewsnetwork.com retirement/"your portfolio" hits.
-  addUniqueQuery(variants, `${baseQuery} Federal Reserve FOMC -retirement -"federal news network"`);
+  addUniqueQuery(
+    variants,
+    `${baseQuery.replace(/\bfed\b/gi, 'Federal Reserve')} Federal Reserve FOMC -retirement -"federal news network" -sporting -odds`,
+  );
 
   return variants;
 }

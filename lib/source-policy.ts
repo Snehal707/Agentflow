@@ -117,6 +117,21 @@ export function isAuthoritativeSportsEvidenceUrl(url: string, publisher?: string
   );
 }
 
+function isSportsResearchTask(task: string): boolean {
+  return (
+    isSportsPredictionMarketTask(task) ||
+    /\b(?:world cup|fifa|uefa|champions league|premier league|nba|nfl|mlb|nhl|tennis|soccer|football|odds|sporting)\b/i.test(
+      task,
+    )
+  );
+}
+
+/** Sports outlets are high-value for sports tasks and noise for Fed/macro research. */
+export function isSportsOnlySourceForNonSportsTask(task: string, source: SourceLike): boolean {
+  if (isSportsResearchTask(task)) return false;
+  return isAuthoritativeSportsEvidenceUrl(source.url, source.publisher);
+}
+
 export function isLowValueSourceForTask(task: string, source: SourceLike): boolean {
   const domain = (source.domain || sourceHostname(source.url)).toLowerCase();
   const url = source.url.toLowerCase();
@@ -127,6 +142,7 @@ export function isLowValueSourceForTask(task: string, source: SourceLike): boole
 
   if (isCircularResearchSourceUrl(task, url)) return true;
   if (isLowValueSocialSourceUrl(url)) return true;
+  if (isSportsOnlySourceForNonSportsTask(task, source)) return true;
   if (
     /\b(?:duckduckgo\.com|google\.com|bing\.com|search\.yahoo\.com|search\.brave\.com)\b/.test(domain) &&
     /(?:[?&]q=|\/search\b|\/search\?)/i.test(url)

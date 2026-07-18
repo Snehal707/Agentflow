@@ -358,6 +358,55 @@ assert.equal(
   'Expected one-token entity research topics like SpaceX to keep matching article evidence.',
 );
 
+const fedMeetingFilteredEvidence = filterFastResearchDynamicEvidence('next fed meeting', [
+  {
+    title: 'World Cup odds update as favorites hold lead',
+    url: 'https://www.sportingnews.com/us/soccer/news/foo',
+    publisher: 'Sporting News',
+    summary: 'Spain fed Portugal through and held meeting with coaches',
+    seen_at: '2026-07-17T00:00:00.000Z',
+  },
+  {
+    title: 'Opta analyst preview',
+    url: 'https://theanalyst.com/articles/foo',
+    publisher: 'The Analyst',
+    summary: 'Teams fed attacks in latest meeting of favorites',
+    seen_at: '2026-07-18T00:00:00.000Z',
+  },
+  {
+    title: 'Fed keeps rates steady at June FOMC meeting',
+    url: 'https://www.reuters.com/markets/us/fed-minutes',
+    publisher: 'Reuters',
+    summary: 'Federal Reserve policymakers left interest rates unchanged amid inflation concerns',
+    seen_at: '2026-07-08T00:00:00.000Z',
+  },
+  {
+    title: 'FOMC meeting calendars',
+    url: 'https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm',
+    publisher: 'Federal Reserve',
+    summary: 'Next Federal Open Market Committee meeting dates for 2026',
+    seen_at: '2026-07-18T00:00:00.000Z',
+  },
+]);
+assert.ok(
+  fedMeetingFilteredEvidence.every(
+    (snapshot) => !/sportingnews\.com|theanalyst\.com/i.test(snapshot.url),
+  ),
+  'Expected Fed meeting research to drop sports-site contamination from bare "fed" verb matches.',
+);
+assert.ok(
+  fedMeetingFilteredEvidence.some((snapshot) => /reuters\.com|federalreserve\.gov/i.test(snapshot.url)),
+  'Expected Fed meeting research to keep Federal Reserve / Reuters evidence.',
+);
+assert.ok(
+  isLowValueSourceForTask('next fed meeting', {
+    url: 'https://www.sportingnews.com/us/soccer/news/foo',
+    publisher: 'Sporting News',
+    title: 'World Cup odds',
+  }),
+  'Expected Sporting News to be low-value for non-sports Fed research.',
+);
+
 const syntheticFuelQueries = buildPrimaryFirecrawlQueryVariants(
   'do research on synthetic fuels aviation',
   'do research on synthetic fuels aviation',

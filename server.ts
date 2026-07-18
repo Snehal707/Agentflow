@@ -9713,7 +9713,9 @@ function ensureWalletContextInReport(
   const hasExistingImpactSection =
     /^#{2,3}\s+(?:Your Portfolio Impact|Personalized Portfolio Impact|Portfolio Impact|Portfolio Implications|Impact for Portfolio Holdings|Impact on Portfolio Holdings)\b/im.test(
       markdown,
-    );
+    ) ||
+    // Writer often emits "Portfolio Impact" as bold/inline without a ## heading.
+    /(?:^|\n)\s*\*{0,2}Portfolio Impact\*{0,2}\b/im.test(markdown);
 
   // Keep the writer's event-to-holding section when present.
   if (hasUsableWalletContext && hasExistingImpactSection) {
