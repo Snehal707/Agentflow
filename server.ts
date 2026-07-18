@@ -120,6 +120,7 @@ import {
   assessFastReportEvidence,
   finalizeReportMarkdown,
 } from './lib/reportPipeline';
+import { sanitizeWalletUsdAbbreviations } from './lib/sanitize-wallet-usd-abbreviations';
 import {
   indexFastResearchEvidence,
   mergeLocalEvidenceIntoLiveData,
@@ -9660,7 +9661,7 @@ function stripExistingPortfolioImpactSection(markdown: string): string {
   let normalized = markdown.replace(/\r\n/g, '\n');
 
   const headingPattern =
-    /^#{2,3}\s+(?:Your Portfolio Impact|Personalized Portfolio Impact|Portfolio Impact|Portfolio Implications|How This Affects Your Portfolio|Impact on Your Portfolio|Portfolio Relevance)\b.*$/im;
+    /^#{2,3}\s+(?:Your Portfolio Impact|Personalized Portfolio Impact|Portfolio Impact|Portfolio Implications|How This Affects Your Portfolio|Impact on Your Portfolio|Impact for Portfolio Holdings|Impact on Portfolio Holdings|Portfolio Relevance)\b.*$/im;
   while (true) {
     const match = headingPattern.exec(normalized);
     if (!match || match.index === undefined) break;
@@ -9710,13 +9711,13 @@ function ensureWalletContextInReport(
       !(walletContext as ResearchWalletContext).error,
   );
   const hasExistingImpactSection =
-    /^#{2,3}\s+(?:Your Portfolio Impact|Personalized Portfolio Impact|Portfolio Impact|Portfolio Implications)\b/im.test(
+    /^#{2,3}\s+(?:Your Portfolio Impact|Personalized Portfolio Impact|Portfolio Impact|Portfolio Implications|Impact for Portfolio Holdings|Impact on Portfolio Holdings)\b/im.test(
       markdown,
     );
 
   // Keep the writer's event-to-holding section when present.
   if (hasUsableWalletContext && hasExistingImpactSection) {
-    return markdown;
+    return sanitizeWalletUsdAbbreviations(markdown, walletContext);
   }
 
   // Writer often omits personalization even when the snapshot loaded. Append the
@@ -9725,12 +9726,17 @@ function ensureWalletContextInReport(
     ? markdown
     : stripExistingPortfolioImpactSection(markdown);
 
-  const sourcesIndex = cleanedMarkdown.search(/^##\s+Sources\b/im);
-  if (sourcesIndex >= 0) {
-    return `${cleanedMarkdown.slice(0, sourcesIndex).trim()}\n\n${section}\n\n${cleanedMarkdown.slice(sourcesIndex).trim()}`;
-  }
+  const withSection =
+    cleanedMarkdown.search(/^##\s+Sources\b/im) >= 0
+      ? (() => {
+          const sourcesIndex = cleanedMarkdown.search(/^##\s+Sources\b/im);
+          return `${cleanedMarkdown.slice(0, sourcesIndex).trim()}\n\n${section}\n\n${cleanedMarkdown.slice(sourcesIndex).trim()}`;
+        })()
+      : `${cleanedMarkdown.trim()}\n\n${section}`;
 
-  return `${cleanedMarkdown.trim()}\n\n${section}`;
+  return hasUsableWalletContext
+    ? sanitizeWalletUsdAbbreviations(withSection, walletContext)
+    : withSection;
 }
 
 function streamStaticSseReply(
@@ -17284,7 +17290,7 @@ async function start(): Promise<void> {
       ? `\n\nINTERNAL AGENTFLOW CONTEXT JSON:\n${researchContext}\n\nUse this internal context as primary evidence for private AgentFlow handles, wallets, invoices, payment requests, transactions, contacts, and reputation cache. Public web evidence is enrichment only. If public web evidence is limited, say so and still produce a risk assessment from internal evidence.`
       : '';
     const walletContextBlock = walletContext && portfolioImpact
-      ? `\n\nPORTFOLIO_CONTEXT JSON:\n${JSON.stringify(walletContext, null, 2)}\n\nThe user asked about their portfolio. Use this AgentFlow DCW snapshot as private first-party exposure context. Classify what the user holds (stablecoins, volatile crypto, DeFi, Gateway, mixed) and explain impact through those asset classes. Do not expose full wallet addresses, raw balances, or PnL unless the user explicitly asks for a balance/portfolio breakdown. If the snapshot has an error or empty holdings, say that the DCW scan was unavailable or empty instead of inventing holdings.`
+      ? `\n\nPORTFOLIO_CONTEXT JSON:\n${JSON.stringify(walletContext, null, 2)}\n\nThe user asked about their portfolio. Use this AgentFlow DCW snapshot as private first-party exposure context. Classify what the user holds (stablecoins, volatile crypto, DeFi, Gateway, mixed) and explain impact through those asset classes. Do not expose full wallet addresses, raw balances, or PnL unless the user explicitly asks for a balance/portfolio breakdown. Each usd_value is already in USD dollars — never append K/M/B (write ≈ $284, not $284K). If the snapshot has an error or empty holdings, say that the DCW scan was unavailable or empty instead of inventing holdings.`
       : '';
     const liveDataPayload = parseLiveDataPayload(liveData);
     const currentEventsPayload =

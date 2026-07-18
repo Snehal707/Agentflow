@@ -16,6 +16,7 @@ import { isLowValueSourceForTask } from '../lib/source-policy';
 import { mergeUnderstandingWithHeuristic, type MarketUnderstanding } from '../lib/market-understanding';
 import { buildAnalystModelInput, buildWriterModelInput } from '../lib/reportInputs';
 import { buildPredictionTopicResearchPrompt } from '../lib/predmarket-research-context';
+import { sanitizeWalletUsdAbbreviations } from '../lib/sanitize-wallet-usd-abbreviations';
 
 const topicOnlyPredictionResearchPrompt = buildPredictionTopicResearchPrompt(
   'Who Will Win the FIFA World Cup 2026?',
@@ -197,6 +198,57 @@ assert.match(
   writerPortfolioInput,
   /may affect or may not affect each relevant exposure/i,
   'Expected writer input to personalize even when event evidence is thin.',
+);
+assert.match(
+  writerPortfolioInput,
+  /never write \$XK\/\$XM shorthand/i,
+  'Expected writer input to forbid K/M shorthand on wallet usd_value fields.',
+);
+
+const sanitizedWalletUsdAbbreviations = sanitizeWalletUsdAbbreviations(
+  `## Impact for Portfolio Holdings
+
+- **USDC Holdings (≈ $284K exposure):** Rates channel.
+- **Lunex USDC Vault Position (≈ $11K exposure):** Yield.
+- **Circle Gateway Reserve (≈ $362K USDC):** Opportunity cost.
+- **EURC Holdings (≈ $64K exposure):** ECB.
+- Unrelated market size stayed at $500K.`,
+  {
+    total_value_usd: 721,
+    holdings: [
+      { symbol: 'USDC', usd_value: 284.12 },
+      { symbol: 'EURC', usd_value: 64.2 },
+    ],
+    positions: [
+      { name: 'Lunex USDC Vault', usd_value: 11.4 },
+      { name: 'Circle Gateway', usd_value: 362.1 },
+    ],
+  },
+);
+assert.match(
+  sanitizedWalletUsdAbbreviations,
+  /USDC Holdings \(≈ \$284 exposure\)/,
+  'Expected mistaken $284K to be corrected to $284.',
+);
+assert.match(
+  sanitizedWalletUsdAbbreviations,
+  /Lunex USDC Vault Position \(≈ \$11 exposure\)/,
+  'Expected mistaken $11K to be corrected to $11.',
+);
+assert.match(
+  sanitizedWalletUsdAbbreviations,
+  /Circle Gateway Reserve \(≈ \$362 USDC\)/,
+  'Expected mistaken $362K to be corrected to $362.',
+);
+assert.match(
+  sanitizedWalletUsdAbbreviations,
+  /EURC Holdings \(≈ \$64 exposure\)/,
+  'Expected mistaken $64K to be corrected to $64.',
+);
+assert.match(
+  sanitizedWalletUsdAbbreviations,
+  /\$500K/,
+  'Expected unrelated $500K market figure to remain when it does not match wallet amounts.',
 );
 
 const unrequestedPortfolioSectionIsRemoved = finalizeReportMarkdown({

@@ -1,4 +1,5 @@
 import { hasMojibakeMarkers, repairMojibake } from './text-normalization';
+import { sanitizeWalletUsdAbbreviations } from './sanitize-wallet-usd-abbreviations';
 import {
   isCircularResearchSourceUrl,
   isLowValueSourceForTask,
@@ -4917,6 +4918,12 @@ export function finalizeReportMarkdown(params: FinalizeParams): {
   cleanedMarkdown = normalizeDirectPriceTargetMath(cleanedMarkdown, params.task, params.liveData);
   cleanedMarkdown = normalizeGtaPredictionReport(cleanedMarkdown, params.task);
   cleanedMarkdown = stripUnrequestedPortfolioSections(cleanedMarkdown, params.liveData);
+  if (params.liveData?.portfolio_impact === true) {
+    cleanedMarkdown = sanitizeWalletUsdAbbreviations(
+      cleanedMarkdown,
+      params.liveData?.wallet_context,
+    );
+  }
   cleanedMarkdown = stripEmptyMarkdownSections(cleanedMarkdown);
   if (repairedMarkdown !== markdown || hasMojibakeMarkers(markdown)) {
     console.warn('[reportPipeline] repaired mojibake in final markdown');
