@@ -57,8 +57,8 @@ import { incrementDailyUsageCap } from './usageCaps';
 import { CHAT_DAILY_LIMIT_DEFAULT } from './usageLimits';
 import {
   formatNanopaymentRequestLine,
+  formatTelegramNanopaymentBlock,
   formatX402NanopaymentFeeLine,
-  shortHash,
 } from './telegramX402SuccessCopy';
 import { TELEGRAM_AGENTFLOW_IDENTITY_REPLY } from './agentflow-copy';
 
@@ -2048,14 +2048,21 @@ async function runTelegramPaidPortfolioReport(
     formatOptions: { maxLength: 3200 },
     logPrefix: '[telegram-bot]',
   });
-  if (!result.paid) {
+  if (!result.paid || !result.paymentEntry) {
     return result.text;
   }
-  const feeLine = formatX402NanopaymentFeeLine(PORTFOLIO_AGENT_PRICE_LABEL);
-  const settlement = result.paymentEntry?.settlementTxHash?.trim();
-  return settlement
-    ? `${result.text}\n\n${feeLine}\nTx: ${shortHash(settlement)}`
-    : `${result.text}\n\n${feeLine}`;
+  return [
+    result.text,
+    '',
+    formatTelegramNanopaymentBlock({
+      priceLabel: result.paymentEntry.price || PORTFOLIO_AGENT_PRICE_LABEL,
+      agent: result.paymentEntry.agent || 'portfolio',
+      requestId: result.paymentEntry.requestId,
+      transactionRef: result.paymentEntry.transactionRef,
+      settlementTxHash: result.paymentEntry.settlementTxHash,
+      payer: result.paymentEntry.payer,
+    }),
+  ].join('\n');
 }
 
 async function tryRunSharedTelegramIntentRouter(
