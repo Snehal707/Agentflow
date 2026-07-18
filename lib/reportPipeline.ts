@@ -1,6 +1,7 @@
 import { hasMojibakeMarkers, repairMojibake } from './text-normalization';
 import { sanitizeWalletUsdAbbreviations } from './sanitize-wallet-usd-abbreviations';
 import { ensureFomcNextMeetingInReport } from './fomc-calendar';
+import { sanitizeStaleAnticipatoryClaims } from './stale-anticipatory-claims';
 import {
   isCircularResearchSourceUrl,
   isLowValueSourceForTask,
@@ -4930,6 +4931,7 @@ export function finalizeReportMarkdown(params: FinalizeParams): {
     params.liveData,
     params.task,
   );
+  cleanedMarkdown = sanitizeStaleAnticipatoryClaims(cleanedMarkdown);
   cleanedMarkdown = stripEmptyMarkdownSections(cleanedMarkdown);
   if (repairedMarkdown !== markdown || hasMojibakeMarkers(markdown)) {
     console.warn('[reportPipeline] repaired mojibake in final markdown');

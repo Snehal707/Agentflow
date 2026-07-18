@@ -22,6 +22,7 @@ import {
   parseFomcCalendarText,
   selectNextFomcMeeting,
 } from '../lib/fomc-calendar';
+import { sanitizeStaleAnticipatoryClaims } from '../lib/stale-anticipatory-claims';
 
 const topicOnlyPredictionResearchPrompt = buildPredictionTopicResearchPrompt(
   'Who Will Win the FIFA World Cup 2026?',
@@ -460,6 +461,24 @@ The specific date for the Federal Reserve's next FOMC meeting has not been offic
 assert.match(repairedFomcReport, /July 28-29, 2026/);
 assert.doesNotMatch(repairedFomcReport, /have not been published yet/i);
 assert.doesNotMatch(repairedFomcReport, /not been officially announced/i);
+
+const staleMinutesAsOf = new Date('2026-07-18T12:00:00.000Z');
+const cleanedStaleMinutes = sanitizeStaleAnticipatoryClaims(
+  `## Overview
+
+The next Federal Reserve FOMC meeting is scheduled for July 28-29, 2026. Recent publications discuss the June 2026 FOMC meeting minutes and expect minutes from that meeting the week of July 6, 2026.
+
+## Key Evidence
+
+- Minutes from the June 2026 FOMC meeting were reported to be expected the week of July 6, 2026, providing insight into policy discussions.
+- Reported release of June 2026 FOMC minutes the week of July 6, 2026 (July 2026).
+`,
+  staleMinutesAsOf,
+);
+assert.match(cleanedStaleMinutes, /July 28-29, 2026/);
+assert.doesNotMatch(cleanedStaleMinutes, /expect minutes from that meeting the week of July 6/i);
+assert.doesNotMatch(cleanedStaleMinutes, /reported to be expected the week of July 6/i);
+assert.match(cleanedStaleMinutes, /already covered the June FOMC minutes/i);
 
 const syntheticFuelQueries = buildPrimaryFirecrawlQueryVariants(
   'do research on synthetic fuels aviation',

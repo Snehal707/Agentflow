@@ -44,6 +44,7 @@ export function buildAnalystModelInput(params: {
         'If liveData.source_diagnostics indicates medium or high drift risk, flag that explicitly and do not let a narrow retrieved article redefine the user topic.',
         'Do not inherit framing from earlier report language or user assumptions.',
         'Do not introduce dates later than current_date.',
+        'Do not keep anticipatory claims (expected / will be released / week of) whose date window is already before current_date; mark those events as past or omit the stale forecast.',
         'If liveData.current_events.framing_signals exist, preserve them exactly and keep conflict status separate from route status.',
         params.portfolioImpact
           ? walletContextAvailable
@@ -99,6 +100,7 @@ export function buildWriterModelInput(params: {
         'Never let a single retrieved source or narrow side topic become the report frame unless the user explicitly asked for that angle.',
         'Do not reuse or preserve stale wording from earlier reports.',
         'Do not introduce dates later than current_date.',
+        'Do not keep anticipatory claims (expected / will be released / week of) whose date window is already before current_date; rewrite to past tense using newer sources or omit.',
         'Use a Perplexity-style structure: direct answer first, evidence bullets, uncertainty, then numbered sources with real URLs.',
         'Never cite source registry candidates or retrieval tools as sources; cite only actual retrieved publishers, APIs, or article URLs.',
         'If liveData.current_events.framing_signals exist, keep the broader conflict status and each route status aligned with those signals.',
