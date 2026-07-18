@@ -21,8 +21,9 @@ import {
   simulateSwapExecution,
   type SwapSimulationExecutionPayload,
 } from './runners/telegramSwap';
-import { buildPortfolioSnapshot } from '../agents/portfolio/portfolio';
+import { PORTFOLIO_AGENT_PRICE_LABEL } from './agentRunConfig';
 import { ARC } from './arc-config';
+import { executePortfolioAgentForChat } from './execute-portfolio-agent-chat';
 import { resolvePayee } from './agentpay-payee';
 import { fetchPayHistoryForBrain } from '../api/pay';
 import { parseBatchPaymentsFromMessage, parseInlineCsvFromMessage, type BatchPaymentRow } from './csv-batch-parser';
@@ -57,6 +58,7 @@ import { CHAT_DAILY_LIMIT_DEFAULT } from './usageLimits';
 import {
   formatNanopaymentRequestLine,
   formatX402NanopaymentFeeLine,
+  shortHash,
 } from './telegramX402SuccessCopy';
 import { TELEGRAM_AGENTFLOW_IDENTITY_REPLY } from './agentflow-copy';
 
@@ -1356,8 +1358,11 @@ async function executeParsedIntent(
     return;
   }
   if (intent.action === 'portfolio') {
-    const snap = await buildPortfolioSnapshot(row.wallet_address);
-    await send(bot, chatId, formatPortfolioTelegram(snap));
+    await send(
+      bot,
+      chatId,
+      await runTelegramPaidPortfolioReport(row, chatId, (message) => send(bot, chatId, message)),
+    );
     return;
   }
   if (intent.action === 'help') {
@@ -2023,12 +2028,49 @@ async function runTelegramSplitPreview(input: {
   };
 }
 
+async function runTelegramPaidPortfolioReport(
+  row: TelegramUserRow,
+  chatId: number,
+  onStatus?: (message: string) => Promise<void>,
+): Promise<string> {
+  await onStatus?.('Running portfolio agent (x402 nanopayment)…');
+  const executionWallet = await getOrCreateUserAgentWallet(row.wallet_address);
+  const sessionId = telegramSessionId(chatId);
+  const walletCtx = {
+    walletAddress: row.wallet_address,
+    executionWalletAddress: executionWallet.address,
+    executionTarget: 'DCW' as const,
+  };
+  const result = await executePortfolioAgentForChat({
+    userWalletAddress: row.wallet_address,
+    sessionId,
+    fallback: () => executeTool('get_portfolio', {}, walletCtx, sessionId),
+    formatOptions: { maxLength: 3200 },
+    logPrefix: '[telegram-bot]',
+  });
+  if (!result.paid) {
+    return result.text;
+  }
+  const feeLine = formatX402NanopaymentFeeLine(PORTFOLIO_AGENT_PRICE_LABEL);
+  const settlement = result.paymentEntry?.settlementTxHash?.trim();
+  return settlement
+    ? `${result.text}\n\n${feeLine}\nTx: ${shortHash(settlement)}`
+    : `${result.text}\n\n${feeLine}`;
+}
+
 async function tryRunSharedTelegramIntentRouter(
   validatedIntent: AgentFlowIntent,
   row: TelegramUserRow,
   chatId: number,
+  onStatus?: (message: string) => Promise<void>,
 ): Promise<SharedTelegramRouteResult | null> {
   try {
+    if (validatedIntent.intent === AgentFlowIntentName.PortfolioReport) {
+      return {
+        responseText: await runTelegramPaidPortfolioReport(row, chatId, onStatus),
+      };
+    }
+
     const executionWallet = await getOrCreateUserAgentWallet(row.wallet_address);
     const walletCtx = {
       walletAddress: row.wallet_address,
@@ -2464,12 +2506,18 @@ async function decideTelegramRoute(
   text: string,
   row: TelegramUserRow,
   chatId: number,
+  onStatus?: (message: string) => Promise<void>,
 ): Promise<TelegramRouteDecision> {
   const deterministicSplit = buildTelegramSplitIntent(text);
   if (deterministicSplit) {
     const validation = validateIntent(deterministicSplit);
     if (validation.severity !== 'hard') {
-      const route = await tryRunSharedTelegramIntentRouter(validation.intent, row, chatId);
+      const route = await tryRunSharedTelegramIntentRouter(
+        validation.intent,
+        row,
+        chatId,
+        onStatus,
+      );
       if (route) {
         return {
           kind: 'dispatch',
@@ -2544,7 +2592,12 @@ async function decideTelegramRoute(
       };
     }
 
-    const route = await tryRunSharedTelegramIntentRouter(validation.intent, row, chatId);
+    const route = await tryRunSharedTelegramIntentRouter(
+      validation.intent,
+      row,
+      chatId,
+      onStatus,
+    );
     if (route) {
       return {
         kind: 'dispatch',
@@ -2818,37 +2871,6 @@ async function readExecutionUsdcBalance(walletAddress: string): Promise<string> 
   return Number(formatUnits(raw, 6)).toFixed(2);
 }
 
-function formatPortfolioTelegram(snapshot: Awaited<ReturnType<typeof buildPortfolioSnapshot>>): string {
-  let usdc = '0.00';
-  let eurc = '0.00';
-  let vaultShares = '0';
-  let vaultSym = 'afvUSDC';
-  for (const h of snapshot.holdings) {
-    if (h.symbol === 'USDC' && h.kind !== 'vault_share') {
-      usdc = Number(h.balanceFormatted).toFixed(2);
-    }
-    if (h.symbol === 'EURC') {
-      eurc = Number(h.balanceFormatted).toFixed(2);
-    }
-    if (h.kind === 'vault_share') {
-      vaultShares = Number(h.balanceFormatted).toFixed(0);
-      vaultSym = h.symbol || 'afvUSDC';
-    }
-  }
-  const total = snapshot.pnlSummary.currentValueUsd;
-  const pnl = snapshot.pnlSummary.pnlUsd;
-  const pnlPct = snapshot.pnlSummary.pnlPct;
-  const sign = pnl >= 0 ? '+' : '';
-  return [
-    'Portfolio Summary',
-    `USDC: ${usdc}`,
-    `EURC: ${eurc}`,
-    `Vault shares: ${vaultShares} (${vaultSym})`,
-    `Total: ~$${total.toFixed(2)}`,
-    `P&L: ${sign}$${pnl.toFixed(2)} (${sign}${pnlPct.toFixed(2)}%)`,
-  ].join('\n');
-}
-
 export async function startTelegramBot(): Promise<void> {
   if (!(await acquireTelegramPollLock())) {
     return;
@@ -3108,8 +3130,13 @@ export async function startTelegramBot(): Promise<void> {
       return;
     }
     try {
-      const snap = await buildPortfolioSnapshot(row.wallet_address);
-      await send(bot, msg.chat.id, formatPortfolioTelegram(snap));
+      await send(
+        bot,
+        msg.chat.id,
+        await runTelegramPaidPortfolioReport(row, msg.chat.id, (message) =>
+          send(bot, msg.chat.id, message),
+        ),
+      );
     } catch (e: any) {
       await send(bot, msg.chat.id, e?.message ?? 'Portfolio failed');
     }
@@ -3475,7 +3502,9 @@ export async function startTelegramBot(): Promise<void> {
     }
 
     if (!isTelegramAffirmativeReply(text)) {
-      const routeDecision = await decideTelegramRoute(text, row, msg.chat.id);
+      const routeDecision = await decideTelegramRoute(text, row, msg.chat.id, (message) =>
+        send(bot, msg.chat.id, message),
+      );
       await logTelegramRoutingEvent({
         at: new Date().toISOString(),
         chatId: msg.chat.id,

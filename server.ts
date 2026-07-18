@@ -235,10 +235,8 @@ import {
   resolveFacilitatorHealthUrl,
 } from './lib/x402Health';
 import { AGENT_DEFAULT_PORTS, isAgentHealthy } from './lib/a2a-health';
-import {
-  formatPaidPortfolioAgentChatBody,
-  formatPortfolioSnapshotRecordsForChat,
-} from './lib/format-portfolio-chat';
+import { formatPortfolioSnapshotRecordsForChat } from './lib/format-portfolio-chat';
+import { executePortfolioAgentForChat as runPaidPortfolioAgentForChat } from './lib/execute-portfolio-agent-chat';
 import {
   getMarketDetail as getPredmarketDetail,
   listAllMarkets as listPredmarketMarkets,
@@ -4798,34 +4796,14 @@ async function executePortfolioAgentForChat(input: {
   sessionId: string;
   fallback: () => Promise<string>;
 }): Promise<string> {
-  try {
-    if (await isAgentHealthy('portfolio')) {
-      const paid = await executeDcwPaidAgentViaX402<Record<string, unknown>>({
-        userWalletAddress: input.userWalletAddress.trim(),
-        agent: 'portfolio',
-        price: portfolioPrice,
-        url: PORTFOLIO_URL,
-        requestId: `portfolio_chat_${canonicalRedisSessionId(input.sessionId)}_${Date.now()}`,
-      });
-      const data = paid.data ?? {};
-      const errMsg = typeof data.error === 'string' ? data.error.trim() : '';
-      const failed =
-        paid.status < 200 ||
-        paid.status >= 300 ||
-        data.success === false ||
-        Boolean(errMsg);
-      if (!failed) {
-        appendRecentExecutionEntries(input.sessionId, [paid.paymentEntry]);
-        return formatPaidPortfolioAgentChatBody(data, portfolioPrice);
-      }
-    }
-  } catch (err) {
-    console.warn(
-      '[chat/respond] paid portfolio agent failed:',
-      getErrorMessage(err),
-    );
+  const result = await runPaidPortfolioAgentForChat({
+    ...input,
+    logPrefix: '[chat/respond]',
+  });
+  if (result.paymentEntry) {
+    appendRecentExecutionEntries(input.sessionId, [result.paymentEntry]);
   }
-  return input.fallback();
+  return result.text;
 }
 
 function isRequestedPortfolioA2aSuccess(requested: RequestedPortfolioA2a, result: string): boolean {

@@ -270,6 +270,7 @@ function formatPortfolioAnalysis(report: string): string {
 export function formatPaidPortfolioAgentChatBody(
   data: Record<string, unknown>,
   _priceLabel: string,
+  options?: FormatPortfolioChatOptions,
 ): string {
   const holdings = Array.isArray(data.holdings) ? data.holdings : [];
   const positions = Array.isArray(data.positions) ? data.positions : [];
@@ -280,12 +281,15 @@ export function formatPaidPortfolioAgentChatBody(
       : data.pnlSummary && typeof data.pnlSummary === 'object'
         ? (data.pnlSummary as Record<string, unknown>)
         : null;
-  const snapshot = formatPortfolioSnapshotRecordsForChat({
-    holdings: holdings as Array<Record<string, unknown>>,
-    positions: positions as Array<Record<string, unknown>>,
-    recentTransactions: recentTransactions as Array<Record<string, unknown>>,
-    pnl,
-  });
+  const snapshot = formatPortfolioSnapshotRecordsForChat(
+    {
+      holdings: holdings as Array<Record<string, unknown>>,
+      positions: positions as Array<Record<string, unknown>>,
+      recentTransactions: recentTransactions as Array<Record<string, unknown>>,
+      pnl,
+    },
+    options,
+  );
   const report = typeof data.report === 'string' ? data.report.trim() : '';
   const parts: string[] = [snapshot];
   const analysis = formatPortfolioAnalysis(report);
