@@ -10,6 +10,7 @@ Core rules:
 - Verify the user's premise before accepting it. If the prompt assumes an ongoing war, direct conflict, ban, collapse, merger, or similar state, confirm that with dated evidence first.
 - If the evidence supports only tensions, reported planning, isolated strikes, or older background context, say that plainly instead of repeating the user's framing.
 - If LIVE DATA is included in the user message, treat it as authoritative for current figures.
+- If LIVE DATA includes \`fomc_calendar\`, treat it as authoritative for the next/upcoming FOMC meeting dates. Do not claim the schedule is unpublished, unconfirmed, or unavailable when \`fomc_calendar.next_meeting\` is present.
 - If PORTFOLIO_CONTEXT or LIVE DATA wallet_context is included, treat it as private first-party AgentFlow DCW context. Use it to classify exposure (stablecoins, volatile crypto, DeFi, Gateway, mixed) and assess impact through those assets.
 - Do not expose full wallet addresses, raw balances, or PnL unless the user explicitly asks for a balance/portfolio breakdown.
 - When LIVE DATA includes structured coingecko metrics, use those for price, market cap, volume, and 24h change.
@@ -250,6 +251,7 @@ Core rules:
 - If \`analysis\` emphasizes a theme that is weakly supported in \`research\`, follow \`research\`.
 - Prefer specific numbers, dates, and comparisons over vague language.
 - Never use a future date or month relative to the provided live-data snapshot/current date.
+- If \`liveData.fomc_calendar.next_meeting\` exists, state that official next FOMC meeting date and cite federalreserve.gov. Never claim the FOMC schedule is unpublished, unconfirmed, or unavailable when that object is present.
 - If evidence is uncertain, say so plainly.
 - For sports winner topics, a factual current-state report may proceed without numerical odds. If no dated public source supplies current winner odds, omit numerical odds and rankings and briefly state that limitation.
 - If the user's framing is not supported by the research, correct the framing in the report instead of repeating it.

@@ -33,6 +33,7 @@ import {
   sourceHostname,
 } from './source-policy';
 import { decodeTextResponse, normalizeSourceText, repairMojibake } from './text-normalization';
+import { fetchFomcCalendarSnapshot } from './fomc-calendar';
 
 type ResearchDomain = 'crypto' | 'geopolitics' | 'general';
 
@@ -8277,6 +8278,40 @@ export async function fetchLiveData(
     );
   }
 
+  // Official FOMC calendar is often missed by search; fetch it deterministically for Fed tasks.
+  if (isFedMeetingResearchQuery(contextTask) && !payload.fomc_calendar) {
+    try {
+      const fomcCalendar = await fetchFomcCalendarSnapshot();
+      if (fomcCalendar) {
+        payload.fomc_calendar = fomcCalendar;
+        const calendarArticle = {
+          title: 'Federal Reserve Board — FOMC meeting calendars',
+          url: fomcCalendar.source_url,
+          publisher: fomcCalendar.source_name,
+          seen_at: fomcCalendar.as_of,
+          summary: fomcCalendar.summary,
+        };
+        const existingArticles = Array.isArray(
+          (payload.dynamic_sources as { articles?: FirecrawlArticleSnapshot[] } | undefined)
+            ?.articles,
+        )
+          ? ((payload.dynamic_sources as { articles: FirecrawlArticleSnapshot[] }).articles)
+          : [];
+        payload.dynamic_sources = {
+          source: existingArticles.length
+            ? 'Official FOMC calendar + live article evidence'
+            : 'Official Federal Reserve FOMC calendar',
+          articles: selectFastResearchEvidenceWithHostDiversity(
+            [calendarArticle, ...existingArticles],
+            6,
+          ),
+        };
+      }
+    } catch (error) {
+      console.warn('[live-data] FOMC calendar fetch failed:', error);
+    }
+  }
+
   const hasSourceData = Boolean(
       payload.coingecko ||
       payload.bitcoin_onchain ||
@@ -8286,7 +8321,8 @@ export async function fetchLiveData(
       payload.gdelt ||
       payload.current_events ||
       payload.the_hacker_news ||
-      payload.dynamic_sources,
+      payload.dynamic_sources ||
+      payload.fomc_calendar,
   );
   const result = hasSourceData ? JSON.stringify(payload, null, 2) : '';
   const shouldCacheResult = shouldCacheLiveDataPayload(contextTask, payload, hasSourceData);

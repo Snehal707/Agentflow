@@ -17,6 +17,11 @@ import { mergeUnderstandingWithHeuristic, type MarketUnderstanding } from '../li
 import { buildAnalystModelInput, buildWriterModelInput } from '../lib/reportInputs';
 import { buildPredictionTopicResearchPrompt } from '../lib/predmarket-research-context';
 import { sanitizeWalletUsdAbbreviations } from '../lib/sanitize-wallet-usd-abbreviations';
+import {
+  ensureFomcNextMeetingInReport,
+  parseFomcCalendarText,
+  selectNextFomcMeeting,
+} from '../lib/fomc-calendar';
 
 const topicOnlyPredictionResearchPrompt = buildPredictionTopicResearchPrompt(
   'Who Will Win the FIFA World Cup 2026?',
@@ -406,6 +411,55 @@ assert.ok(
   }),
   'Expected Sporting News to be low-value for non-sports Fed research.',
 );
+
+const parsedFomcMeetings = parseFomcCalendarText(`
+#### 2026 FOMC Meetings
+
+June
+
+16-17*
+
+July
+
+28-29
+
+September
+
+15-16*
+`);
+const nextFomc = selectNextFomcMeeting(
+  parsedFomcMeetings,
+  new Date('2026-07-18T12:00:00.000Z'),
+).next;
+assert.equal(nextFomc?.label, 'July 28-29, 2026');
+const repairedFomcReport = ensureFomcNextMeetingInReport(
+  `## Overview
+
+The next FOMC meeting is expected sometime later this year, though specific dates and the detailed policy schedule for 2026 have not been published yet.
+
+## Key Evidence
+
+The specific date for the Federal Reserve's next FOMC meeting has not been officially announced, creating uncertainty around the schedule.
+
+## Sources
+
+- Reuters
+`,
+  {
+    fomc_calendar: {
+      next_meeting: nextFomc,
+      upcoming_meetings: nextFomc ? [nextFomc] : [],
+      source_url: 'https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm',
+      source_name: 'Federal Reserve Board',
+      as_of: '2026-07-18T00:00:00.000Z',
+      summary: 'next is July 28-29, 2026',
+    },
+  },
+  'Research on the next Fed meeting',
+);
+assert.match(repairedFomcReport, /July 28-29, 2026/);
+assert.doesNotMatch(repairedFomcReport, /have not been published yet/i);
+assert.doesNotMatch(repairedFomcReport, /not been officially announced/i);
 
 const syntheticFuelQueries = buildPrimaryFirecrawlQueryVariants(
   'do research on synthetic fuels aviation',
