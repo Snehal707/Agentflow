@@ -24,6 +24,8 @@ import {
 import { PORTFOLIO_AGENT_PRICE_LABEL } from './agentRunConfig';
 import { ARC } from './arc-config';
 import { executePortfolioAgentForChat } from './execute-portfolio-agent-chat';
+import { classifyPortfolioRequestMode } from './portfolio-request-intent';
+import { isOwnPortfolioReportRequest } from './research-request-intent';
 import { resolvePayee } from './agentpay-payee';
 import { fetchPayHistoryForBrain } from '../api/pay';
 import { parseBatchPaymentsFromMessage, parseInlineCsvFromMessage, type BatchPaymentRow } from './csv-batch-parser';
@@ -2496,6 +2498,10 @@ function buildTelegramClarificationReply(text: string, validationClarification?:
 
 function extractTelegramResearchTask(text: string): string | null {
   const trimmed = text.trim();
+  // Same as web: "make a report on my portfolio" is Portfolio Agent, not Research.
+  if (isOwnPortfolioReportRequest(trimmed) || classifyPortfolioRequestMode(trimmed) === 'snapshot') {
+    return null;
+  }
   if (!/\b(?:research|report|analy[sz]e|news|look\s+into|investigate)\b/i.test(trimmed)) {
     return null;
   }
