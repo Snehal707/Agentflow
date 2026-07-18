@@ -80,6 +80,17 @@ if (!unsupportedVault.ok) {
   assert.match(unsupportedVault.replacement, /Lunex USDC Vault.*Lunex EURC Vault/i);
 }
 
+const falsePredmarketUnavailable = validateHermesResponseGrounding(
+  'predcition market',
+  "Prediction markets aren't available in this wallet yet. Want me to show you how they work on other chains while we build the full version on Arc?",
+  [],
+);
+assert.equal(falsePredmarketUnavailable.ok, false);
+if (!falsePredmarketUnavailable.ok) {
+  assert.equal(falsePredmarketUnavailable.reason, 'false_prediction_market_unavailability');
+  assert.match(falsePredmarketUnavailable.replacement, /AchMarket on Arc|show prediction markets/i);
+}
+
 assert.equal(
   hasUnexpectedLanguageSwitch('请用中文回答', '当然，可以切换主题。'),
   false,

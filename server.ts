@@ -14540,6 +14540,31 @@ function createPublicApp(): express.Express {
         }
       }
 
+      // Catch bare / misspelled "prediction market" before the LLM router + Hermes
+      // path, which can invent "not available on Arc" answers.
+      if (isAmbiguousPredictionMarketIntent(message)) {
+        const clarify = buildPredmarketClarifyReply();
+        await appendBrainConversationTurn(memorySessionId, message, clarify.text);
+        await updateBrainEvent(brainEventId, {
+          intent_label: 'general.chat',
+          intent_source: 'fastpath',
+          ...buildFastpathBrainEventFields('product_reply'),
+          final_response_summary: clarify.text,
+          outcome: 'success',
+          total_latency_ms: Date.now() - responseStartedAt,
+        });
+        brainTelemetryFinalized = true;
+        if (clarify.quickActionGroups?.length) {
+          res.write(
+            `data: ${JSON.stringify({ meta: { quickActionGroups: clarify.quickActionGroups } })}\n\n`,
+          );
+        }
+        res.write(`data: ${JSON.stringify({ delta: clarify.text })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        res.end();
+        return;
+      }
+
       if (await tryHandleIntentRouterLayer()) {
         return;
       }

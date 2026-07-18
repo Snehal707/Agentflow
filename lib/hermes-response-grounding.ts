@@ -78,6 +78,16 @@ export function buildKnownLanguageLeakReply(message: string): string | null {
   return null;
 }
 
+export function responseClaimsPredictionMarketsUnavailable(text: string): boolean {
+  return (
+    /\bprediction\s+markets?\b/i.test(text) &&
+    /\b(?:aren'?t|are not|not)\s+available\b/i.test(text) &&
+    /\b(?:this wallet|on arc|in (?:this|the) (?:app|wallet|chat)|for (?:this|your) wallet)\b/i.test(
+      text,
+    )
+  );
+}
+
 export function buildHermesCorrectionReply(message: string): string | null {
   const translation = buildKnownLanguageLeakReply(message);
   if (translation) return translation;
@@ -87,6 +97,10 @@ export function buildHermesCorrectionReply(message: string): string | null {
       return 'AgentFlow prediction-market execution currently uses AchMarket on Arc. I do not have grounded support for Zeitgeist as an AgentFlow execution provider.';
     }
     return 'AgentFlow’s in-chat vault actions currently support the Lunex USDC Vault and Lunex EURC Vault. Pool Labs and Gamma are not supported AgentFlow vault providers.';
+  }
+
+  if (responseClaimsPredictionMarketsUnavailable(message)) {
+    return 'Prediction markets are available in AgentFlow chat via AchMarket on Arc. Ask “show prediction markets” to browse live markets, or tell me whether you want positions or how they work.';
   }
 
   if (isHallucinationChallenge(message)) {
@@ -142,6 +156,15 @@ export function validateHermesResponseGrounding(
     };
   }
 
+  if (toolsStarted.length === 0 && responseClaimsPredictionMarketsUnavailable(text)) {
+    return {
+      ok: false,
+      reason: 'false_prediction_market_unavailability',
+      replacement:
+        'Prediction markets are available in AgentFlow chat via AchMarket on Arc. Ask “show prediction markets” to browse live markets, or tell me whether you want positions or how they work.',
+    };
+  }
+
   if (responseContainsFabricatedRuntimeExplanation(text)) {
     return {
       ok: false,
@@ -180,7 +203,8 @@ export function filterUntrustedHermesHistory(messages: ChatMessage[]): ChatMessa
     if (
       responseContainsFabricatedRuntimeExplanation(message.content) ||
       hasUnexpectedLanguageSwitch(latestUser, message.content) ||
-      responseClaimsUnsupportedProductEntity(message.content)
+      responseClaimsUnsupportedProductEntity(message.content) ||
+      responseClaimsPredictionMarketsUnavailable(message.content)
     ) {
       continue;
     }
