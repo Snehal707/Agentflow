@@ -9714,25 +9714,16 @@ function ensureWalletContextInReport(
       markdown,
     );
 
-  // Preserve the writer's event-to-holding reasoning when a real wallet snapshot was
-  // supplied. Do not append the deterministic exposure template here: it is useful
-  // as private model context, but it is generic by design and can make event-based
-  // portfolio reports look detached from the researched event.
+  // Keep the writer's event-to-holding section when present.
   if (hasUsableWalletContext && hasExistingImpactSection) {
     return markdown;
   }
 
-  // If a usable wallet snapshot exists but the writer did not produce an
-  // event-specific portfolio section, avoid fabricating one from generic exposure
-  // rules. The prompts/supervisor should force the writer to add the aligned section.
-  if (hasUsableWalletContext) {
-    return markdown;
-  }
-
-  // If no wallet snapshot exists, remove any model-generated personalized section so
-  // the report cannot invent holdings, then add a deterministic unavailable-context
-  // note rather than pretending the report is personalized.
-  const cleanedMarkdown = stripExistingPortfolioImpactSection(markdown);
+  // Writer often omits personalization even when the snapshot loaded. Append the
+  // deterministic exposure section so portfolio-impact reports stay personalized.
+  const cleanedMarkdown = hasUsableWalletContext
+    ? markdown
+    : stripExistingPortfolioImpactSection(markdown);
 
   const sourcesIndex = cleanedMarkdown.search(/^##\s+Sources\b/im);
   if (sourcesIndex >= 0) {
@@ -16785,6 +16776,15 @@ function createPublicApp(): express.Express {
       pushPipelineTimingTrace(pipelineTimingTrace, timingTraceStart, 'after_research_debug_write_kicked_off');
       pushPipelineTimingTrace(pipelineTimingTrace, timingTraceStart, 'before_live_data_source_summary');
       let parsedLiveData = researchResult.data.liveData ?? null;
+      // Keep the pipeline wallet snapshot on liveData even if the research agent
+      // response omits/drops wallet_context — finalize personalization depends on it.
+      if (portfolioImpact) {
+        parsedLiveData = {
+          ...(parsedLiveData && typeof parsedLiveData === 'object' ? parsedLiveData : {}),
+          portfolio_impact: true,
+          ...(walletContext ? { wallet_context: walletContext } : {}),
+        };
+      }
       let actualSources = summarizeLiveDataSourceNames(parsedLiveData, task);
       if (reasoningMode === 'fast') {
         let evidenceAssessment = assessFastReportEvidence({

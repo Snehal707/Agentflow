@@ -35,6 +35,10 @@ const portfolioCases = [
     expected: 'Research on the next Fed meeting',
   },
   {
+    input: 'make a report on next fed meeting and how will it affect my holding',
+    expected: 'make a report on next fed meeting',
+  },
+  {
     input: 'research the next Fed meeting on the basis of my portfolio',
     expected: 'research the next Fed meeting',
   },
