@@ -2774,6 +2774,39 @@ function buildAiResearchFirecrawlVariants(baseQuery: string): string[] {
   return variants;
 }
 
+/** Federal Reserve / FOMC meeting research — not Federal News Network retirement articles. */
+function isFedMeetingResearchQuery(query: string): boolean {
+  const text = query.replace(/\s+/g, ' ').trim();
+  if (!text) return false;
+  if (/\bfederal\s+news\s+network\b/i.test(text)) return false;
+  const hasFedActor =
+    /\b(?:fed|fomc|federal\s+reserve)\b/i.test(text) ||
+    /\bfederal\s+open\s+market\s+committee\b/i.test(text);
+  if (!hasFedActor) return false;
+  return /\b(?:meeting|meetings|rate|rates|cut|hike|decision|decisions|powell|fomc|interest)\b/i.test(
+    text,
+  );
+}
+
+function buildFedMeetingFirecrawlVariants(baseQuery: string): string[] {
+  const variants: string[] = [];
+  if (!isFedMeetingResearchQuery(baseQuery)) return variants;
+
+  const year = new Date().getUTCFullYear();
+  addUniqueQuery(variants, 'Federal Reserve FOMC meeting schedule');
+  addUniqueQuery(variants, `next FOMC meeting date ${year}`);
+  addUniqueQuery(variants, 'Federal Reserve interest rate decision latest');
+  addUniqueQuery(variants, 'site:federalreserve.gov FOMC meeting');
+  addUniqueQuery(variants, 'site:federalreserve.gov monetary policy');
+  addUniqueQuery(variants, 'site:reuters.com Federal Reserve FOMC meeting');
+  addUniqueQuery(variants, 'site:cnbc.com next Fed meeting FOMC');
+  addUniqueQuery(variants, 'site:bloomberg.com Federal Reserve rate decision');
+  // Disambiguate away from federalnewsnetwork.com retirement/"your portfolio" hits.
+  addUniqueQuery(variants, `${baseQuery} Federal Reserve FOMC -retirement -"federal news network"`);
+
+  return variants;
+}
+
 function buildStablecoinPolicyFirecrawlVariants(baseQuery: string): string[] {
   const variants: string[] = [];
   const stablecoinLike = /\b(stablecoin|stablecoins|usdc|usdt|eurc|dai|circle)\b/i.test(baseQuery);
@@ -2842,6 +2875,10 @@ function buildCurrentStateFirecrawlVariants(baseQuery: string): string[] {
       addUniqueQuery(variants, 'site:rockstargames.com Grand Theft Auto VI');
       addUniqueQuery(variants, 'site:take2games.com Grand Theft Auto VI release');
       addUniqueQuery(variants, 'Rockstar Games GTA 6 release date latest');
+    }
+  } else if (isFedMeetingResearchQuery(baseQuery)) {
+    for (const query of buildFedMeetingFirecrawlVariants(baseQuery)) {
+      addUniqueQuery(variants, query);
     }
   } else if (/\blandscape\b|\becosystem\b/i.test(baseQuery)) {
     addUniqueQuery(variants, `${baseQuery} analysis`);
@@ -3957,6 +3994,12 @@ export function buildCurrentEventQueries(
     addQuery(`${entities[0]} latest`);
     if (shippingFocused) {
       addQuery(`${entities[0]} shipping latest`);
+    }
+  }
+
+  if (isFedMeetingResearchQuery(cleanedTask)) {
+    for (const query of buildFedMeetingFirecrawlVariants(cleanedTask)) {
+      addQuery(query);
     }
   }
 

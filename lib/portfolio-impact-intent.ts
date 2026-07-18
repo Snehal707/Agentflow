@@ -10,6 +10,11 @@ const ANALYTIC_NOUNS = '(?:risk|exposure|concentration|diversification)';
 const DIRECT_PATTERNS = [
   new RegExp(`\\b${IMPACT_PREFIX}\\s+${OWNERSHIP_TARGET}\\b`, 'i'),
   new RegExp(`\\b${IMPACT_NOUN}\\s+(?:of\\s+)?[\\s\\S]{0,120}?\\b(?:for|on)\\s+${OWNERSHIP_TARGET}\\b`, 'i'),
+  // "… and its/their impact on my portfolio"
+  new RegExp(
+    `\\b(?:its|their|the)\\s+${IMPACT_NOUN}\\s+(?:for|on)\\s+${OWNERSHIP_TARGET}\\b`,
+    'i',
+  ),
   new RegExp(`\\b(?:what|how)\\s+(?:does|will)\\b[\\s\\S]{0,120}?\\b${IMPACT_PREFIX}\\s+${OWNERSHIP_TARGET}\\b`, 'i'),
   new RegExp(`\\b${ANALYTIC_PREFIX}\\b[\\s\\S]{0,80}?\\b${OWNERSHIP_TARGET}\\b[\\s\\S]{0,80}?\\b${ANALYTIC_NOUNS}\\b`, 'i'),
   new RegExp(`\\b${OWNERSHIP_TARGET}\\b[\\s\\S]{0,80}?\\b${ANALYTIC_NOUNS}\\b`, 'i'),
@@ -17,7 +22,7 @@ const DIRECT_PATTERNS = [
   new RegExp(`\\b(?:with|using|include|including|add)\\s+(?:my\\s+)?${PORTFOLIO_TERMS}\\s+context\\b`, 'i'),
   new RegExp(`\\b(?:with|using|include|including|add)\\s+context\\s+(?:of|from|for)\\s+(?:my\\s+)?${PORTFOLIO_TERMS}\\b`, 'i'),
   new RegExp(`\\b(?:personalize|personalise|tailor|customize|customise)\\b[\\s\\S]{0,80}?\\b(?:my\\s+)?${PORTFOLIO_TERMS}\\b`, 'i'),
-  new RegExp(`\\b(?:based\\s+on|according\\s+to|relative\\s+to)\\s+${OWNERSHIP_TARGET}\\b`, 'i'),
+  new RegExp(`\\b(?:based\\s+on|according\\s+to|relative\\s+to|on\\s+the\\s+basis\\s+of)\\s+${OWNERSHIP_TARGET}\\b`, 'i'),
   new RegExp(`\\b${IMPACT_PREFIX}\\b[\\s\\S]{0,100}?\\bmy\\s+[a-z0-9.,/&+ -]{1,80}\\s+${PORTFOLIO_TERMS}\\b`, 'i'),
 ];
 
@@ -48,7 +53,18 @@ export function stripPortfolioImpactPhrasing(task: string): string {
     return impactOfQuestion[1].trim();
   }
 
+  const ownershipTail =
+    'my\\s+(?:[a-z0-9-]+\\s+){0,5}(?:portfolio|holdings|positions|assets?|investments?|wallet)';
+
   let stripped = original
+    // "… and its/their impact on my portfolio"
+    .replace(
+      new RegExp(
+        `\\s*(?:,|;)?\\s+(?:and\\s+)?(?:its|their|the)\\s+(?:impact|effect|implications?)(?:\\s+(?:for|on)\\s+${ownershipTail})\\b[\\s\\S]*$`,
+        'i',
+      ),
+      '',
+    )
     .replace(
       /\s*(?:,|;)?\s+(?:and\s+)?(?:how|what)\s+(?:does|do|will|would|can|could|might)\s+(?:this|that|it|the\s+(?:event|development|change|news))\s+(?:affect(?:s|ed|ing)?|impact(?:s|ed|ing)?|mean\s+for|change)\s+my\s+(?:[a-z0-9-]+\s+){0,5}(?:portfolio|holdings|positions|assets?|investments?|wallet)\b[\s\S]*$/i,
       '',
@@ -59,6 +75,14 @@ export function stripPortfolioImpactPhrasing(task: string): string {
     )
     .replace(
       /\s*(?:,|;)?\s+(?:and\s+)?(?:personalize|personalise|tailor|customize|customise)(?:\s+(?:this|the))?(?:\s+report)?\s+(?:using|with|for|based\s+on)\s+my\s+(?:[a-z0-9-]+\s+){0,5}(?:portfolio|holdings|positions|assets?|investments?|wallet)\b[\s\S]*$/i,
+      '',
+    )
+    // "… on the basis of / based on my portfolio"
+    .replace(
+      new RegExp(
+        `\\s*(?:,|;)?\\s+(?:and\\s+)?(?:on\\s+the\\s+basis\\s+of|based\\s+on|according\\s+to|relative\\s+to)\\s+${ownershipTail}\\b[\\s\\S]*$`,
+        'i',
+      ),
       '',
     )
     .replace(

@@ -15535,17 +15535,23 @@ function createPublicApp(): express.Express {
         walletCtx.walletAddress &&
         !preResearchDirectRoute
       ) {
-        await executeBrainResearchPipelineForChat({
-          res,
-          memorySessionId,
-          persistUserTurn: message,
-          researchTask: message,
-          originalUserMessage: message,
-          portfolioImpact: detectPortfolioImpactIntent(message),
-          walletAddress: walletCtx.walletAddress,
-          brainEventId,
-          redisActionScopeKey: memorySessionId,
-        });
+        {
+          const parsedResearch = parseResearchRequest(message, {
+            portfolioImpact: detectPortfolioImpactIntent(message),
+          });
+          await executeBrainResearchPipelineForChat({
+            res,
+            memorySessionId,
+            persistUserTurn: message,
+            // Search the event/topic only; keep personalization via portfolioImpact + wallet snapshot.
+            researchTask: parsedResearch.researchTask,
+            originalUserMessage: message,
+            portfolioImpact: parsedResearch.portfolioImpact,
+            walletAddress: walletCtx.walletAddress,
+            brainEventId,
+            redisActionScopeKey: memorySessionId,
+          });
+        }
         return;
       }
 

@@ -2489,7 +2489,7 @@ export async function executeTool(
       }
 
       case 'research': {
-        const { query, mode } = args;
+        const { query, mode, portfolioImpact } = args;
         let enrichedQuery = String(query);
         if (
           /\barc\b/i.test(enrichedQuery) &&
@@ -2508,6 +2508,7 @@ export async function executeTool(
             reasoningMode: 'fast',
             deep: false,
             deepResearch: false,
+            ...(portfolioImpact === true ? { portfolioImpact: true } : {}),
           }),
         });
 

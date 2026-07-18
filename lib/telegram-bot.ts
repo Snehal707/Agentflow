@@ -24,6 +24,7 @@ import {
 import { PORTFOLIO_AGENT_PRICE_LABEL } from './agentRunConfig';
 import { ARC } from './arc-config';
 import { executePortfolioAgentForChat } from './execute-portfolio-agent-chat';
+import { parseResearchRequest } from './portfolio-impact-intent';
 import { classifyPortfolioRequestMode } from './portfolio-request-intent';
 import { isOwnPortfolioReportRequest } from './research-request-intent';
 import { resolvePayee } from './agentpay-payee';
@@ -3472,6 +3473,10 @@ export async function startTelegramBot(): Promise<void> {
 
     const researchTask = extractTelegramResearchTask(text);
     if (researchTask) {
+      const parsedResearch = parseResearchRequest(text);
+      const researchQuery = parsedResearch.portfolioImpact
+        ? parsedResearch.researchTask
+        : researchTask;
       const walletCtx = {
         walletAddress: row.wallet_address,
         executionTarget: 'DCW' as const,
@@ -3479,11 +3484,15 @@ export async function startTelegramBot(): Promise<void> {
       await send(
         bot,
         msg.chat.id,
-        `Running research pipeline for: ${researchTask}\nx402 nanopayments will settle Research -> Analyst -> Writer. This can take 1-2 minutes.`,
+        `Running research pipeline for: ${researchQuery}\nx402 nanopayments will settle Research -> Analyst -> Writer. This can take 1-2 minutes.`,
       );
       const result = await executeTool(
         'research',
-        { query: researchTask, mode: /\bdeep\b/i.test(text) ? 'deep' : 'fast' },
+        {
+          query: researchQuery,
+          mode: /\bdeep\b/i.test(text) ? 'deep' : 'fast',
+          ...(parsedResearch.portfolioImpact ? { portfolioImpact: true } : {}),
+        },
         walletCtx,
         telegramSessionId(msg.chat.id),
         { maxLength: 12000 },

@@ -31,6 +31,14 @@ const portfolioCases = [
     expected: 'make report on next fed meeting',
   },
   {
+    input: 'Research on the next Fed meeting and its impact on my portfolio',
+    expected: 'Research on the next Fed meeting',
+  },
+  {
+    input: 'research the next Fed meeting on the basis of my portfolio',
+    expected: 'research the next Fed meeting',
+  },
+  {
     input: 'make a research report on global warming and how can it affect my holdings',
     expected: 'make a research report on global warming',
   },
@@ -43,6 +51,21 @@ const portfolioCases = [
     expected: 'Research the next Fed meeting',
   },
 ];
+
+// Non-portfolio research must stay untouched (no false strip).
+const plainResearchCases = [
+  'research the future of AI in China',
+  'make a report on bitcoin',
+  'Who Will Win the FIFA World Cup 2026?',
+];
+for (const input of plainResearchCases) {
+  assert.equal(
+    detectPortfolioImpactIntent(input),
+    false,
+    `must not detect portfolio impact: ${input}`,
+  );
+  assert.equal(stripPortfolioImpactPhrasing(input), input);
+}
 
 for (const testCase of portfolioCases) {
   assert.equal(
