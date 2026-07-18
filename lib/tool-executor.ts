@@ -318,14 +318,21 @@ function formatAgentPayResult(
   remark?: string,
   currency: 'USDC' | 'EURC' = 'USDC',
 ): string {
+  // One short hash + one explorer URL. Avoid [fullHash](url) and a second
+  // Explorer line with [url](url) — Telegram plain-text expansion turns that
+  // into the same tx repeated 3–4 times in the receipt.
+  const explorer =
+    typeof explorerLink === 'string' && /^https?:\/\//i.test(explorerLink) ? explorerLink : null;
+  const txLine = explorer
+    ? `Tx: ${explorerLinkLine(shortTx(txHash) || txHash, explorer)}`
+    : `Tx: ${shortTx(txHash) || txHash}`;
   return [
-    '- **Payment sent on Arc**',
+    'Payment sent on Arc',
     '',
     `Recipient: ${to}`,
     `Amount: ${amount} ${currency}`,
     remark ? `Note: ${remark}` : null,
-    `Tx: ${explorerLinkLine(txHash, explorerLink || txHash)}`,
-    explorerLink ? `Explorer: ${explorerLinkLine(explorerLink, explorerLink)}` : null,
+    txLine,
   ]
     .filter(Boolean)
     .join('\n\n');

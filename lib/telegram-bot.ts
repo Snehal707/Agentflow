@@ -160,6 +160,8 @@ type TelegramMediaTarget = {
   paymentUrl?: string | null;
   amount?: string | null;
   remark?: string | null;
+  /** Telegram message_id of the QR photo/document, for reply threading. */
+  sourceMessageId?: number;
   storedAt: string;
 };
 
@@ -378,6 +380,9 @@ async function maybeDecodeTelegramPaymentTarget(
     const qrText = await decodeTelegramQrFromBuffer(Buffer.from(arrayBuffer));
     const target = extractTelegramQrPaymentTarget(qrText);
     if (!target) return null;
+    if (typeof msg.message_id === 'number') {
+      target.sourceMessageId = msg.message_id;
+    }
     await storeTelegramMediaTarget(msg.chat.id, target);
     return target;
   } catch (error) {
@@ -757,6 +762,8 @@ type PendingAction =
       action: 'schedule' | 'split' | 'invoice' | 'batch' | 'contact_update' | 'agentpay_send';
       confirmId: string;
       label?: string;
+      /** Keep QR / source media visible by threading the result under it. */
+      replyToMessageId?: number;
     };
 
 async function getUserByTelegram(chatId: string) {
@@ -831,10 +838,18 @@ async function send(
   bot: ReturnType<typeof createTelegramBotForPolling>,
   chatId: number,
   text: string,
+  options?: { replyToMessageId?: number },
 ): Promise<void> {
   const chunks = splitTelegramMessage(formatTelegramPlainText(text));
-  for (const chunk of chunks) {
-    await bot.sendMessage(chatId, chunk, { disable_web_page_preview: true });
+  for (let i = 0; i < chunks.length; i++) {
+    const chunk = chunks[i]!;
+    await bot.sendMessage(chatId, chunk, {
+      disable_web_page_preview: true,
+      // Only the first chunk should reply — keeps the QR photo anchored once.
+      ...(i === 0 && options?.replyToMessageId
+        ? { reply_to_message_id: options.replyToMessageId }
+        : {}),
+    });
   }
 }
 
@@ -846,7 +861,10 @@ function formatTelegramPlainText(text: string): string {
     .replace(/^\s*-\s+(?=[A-Z])/gm, '')
     // Keep the URL visibly — Telegram has no Markdown parse mode here, and
     // dropping the href left Sources as bare hostnames / "likes" blurbs.
-    .replace(/\[([^\]\n]+)\]\((https?:\/\/[^)\s]+)\)/g, '$1 ($2)')
+    // When label === href (or label is already the full URL), emit the URL once.
+    .replace(/\[([^\]\n]+)\]\((https?:\/\/[^)\s]+)\)/g, (_full, label: string, href: string) =>
+      label === href || label.startsWith('http') ? href : `${label} (${href})`,
+    )
     .replace(/\*\*([^*\n]+)\*\*/g, '$1')
     .replace(/__([^_\n]+)__/g, '$1')
     .replace(/`([^`\n]+)`/g, '$1')
@@ -3260,13 +3278,18 @@ export async function startTelegramBot(): Promise<void> {
         ]
           .filter(Boolean)
           .join('\n');
-        await send(bot, msg.chat.id, prompt);
+        await send(bot, msg.chat.id, prompt, {
+          replyToMessageId: mediaTarget.sourceMessageId,
+        });
       }
       return;
     }
 
     const rememberedTarget =
       mediaTarget || (messageReferencesTelegramQrTarget(rawText) ? await loadTelegramMediaTarget(msg.chat.id) : null);
+    const qrReplyToMessageId =
+      rememberedTarget?.sourceMessageId ??
+      (mediaTarget && typeof msg.message_id === 'number' ? msg.message_id : undefined);
     const text = rememberedTarget
       ? rewriteTelegramPaymentTextWithTarget(rawText, rememberedTarget)
       : rawText;
@@ -3472,17 +3495,22 @@ export async function startTelegramBot(): Promise<void> {
             action: routeDecision.route.confirmation.action,
             confirmId: routeDecision.route.confirmation.confirmId,
             label: routeDecision.route.confirmation.label,
+            ...(qrReplyToMessageId ? { replyToMessageId: qrReplyToMessageId } : {}),
           };
           await redis.setex(pendingKey(chatId), PENDING_TTL_SEC, JSON.stringify(pendingConfirmation));
         }
         const formattedReply = formatTelegramSharedRouteReply(routeDecision.route);
-        await send(bot, msg.chat.id, formattedReply);
+        await send(bot, msg.chat.id, formattedReply, {
+          replyToMessageId: qrReplyToMessageId,
+        });
         await appendTelegramHistory(msg.chat.id, text, formattedReply, row.wallet_address);
         return;
       }
 
       if (routeDecision.kind === 'clarify') {
-        await send(bot, msg.chat.id, routeDecision.responseText);
+        await send(bot, msg.chat.id, routeDecision.responseText, {
+          replyToMessageId: qrReplyToMessageId,
+        });
         await appendTelegramHistory(msg.chat.id, text, routeDecision.responseText, row.wallet_address);
         return;
       }
@@ -3510,8 +3538,11 @@ export async function startTelegramBot(): Promise<void> {
       }
 
       try {
+        const mediaTargetForReply = await loadTelegramMediaTarget(msg.chat.id);
         const result = await executeSharedTelegramConfirmation(fallbackPending, row);
-        await send(bot, msg.chat.id, result);
+        await send(bot, msg.chat.id, result, {
+          replyToMessageId: mediaTargetForReply?.sourceMessageId,
+        });
         await appendTelegramHistory(msg.chat.id, text, result, row.wallet_address);
       } catch (e: any) {
         await send(bot, msg.chat.id, e?.message ?? 'Confirmation failed');
@@ -3531,10 +3562,14 @@ export async function startTelegramBot(): Promise<void> {
     if (pending.kind === 'shared-confirmation') {
       try {
         const result = await executeSharedTelegramConfirmation(pending, row);
-        await send(bot, msg.chat.id, result);
+        await send(bot, msg.chat.id, result, {
+          replyToMessageId: pending.replyToMessageId,
+        });
         await appendTelegramHistory(msg.chat.id, text, result, row.wallet_address);
       } catch (e: any) {
-        await send(bot, msg.chat.id, e?.message ?? 'Confirmation failed');
+        await send(bot, msg.chat.id, e?.message ?? 'Confirmation failed', {
+          replyToMessageId: pending.replyToMessageId,
+        });
       }
       return;
     }
