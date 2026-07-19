@@ -14636,11 +14636,11 @@ function createPublicApp(): express.Express {
         }
       }
 
-      if (
-        canUseFastPathForIntents(AgentFlowIntentName.ContactsCreate) &&
-        shouldHandleAsContactSave(message) &&
-        walletCtx.walletAddress
-      ) {
+      // Deterministic contact-save must not require router severity=pass.
+      // The router often classifies contacts.create with empty slots (hard),
+      // we defer that clarification above, then this path must still run —
+      // otherwise the message falls through to general chat / LLM.
+      if (shouldHandleAsContactSave(message) && walletCtx.walletAddress) {
         const contactCreateSlots =
           routerResolvedIntent?.intent === AgentFlowIntentName.ContactsCreate &&
           routerResolvedIntent.slots &&

@@ -6,6 +6,11 @@ const cases: Array<{ input: string; name: string; address: string | null }> = [
   { input: 'save vendor as jack.arc', name: 'vendor', address: 'jack.arc' },
   { input: 'save jack.arc as vendor', name: 'vendor', address: 'jack.arc' },
   { input: 'save contact jack.arc as vendor', name: 'vendor', address: 'jack.arc' },
+  {
+    input: 'save 0x598d9a6beeEC9522d988038747181438A9Cf99B3 as vendor',
+    name: 'vendor',
+    address: '0x598d9a6beeEC9522d988038747181438A9Cf99B3',
+  },
   { input: 'add contact alice alice.arc', name: 'alice', address: 'alice.arc' },
   { input: 'bob is bob.arc', name: 'bob', address: 'bob.arc' },
   { input: 'save alice', name: 'alice', address: null },
