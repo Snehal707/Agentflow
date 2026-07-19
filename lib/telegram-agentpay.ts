@@ -7,6 +7,7 @@ import { extractAgentpayRemark } from './agentpay-remark';
 import { getPreferredAgentpayPaymentLinkHandle } from './agentpay-registry';
 import { generateInvoiceNumber } from './invoice-number';
 import { resolvePayee } from './agentpay-payee';
+import { parseContactSaveMessage } from './contact-save-parse';
 import {
   parseBatchPaymentsFromMessage,
   parseInlineCsvFromMessage,
@@ -537,17 +538,21 @@ async function routeDirectAgentpayMessage(
     return { responseText: data?.length ? data.map((row: any) => `${row.name}: ${row.address}`).join('\n') : 'No contacts saved.' };
   }
 
-  const saveContact = text.match(/\bsave\s+contact\s+(\S+)\s+as\s+([a-z0-9][a-z0-9_-]{0,63})\b/i);
-  if (saveContact) {
-    const resolved = getAddress(await resolvePayee(saveContact[1], wallet.walletAddress));
+  const parsedSave = parseContactSaveMessage(text);
+  if (parsedSave?.name && parsedSave.address) {
+    const resolved = getAddress(await resolvePayee(parsedSave.address, wallet.walletAddress));
     const { error } = await adminDb.from('contacts').insert({
       wallet_address: getAddress(wallet.walletAddress),
-      name: saveContact[2].toLowerCase(),
+      name: parsedSave.name,
       address: resolved,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     });
-    return { responseText: error ? `Failed to save contact: ${error.message}` : `Saved contact "${saveContact[2]}" -> ${resolved}.` };
+    return {
+      responseText: error
+        ? `Failed to save contact: ${error.message}`
+        : `Saved contact "${parsedSave.name}" -> ${resolved}.`,
+    };
   }
 
   const updateContact = text.match(/\bupdate\s+contact\s+([a-z0-9][a-z0-9_-]{0,63})\s+(?:to|as)\s+(\S+)\b/i);

@@ -38,6 +38,10 @@ import { dispatchIntent } from './lib/intent-router/dispatcher';
 import { AgentFlowDomain, AgentFlowIntentName, type AgentFlowIntent } from './lib/intent-router/types';
 import { validateIntent, type ValidationResult } from './lib/intent-router/validator';
 import {
+  looksLikeContactSaveMessage,
+  parseContactSaveMessage,
+} from './lib/contact-save-parse';
+import {
   logBrainEvent,
   updateBrainEvent,
   type BrainEventOutcome,
@@ -8013,13 +8017,7 @@ function shouldHandleAsContactView(message: string): boolean {
 }
 
 function shouldHandleAsContactSave(message: string): boolean {
-  const t = message.trim();
-  return (
-    /save\s+\w+\s+as\s+/i.test(t) ||
-    /^save\s+\w+$/i.test(t) ||
-    /add\s+contact\s+/i.test(t) ||
-    /\b\w+\s+is\s+(0x[a-fA-F0-9]{40}|[\w.-]+\.arc)\b/i.test(t)
-  );
+  return looksLikeContactSaveMessage(message);
 }
 
 function shouldHandleAsContactUpdate(message: string): boolean {
@@ -13750,6 +13748,15 @@ function createPublicApp(): express.Express {
             ) {
               return false;
             }
+            // Let deterministic contact-save parsing handle common phrasings
+            // (including reversed "save jack.arc as vendor") instead of empty-slot
+            // router clarification.
+            if (
+              validation.intent.intent === AgentFlowIntentName.ContactsCreate &&
+              looksLikeContactSaveMessage(message)
+            ) {
+              return false;
+            }
             const vaultSelectionReply =
               validation.intent.intent === AgentFlowIntentName.VaultDeposit
                 ? parseDirectAgentFlowRoute(message, messages)
@@ -14640,24 +14647,16 @@ function createPublicApp(): express.Express {
           typeof routerResolvedIntent.slots === 'object'
             ? (routerResolvedIntent.slots as { name?: unknown; recipient?: unknown })
             : null;
-        const patterns: RegExp[] = [
-          /save\s+(\w+)\s+as\s+(0x[a-fA-F0-9]{40}|[\w.-]+\.arc)/i,
-          /add\s+contact\s+(\w+)\s+(0x[a-fA-F0-9]{40}|[\w.-]+\.arc)/i,
-          /(\w+)\s+is\s+(0x[a-fA-F0-9]{40}|[\w.-]+\.arc)/i,
-        ];
+        const parsedSave = parseContactSaveMessage(message);
         let contactName =
-          typeof contactCreateSlots?.name === 'string' && contactCreateSlots.name.trim()
+          parsedSave?.name ||
+          (typeof contactCreateSlots?.name === 'string' && contactCreateSlots.name.trim()
             ? contactCreateSlots.name.trim().toLowerCase()
-            : '';
-        let contactAddress = extractRecipientTextFromSlot(contactCreateSlots?.recipient) ?? '';
-        for (const pattern of patterns) {
-          const match = message.match(pattern);
-          if (match) {
-            contactName = match[1].toLowerCase();
-            contactAddress = match[2].trim();
-            break;
-          }
-        }
+            : '');
+        let contactAddress =
+          parsedSave?.address ||
+          extractRecipientTextFromSlot(contactCreateSlots?.recipient) ||
+          '';
         if (!contactName) {
           const nameOnlyMatch = message.match(/^save\s+(\w+)$/i);
           if (nameOnlyMatch) {
