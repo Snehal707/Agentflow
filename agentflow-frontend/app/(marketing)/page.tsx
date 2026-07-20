@@ -340,7 +340,7 @@ function ResearchUseCaseIcon({ icon }: { icon: (typeof RESEARCH_USE_CASES)[numbe
 
 export default function LandingPage() {
   return (
-    <div className={`overflow-x-hidden bg-[#070708] text-[#f5f5f5] selection:bg-amber-400/20 ${displayFontSans.className}`}>
+    <div className={`bg-[#070708] text-[#f5f5f5] selection:bg-amber-400/20 ${displayFontSans.className}`}>
       <MarketingNav />
 
       <ScrollRevealSection
