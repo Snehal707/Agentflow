@@ -3,6 +3,10 @@ import { sanitizeWalletUsdAbbreviations } from './sanitize-wallet-usd-abbreviati
 import { ensureFomcNextMeetingInReport } from './fomc-calendar';
 import { sanitizeStaleAnticipatoryClaims } from './stale-anticipatory-claims';
 import {
+  articleMatchesFedMeetingResearch,
+  isFedMeetingResearchQuery,
+} from './live-data';
+import {
   isCircularResearchSourceUrl,
   isLowValueSourceForTask,
   isLowValueSocialSourceUrl,
@@ -399,9 +403,16 @@ function inferPrimaryTopicLabel(task: string, research: Obj | null): string | nu
   );
   if (exactEntity) return exactEntity;
 
+  // Prefer Fed/FOMC subject tokens over imperative chrome like "Make a report…".
+  if (isFedMeetingResearchQuery(task)) {
+    if (/\bfomc\b/i.test(task)) return 'FOMC';
+    if (/\bfederal\s+reserve\b/i.test(task)) return 'Federal Reserve';
+    if (/\bfed\b/i.test(task)) return 'Fed';
+  }
+
   // Prefer concrete geography / subject tokens over report-title chrome like "Future".
   const geoOrSubject = taskLower.match(
-    /\b(china|chinese|india|indian|europe|european|japan|japanes|korea|korean|openai|anthropic|bitcoin|ethereum|solana|xrp|dogecoin|litecoin|cardano|avalanche|chainlink|ipcc)\b/i,
+    /\b(china|chinese|india|indian|europe|european|japan|japanes|korea|korean|openai|anthropic|bitcoin|ethereum|solana|xrp|dogecoin|litecoin|cardano|avalanche|chainlink|ipcc|fomc|fed)\b/i,
   );
   if (geoOrSubject?.[0]) return geoOrSubject[0];
 
@@ -425,6 +436,26 @@ function inferPrimaryTopicLabel(task: string, research: Obj | null): string | nu
     'deep',
     'dive',
     'agentflow',
+    // Imperative / request chrome — never treat as the research subject.
+    'make',
+    'create',
+    'write',
+    'generate',
+    'give',
+    'show',
+    'tell',
+    'provide',
+    'prepare',
+    'build',
+    'run',
+    'please',
+    'help',
+    'need',
+    'want',
+    'can',
+    'could',
+    'would',
+    'should',
   ]);
   const capitalizedMatches = [...task.matchAll(/\b[A-Z][a-zA-Z0-9.-]{2,}\b/g)].map(
     (match) => match[0],
@@ -511,6 +542,19 @@ function articleMatchesPrimaryTopic(
     return true;
   }
   if (!primaryTopicLabel) return true;
+
+  // Fed/FOMC labels should match Federal Reserve / rate-policy articles, not only the
+  // exact token "Fed" (titles often say "Federal Reserve" or "FOMC" only).
+  if (
+    isFedMeetingResearchQuery(task) ||
+    /\b(?:fed|fomc|federal(?:\s+reserve)?)\b/i.test(primaryTopicLabel)
+  ) {
+    return articleMatchesFedMeetingResearch(
+      isFedMeetingResearchQuery(task) ? task : `Fed meeting ${task}`,
+      articleText,
+    );
+  }
+
   return new RegExp(`\\b${escapeRegExp(primaryTopicLabel)}\\b`, 'i').test(articleText);
 }
 

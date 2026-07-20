@@ -28,15 +28,19 @@ const portfolioCases = [
   },
   {
     input: 'make report on next fed meeting and how does it affect my portfolio',
-    expected: 'make report on next fed meeting',
+    expected: 'next fed meeting',
   },
   {
     input: 'Research on the next Fed meeting and its impact on my portfolio',
-    expected: 'Research on the next Fed meeting',
+    expected: 'the next Fed meeting',
   },
   {
     input: 'make a report on next fed meeting and how will it affect my holding',
-    expected: 'make a report on next fed meeting',
+    expected: 'next fed meeting',
+  },
+  {
+    input: 'Make a report on the Fed meeting and how it affects my portfolio',
+    expected: 'the Fed meeting',
   },
   {
     input: 'research the next Fed meeting on the basis of my portfolio',
@@ -44,7 +48,7 @@ const portfolioCases = [
   },
   {
     input: 'make a research report on global warming and how can it affect my holdings',
-    expected: 'make a research report on global warming',
+    expected: 'global warming',
   },
   {
     input: 'Research Arc and explain how it affects my USDC and Gateway holdings',

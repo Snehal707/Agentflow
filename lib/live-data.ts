@@ -2818,16 +2818,23 @@ function buildFedMeetingFirecrawlVariants(baseQuery: string): string[] {
   if (!isFedMeetingResearchQuery(baseQuery)) return variants;
 
   const year = new Date().getUTCFullYear();
-  addUniqueQuery(variants, 'Federal Reserve FOMC meeting schedule');
-  addUniqueQuery(variants, `next FOMC meeting date ${year}`);
-  addUniqueQuery(variants, 'Federal Reserve FOMC calendar federalreserve.gov');
-  addUniqueQuery(variants, 'site:federalreserve.gov/monetarypolicy/fomccalendars.htm');
-  addUniqueQuery(variants, 'Federal Reserve interest rate decision latest');
+  // Prefer policy / minutes / market-reaction evidence first. Schedule/calendar is still
+  // fetched deterministically via fetchFomcCalendarSnapshot — do not let schedule queries
+  // crowd out Reuters/CNBC rate-path coverage in ranked retrieval.
+  addUniqueQuery(variants, 'Federal Reserve FOMC minutes latest');
+  addUniqueQuery(variants, 'Federal Reserve interest rate decision outlook');
+  addUniqueQuery(variants, 'Federal Reserve rate path hawkish dovish');
+  addUniqueQuery(variants, 'site:reuters.com Federal Reserve FOMC minutes');
+  addUniqueQuery(variants, 'site:cnbc.com Fed interest rates FOMC');
+  addUniqueQuery(variants, 'site:bloomberg.com Federal Reserve rate decision');
+  addUniqueQuery(variants, 'site:cbsnews.com Federal Reserve FOMC interest rates');
+  addUniqueQuery(variants, 'Federal Reserve market reaction stocks bonds');
   addUniqueQuery(variants, 'site:federalreserve.gov FOMC meeting');
   addUniqueQuery(variants, 'site:federalreserve.gov monetary policy');
-  addUniqueQuery(variants, 'site:reuters.com Federal Reserve FOMC meeting');
-  addUniqueQuery(variants, 'site:cnbc.com next Fed meeting FOMC');
-  addUniqueQuery(variants, 'site:bloomberg.com Federal Reserve rate decision');
+  addUniqueQuery(variants, `next FOMC meeting date ${year}`);
+  addUniqueQuery(variants, 'Federal Reserve FOMC meeting schedule');
+  addUniqueQuery(variants, 'Federal Reserve FOMC calendar federalreserve.gov');
+  addUniqueQuery(variants, 'site:federalreserve.gov/monetarypolicy/fomccalendars.htm');
   // Prefer disambiguated Federal Reserve wording over bare "fed" (sports verb collision).
   addUniqueQuery(variants, 'next Federal Reserve FOMC meeting date');
   // Disambiguate away from federalnewsnetwork.com retirement/"your portfolio" hits.

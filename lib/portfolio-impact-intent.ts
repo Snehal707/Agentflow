@@ -51,6 +51,8 @@ export function stripPortfolioImpactPhrasing(task: string): string {
     return directImpactQuestion[1].trim();
   }
 
+  // "how it/this/that affects my portfolio" with the topic earlier in the sentence
+  // (handled below as a trailing strip + report-chrome strip).
   const impactOfQuestion = original.match(
     new RegExp(
       `^\\s*(?:what\\s+is\\s+)?(?:the\\s+)?(?:impact|effect|implications?)\\s+of\\s+(.+?)\\s+(?:for|on)\\s+${OWNERSHIP_TAIL}\\b[\\s\\S]*$`,
@@ -84,6 +86,15 @@ export function stripPortfolioImpactPhrasing(task: string): string {
       ),
       '',
     )
+    // "… and how it affects my portfolio" (no auxiliary verb). Run after the
+    // "explain how it affects…" strip so we do not leave a dangling "explain".
+    .replace(
+      new RegExp(
+        `\\s*(?:,|;)?\\s+(?:and\\s+)?how\\s+(?:this|that|it)\\s+(?:affect(?:s|ed|ing)?|impact(?:s|ed|ing)?|mean\\s+for|change)\\s+${OWNERSHIP_TAIL}\\b[\\s\\S]*$`,
+        'i',
+      ),
+      '',
+    )
     .replace(
       new RegExp(
         `\\s*(?:,|;)?\\s+(?:and\\s+)?(?:personalize|personalise|tailor|customize|customise)(?:\\s+(?:this|the))?(?:\\s+report)?\\s+(?:using|with|for|based\\s+on)\\s+${OWNERSHIP_TAIL}\\b[\\s\\S]*$`,
@@ -105,7 +116,20 @@ export function stripPortfolioImpactPhrasing(task: string): string {
         'i',
       ),
       '',
-    )
+    );
+
+  // Only strip "make a report on …" chrome for portfolio-impact asks. Plain
+  // "make a report on bitcoin" must stay intact for non-portfolio research.
+  if (detectPortfolioImpactIntent(original)) {
+    stripped = stripped
+      .replace(
+        /^\s*(?:please\s+)?(?:make|create|write|generate|prepare|build|do)\s+(?:me\s+)?(?:a\s+|an\s+)?(?:research\s+)?(?:report|analysis|brief|research)\s+(?:on|about|regarding)\s+/i,
+        '',
+      )
+      .replace(/^\s*(?:research|analy[sz]e|assess)\s+on\s+/i, '');
+  }
+
+  stripped = stripped
     .replace(/\s+/g, ' ')
     .replace(/[,:;\-]+\s*$/, '')
     .trim();

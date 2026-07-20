@@ -462,6 +462,71 @@ assert.match(repairedFomcReport, /July 28-29, 2026/);
 assert.doesNotMatch(repairedFomcReport, /have not been published yet/i);
 assert.doesNotMatch(repairedFomcReport, /not been officially announced/i);
 
+const makeChromeFedSources = finalizeReportMarkdown({
+  task: 'Make a report on the Fed meeting and how it affects my portfolio',
+  writerMarkdown: `## Summary
+
+The next Fed meeting may affect risk assets and stablecoin demand.
+
+## Sources
+
+- placeholder
+`,
+  research: null,
+  analysis: null,
+  liveData: {
+    portfolio_impact: true,
+    snapshot_at: '2026-07-20T00:00:00.000Z',
+    dynamic_sources: {
+      articles: [
+        {
+          title: "Fed policymakers' inflation concerns grew at June meeting, minutes show",
+          publisher: 'Reuters',
+          url: 'https://www.reuters.com/business/fed-minutes-due-analysts-debate-whether-warsh-will-curtail-them-2026-07-08/',
+          summary: 'Federal Reserve minutes showed divided views on the rate path.',
+          seen_at: '2026-07-08T00:00:00.000Z',
+        },
+        {
+          title: 'Fed officials were split on direction of interest rates at last meeting, minutes show',
+          publisher: 'CNBC',
+          url: 'https://www.cnbc.com/2026/07/08/fed-minutes-june-2026-.html',
+          summary: 'FOMC participants disagreed about the near-term path of rates.',
+          seen_at: '2026-07-08T00:00:00.000Z',
+        },
+        {
+          title: "When is the Fed's next meeting? See the full schedule for 2026.",
+          publisher: 'Yahoo Finance',
+          url: 'https://finance.yahoo.com/personal-finance/banking/article/when-is-the-next-fed-meeting-full-schedule-150709698.html',
+          summary: 'Calendar of upcoming Federal Reserve FOMC meetings.',
+          seen_at: '2026-07-01T00:00:00.000Z',
+        },
+      ],
+    },
+    fomc_calendar: {
+      next_meeting: nextFomc,
+      upcoming_meetings: nextFomc ? [nextFomc] : [],
+      source_url: 'https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm',
+      source_name: 'Federal Reserve Board',
+      as_of: '2026-07-20T00:00:00.000Z',
+      summary: 'next is July 28-29, 2026',
+    },
+  },
+});
+assert.match(
+  makeChromeFedSources.markdown,
+  /reuters\.com\/business\/fed-minutes/i,
+  'Expected "Make a report…" chrome not to drop Reuters Fed sources from the bibliography.',
+);
+assert.match(
+  makeChromeFedSources.markdown,
+  /cnbc\.com\/2026\/07\/08\/fed-minutes/i,
+  'Expected "Make a report…" chrome not to drop CNBC Fed sources from the bibliography.',
+);
+assert.ok(
+  (makeChromeFedSources.sources?.length ?? 0) >= 2,
+  'Expected multiple grounded Fed sources after ignoring Make chrome as primary topic.',
+);
+
 const staleMinutesAsOf = new Date('2026-07-18T12:00:00.000Z');
 const cleanedStaleMinutes = sanitizeStaleAnticipatoryClaims(
   `## Overview
