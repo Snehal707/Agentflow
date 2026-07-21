@@ -17,9 +17,9 @@ Backend (`server.ts`, `agents/`, `facilitator/`) and frontend (`agentflow-fronte
 
 Full product walkthrough (long form):
 
-[![AgentFlow demo](https://img.youtube.com/vi/D5v-0wN_aLM/hqdefault.jpg)](https://youtu.be/D5v-0wN_aLM)
+[![AgentFlow demo](docs/agentflow-demo-thumbnail.jpg)](https://youtu.be/J3jBXzNe4YM)
 
-Watch on YouTube: https://youtu.be/D5v-0wN_aLM
+Watch on YouTube: https://youtu.be/J3jBXzNe4YM
 
 ---
 
