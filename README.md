@@ -590,9 +590,3 @@ Gitignored: `hermes-brain/`, `tmp/`, `.logs/`, `.agentflow-telemetry/`, `.agentf
 ## Arc Testnet
 
 Chain ID `5042002` · RPC `https://rpc.testnet.arc.network` · Explorer https://testnet.arcscan.app · USDC as gas
-
----
-
-## Out of scope
-
-`/dashboard`, `orchestrator/` / `dev:orchestrator`, Railway writeups, one-off probes, retired **extension** + **email inbound** webhook (still mounted under `api/` — not product). Prefer this README + cited sources + `ecosystem.config.cjs`.
