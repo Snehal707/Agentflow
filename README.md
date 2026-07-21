@@ -66,7 +66,7 @@ App shell (`app/(app)/layout.tsx`) wraps those in **`ClientProviders`** (dynamic
 | Route | Role |
 |-------|------|
 | `/chat` | Main UX — JWT chat; money confirms with YES (`Yes, swap & send` when swap has a recipient — `ChatThread.tsx`) |
-| `/pay` | AgentPay — `.arc` handles, send/request, contacts, schedule/split/batch, invoices, history |
+| `/pay` | AgentPay — `.arc` handles, send/request, contacts, **payment links & QR receive**, schedule/split/batch, invoices, history |
 | `/pay/[handle]` | Public pay page |
 | `/funding` | Move Arc USDC **EOA ↔ DCW** (execution wallet) + faucet link — `funding/page.tsx` (UI copy: not a Gateway/bridge surface; `/vault` re-exports this page; `/funds` redirects here) |
 | `/portfolio` | Holdings UI |
@@ -213,6 +213,7 @@ Current behavior on `pvt/main`:
 
 - Explicit research/report prompts bypass Hermes Agent and enter `/run`; this prevents the chat brain from inventing citations.
 - Live retrieval is Firecrawl + SearXNG plus deterministic enrichers and task-specific adapters. Local research memory / evidence-index paths can supplement weak live retrieval.
+- Self-hosted **research evidence index** (Meilisearch `research_evidence`, optional/fail-open): query-driven reuse of verified public excerpts from prior runs before hitting live search. Deploy notes: [`docs/self-hosted-research-evidence-index.md`](docs/self-hosted-research-evidence-index.md). Client: `lib/local-evidence-index.ts`.
 - Ordinary fast research does **not** abort just because the first live retrieval pass has fewer than two source domains; Analyst/Writer/finalizer continue and the report must caveat sparse evidence.
 - Prediction-market research keeps stricter pre-Analyst evidence gates because bad sources can produce a wrong market decision. Sports winner topics need fresh, source-backed event-stage or result evidence; numerical rankings are optional and are allowed only when visible source evidence supplies the odds/probabilities. Price/market-cap markets still need numeric market snapshots and independent context.
 - Final Sources are rebuilt from grounded live/research evidence, not copied blindly from writer markdown. The finalizer filters low-value/circular/tooling sources, validates dates/domains, repairs where possible, and may omit unsupported citations.
@@ -314,10 +315,14 @@ Verified: Hermes `/v1/runs` + `skills_list` returned `agentflow-report-research`
 | `predmarket` | AchMarket |
 | `bridge` | CCTP into Arc |
 | `portfolio` | Balances / PnL |
-| `invoice` | Chat invoices → AgentPay **To Pay** (not the legacy email-inbox business flow) |
-| `schedule` / `split` / `batch` | Recurring / split / CSV USDC |
+| `invoice` | Chat invoices → AgentPay **To Pay** (not the legacy email-inbox business flow). **Chat + CSV** (one invoice row; first row must contain `invoice`) |
+| `schedule` / `split` / `batch` | Recurring / equal-split / bulk USDC. **Chat-first for all three; CSV optional** on web (and Telegram for batch/split/invoice). Batch = per-row amounts; Split = equal split of one total; Schedule = one schedule row |
 | `vision` | x402-paid; Hermes + OpenAI fallback |
 | `transcribe` | OpenAI voice→text; free (`resolveSystemAgentPrice` hardcodes `0`); JWT + daily caps; no x402 middleware |
+
+**12 core agents** = the Agent Store system slugs above (`lib/coreAgentSpecs.ts`). Analyst + Writer are Research pipeline stages (extra x402 hops), not separate store listings. AgentPay send/request/links/QR are product surfaces powered by chat + those agents — not a 13th store agent.
+
+**Chat vs CSV:** every core agent is chat-reachable. CSV upload is for list/form workflows on **Batch, Split, Schedule, and Invoice** only — not Swap/Vault/Research/etc.
 
 **Providers (code):**
 
@@ -509,10 +514,11 @@ api/                      Express routers
 lib/                      Shared backend
 hermes-skills/            Hermes Agent skill pack (copied into hermes-brain/skills/ by start-hermes)
 crons/                    PM2 cron
-scripts/                  Stack / Hermes launchers
+scripts/                  Stack / Hermes launchers · `build-pitch-pptx.cjs` (hackathon deck)
 ecosystem.config.cjs      PM2
-docs/                     Ops notes
+docs/                     Ops notes · `self-hosted-research-evidence-index.md` · `AgentFlow-Hackathon-Pitch.pptx`
 contracts/ · foundry/     On-chain tooling
+agentflow-frontend/public/media-kit/   Brand lockups (badge / primary) for UI + pitch
 ```
 
 Gitignored: `hermes-brain/`, `tmp/`, `.logs/`, `.agentflow-telemetry/`, `.agentflow-memory/`.

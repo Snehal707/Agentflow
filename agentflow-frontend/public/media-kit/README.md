@@ -3,12 +3,12 @@
 This folder contains the current public-facing AgentFlow logo assets based on the same shared brand lockup used by the landing page and chat header.
 
 Canonical logo names:
-- `agentflow-logo-primary.svg`
-- `agentflow-logo-badge.svg`
+- `agentflow-logo-primary.svg` (+ `.png` raster for decks/PPTX)
+- `agentflow-logo-badge.svg` (+ `.png` raster for decks/PPTX)
 
 Supporting legacy/public assets already in `/public`:
 - `agentflow-logo.svg`
-- `agentflow-logo-square.png`
+- `agentflow-logo-square.png` (keep in sync with badge: gold A · soft-white F)
 
 Brand notes:
 - Primary gold: `#f2ca50`
