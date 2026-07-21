@@ -9,6 +9,17 @@ Backend (`server.ts`, `agents/`, `facilitator/`) and frontend (`agentflow-fronte
 | **Private remote** | `pvt` → https://github.com/Snehal707/agentflow-pvt |
 | **Production** | PM2 — [`ecosystem.config.cjs`](ecosystem.config.cjs) |
 | **Local** | `npm run dev:stack` — `scripts/start-dev-stack.cjs` |
+| **Live** | https://agentflow.one |
+
+---
+
+## Demo
+
+Full product walkthrough (long form):
+
+[![AgentFlow demo](https://img.youtube.com/vi/D5v-0wN_aLM/hqdefault.jpg)](https://youtu.be/D5v-0wN_aLM)
+
+Watch on YouTube: https://youtu.be/D5v-0wN_aLM
 
 ---
 
