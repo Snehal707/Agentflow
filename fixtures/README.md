@@ -1,8 +1,14 @@
-# Research Benchmark Fixtures
+# Benchmark fixtures
+
+## Research
 
 We keep two fixture layers so we can benchmark different parts of the research pipeline without live retrieval drift or extractor variance muddying the signal.
 
-## Fixture types
+## Vision
+
+Single-page PDF eval: [`fixtures/vision/`](vision/). Ground-truth notes and Section D spatial errors: [`vision/README.md`](vision/README.md).
+
+## Research fixture types
 
 ### 1. Source fixtures
 

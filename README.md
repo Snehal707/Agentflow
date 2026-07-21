@@ -456,7 +456,64 @@ More: [docs/db-access-security.md](docs/db-access-security.md) · [docs/known-is
 
 ---
 
-## 10. Reference
+## 10. Benchmarks
+
+Internal AgentFlow evals (not third-party leaderboards). Last measured **2026-07-21** on the production VPS (`/opt/agentflow`). Re-run with `npm run benchmark:agent-matrix` before repeating claims.
+
+### Platform / chat
+
+| Surface | Result | Command |
+|---------|--------|---------|
+| Product RAG accuracy | **PASS** | `npm run check:rag-accuracy` |
+| Hermes grounding | **PASS** | `npm run test:hermes-grounding` |
+| Chat brain eval | **6/6** | `AGENTFLOW_API_URL=http://127.0.0.1:4000 npm run brain:eval` |
+| Intent router smoke | **PASS** | `npm run test:intent-router:smoke` |
+| Send clarifier smoke | **PASS** | chat probes on `/api/chat/respond` |
+| Stack health | **PASS** (`/health/stack`) | `curl http://127.0.0.1:4000/health/stack` |
+
+### Core agents (live VPS matrix)
+
+| Agent | Health | Functional check | Result |
+|-------|--------|------------------|--------|
+| **Research** (+ Analyst / Writer) | PASS (incl. analyst/writer) | Evidence-index foundation · supervisor bench `bitcoin-price-and-drivers` **2 → 8** (Δ+6) | **PASS** / scorecard improved |
+| **Swap** | PASS | Sanity rate bands | **PASS** |
+| **Vault** | PASS | List vaults (2 providers) | **PASS** |
+| **Pred Markets** | PASS | List markets smoke | **PASS** |
+| **Bridge** | PASS | Health only this run | **PASS** (health) |
+| **Portfolio** | PASS | Snapshot + Hermes assessment | **PASS** |
+| **Invoice** | PASS | Health only this run | **PASS** (health) |
+| **Vision** | PASS | Single-page PDF fixture (see below) | **SCORE** — strong OCR/docs; spatial weak |
+| **Voice (transcribe)** | PASS | Health only this run | **PASS** (health) |
+| **Schedule** | PASS | Health only this run | **PASS** (health) |
+| **Split** | PASS | Health only this run | **PASS** (health) |
+| **Batch** | PASS | CSV/NL parser unit | **PASS** |
+
+Reproduce matrix: `npm run benchmark:agent-matrix` → summary JSON + `tmp/vision-benchmark-latest.md`.
+
+### Vision detail ([`fixtures/vision/`](fixtures/vision/))
+
+Fixture: [`agentflow_single_page_vision_test.pdf`](fixtures/vision/agentflow_single_page_vision_test.pdf).
+
+| Scoring mode | Result |
+|--------------|--------|
+| Manual (equal sections) | ≈ **91%** — A–C, E–H correct; **D partial** |
+| Manual (extracted fields) | ≈ **94%** — invoice/text-heavy fields mostly correct |
+| Live VPS retest (2026-07-21) | Section D automated checks **5/7** · extractor `openai-fallback` · vehicle count consistency **fixed** vs earlier “4 vehicles / 3 named” run |
+
+**Section D still wrong on live retest:** packages reported B3/A1 (truth **C3/B1**); bike at C2 (truth **D2**). Truck **A4** + drone **E1** + SE cell **D2** + count **3** matched. Injection detected and not followed.
+
+Suggested grid rule: column letter from top axis → row from left → count only Truck/Bike/Drone → assert count equals listed vehicles.
+
+**Notes**
+
+- `brain:eval` needs a wallet that has claimed an access code. Soft: `npm run brain:eval:soft`.
+- Research supervisor uses Hermes LLM (`callHermesDeep`); artifacts under `tmp/hermes-research-supervisor/`.
+- Bridge / Invoice / Schedule / Split / Transcribe: health green; deeper paid execution benches not re-run in this matrix (use `QA_RUN_PAID=1 npm run qa:agents-prelaunch` when you want paid paths).
+- Vision scores are document-understanding quality, not x402 payment success.
+
+---
+
+## 11. Reference
 
 ### Operator scripts (`package.json`)
 
@@ -467,6 +524,11 @@ More: [docs/db-access-security.md](docs/db-access-security.md) · [docs/known-is
 | `dev:hermes` / `dev:chat-core` | Hermes / minimal chat |
 | `start:api` | API only (`EMBEDDED_AGENT_SERVERS=false`) |
 | `qa:prelaunch` (+ chat/agents variants) | Pre-launch QA |
+| `check:rag-accuracy` | Product RAG vs code constants |
+| `brain:eval` / `brain:eval:soft` | Chat brain scenario eval (needs live API + access) |
+| `test:hermes-grounding` | Hermes grounding regressions |
+| `benchmark:research:hermes-supervisor` | Research supervisor scorecard (fixture name arg) |
+| `benchmark:agent-matrix` | Health + smokes + Vision PDF score for core agents |
 | `cron:worker` | Cron (needs `NODE_ENV=production`) |
 | `treasury:topup` | One-shot treasury |
 | `memory:consolidate` / `memory:metrics` / `memory:eval` | Semantic memory |

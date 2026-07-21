@@ -18,6 +18,8 @@ import { verifyClaims } from '../agents/research/verifier';
 import { callHermesDeep } from '../lib/hermes';
 import { loadFixture } from './research-benchmark-utils';
 
+/** Supervisor plan/review uses Hermes LLM JSON (callHermesDeep), not Hermes Agent /v1/runs. */
+
 type SupervisorScorecard = {
   overall_score: number;
   verdict: 'pass' | 'revise' | 'fail';
@@ -62,8 +64,7 @@ type BenchmarkOutput = {
   fixture: string;
   run_at: string;
   runtime: {
-    local_hermes_api_url: string;
-    local_hermes_api_version: 'runs';
+    supervisor_backend: 'hermes_llm_deep';
     shared_session_id: string;
   };
   stages: {
@@ -96,29 +97,6 @@ type BenchmarkOutput = {
   };
 };
 
-type HermesRunStartResponse = {
-  run_id?: string;
-  status?: string;
-};
-
-type HermesRunStatusResponse = {
-  status?: string;
-  output?: string;
-  error?: string;
-};
-
-const LOCAL_HERMES_API_URL = (
-  process.env.AGENTFLOW_HERMES_URL ||
-  process.env.HERMES_AGENT_URL ||
-  'http://127.0.0.1:8001'
-).replace(/\/+$/, '');
-
-const LOCAL_HERMES_API_KEY = (
-  process.env.HERMES_API_SERVER_KEY ||
-  process.env.AGENTFLOW_BRAIN_INTERNAL_KEY ||
-  ''
-).trim();
-
 const OUTPUT_DIR = path.join('tmp', 'hermes-research-supervisor');
 
 function parseFixtureArg(argv: string[]): string {
@@ -129,20 +107,6 @@ function parseFixtureArg(argv: string[]): string {
     );
   }
   return fixtureName;
-}
-
-function buildHeaders(): Record<string, string> {
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-  };
-  if (LOCAL_HERMES_API_KEY) {
-    headers.Authorization = `Bearer ${LOCAL_HERMES_API_KEY}`;
-  }
-  return headers;
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function cleanJsonText(value: string): string {
@@ -193,16 +157,23 @@ function extractBalancedJson(input: string): string | null {
 
 function parseJsonObject<T>(value: string, label: string): T {
   const cleaned = cleanJsonText(value).replace(/,\s*([}\]])/g, '$1');
+  const candidates = [cleaned, extractBalancedJson(cleaned)].filter(
+    (entry): entry is string => Boolean(entry),
+  );
 
-  try {
-    return JSON.parse(cleaned) as T;
-  } catch {
-    const extracted = extractBalancedJson(cleaned);
-    if (!extracted) {
-      throw new Error(`Unable to parse ${label} as JSON.`);
+  let lastError: unknown;
+  for (const candidate of candidates) {
+    try {
+      return JSON.parse(candidate.replace(/,\s*([}\]])/g, '$1')) as T;
+    } catch (error) {
+      lastError = error;
     }
-    return JSON.parse(extracted.replace(/,\s*([}\]])/g, '$1')) as T;
   }
+
+  const preview = cleaned.slice(0, 240).replace(/\s+/g, ' ');
+  const detail =
+    lastError instanceof Error ? lastError.message : String(lastError || 'unknown parse error');
+  throw new Error(`Unable to parse ${label} as JSON (${detail}). Preview: ${preview}`);
 }
 
 function asStringArray(value: unknown): string[] {
@@ -258,91 +229,18 @@ async function ensureOutputDir(): Promise<void> {
   await mkdir(OUTPUT_DIR, { recursive: true });
 }
 
-async function assertLocalHermesUp(): Promise<void> {
-  const response = await fetch(`${LOCAL_HERMES_API_URL}/health`, {
-    headers: buildHeaders(),
-    signal: AbortSignal.timeout(5000),
-  });
-  if (!response.ok) {
-    throw new Error(`Local Hermes health check failed with status ${response.status}`);
-  }
-}
-
-async function createHermesRun(input: {
-  message: string;
-  instructions: string;
-  sessionId: string;
-}): Promise<string> {
-  const response = await fetch(`${LOCAL_HERMES_API_URL}/v1/runs`, {
-    method: 'POST',
-    headers: buildHeaders(),
-    body: JSON.stringify({
-      input: input.message,
-      instructions: input.instructions,
-      session_id: input.sessionId,
-      enabled_toolsets: ['clarify'],
-    }),
-    signal: AbortSignal.timeout(15000),
-  });
-
-  if (!response.ok) {
-    const errorText = (await response.text()).trim();
-    throw new Error(
-      errorText || `Hermes run creation failed with status ${response.status}`,
-    );
-  }
-
-  const payload = (await response.json()) as HermesRunStartResponse;
-  if (!payload.run_id) {
-    throw new Error('Hermes run creation succeeded but no run_id was returned.');
-  }
-  return payload.run_id;
-}
-
-async function waitForHermesRun(runId: string): Promise<string> {
-  const deadline = Date.now() + 180_000;
-
-  while (Date.now() < deadline) {
-    const response = await fetch(`${LOCAL_HERMES_API_URL}/v1/runs/${runId}`, {
-      headers: buildHeaders(),
-      signal: AbortSignal.timeout(15000),
-    });
-
-    if (!response.ok) {
-      const errorText = (await response.text()).trim();
-      throw new Error(
-        errorText || `Hermes run status failed with status ${response.status}`,
-      );
-    }
-
-    const payload = (await response.json()) as HermesRunStatusResponse;
-    const status = (payload.status || '').toLowerCase();
-
-    if (status === 'completed') {
-      return payload.output || '';
-    }
-    if (status === 'failed' || status === 'cancelled') {
-      throw new Error(payload.error || `Hermes run ${status}.`);
-    }
-
-    await sleep(1200);
-  }
-
-  throw new Error('Timed out waiting for local Hermes run to finish.');
-}
-
 async function runSupervisorJson<T>(input: {
   sessionId: string;
   instructions: string;
   message: string;
   label: string;
 }): Promise<T> {
-  const runId = await createHermesRun({
-    message: input.message,
-    instructions: input.instructions,
-    sessionId: input.sessionId,
-  });
-  const output = await waitForHermesRun(runId);
+  // Use Hermes LLM directly. Hermes Agent /v1/runs enables tools and often returns
+  // non-JSON / hangs, which is useless for deterministic scorecard parsing.
+  const output = await callHermesDeep(
+    input.instructions,
+    `${input.message}\n\nSession: ${input.sessionId}\nLabel: ${input.label}`,
+  );
   return parseJsonObject<T>(output, input.label);
 }
 
@@ -566,7 +464,6 @@ async function writeArtifacts(
 
 async function main(): Promise<void> {
   const fixtureName = parseFixtureArg(process.argv);
-  await assertLocalHermesUp();
 
   const fixture = await loadFixture(fixtureName);
   const sourceDiagnostics = buildSourceDiagnostics(fixture.brief, fixture.sources);
@@ -661,8 +558,7 @@ async function main(): Promise<void> {
     fixture: fixture.name,
     run_at: runAt,
     runtime: {
-      local_hermes_api_url: LOCAL_HERMES_API_URL,
-      local_hermes_api_version: 'runs',
+      supervisor_backend: 'hermes_llm_deep',
       shared_session_id: sessionId,
     },
     stages: {

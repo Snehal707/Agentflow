@@ -64,6 +64,7 @@
     "script:verify-agents": "tsx --env-file=.env scripts/verify-agent.ts",
     "script:verify-research-pipeline": "tsx --env-file=.env scripts/verify-research-pipeline-run.ts",
     "benchmark:research:hermes-supervisor": "tsx --env-file=.env scripts/benchmark-hermes-research-supervisor.ts",
+    "benchmark:agent-matrix": "tsx --env-file=.env scripts/benchmark-agent-matrix.ts",
     "validate-registry": "tsx scripts/validate-registry.ts",
     "test:research:prediction-markets": "tsx --env-file=.env scripts/test-research-prediction-market-adapters.ts",
     "audit:robots": "tsx scripts/audit-robots.ts",

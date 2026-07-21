@@ -2771,17 +2771,40 @@ function buildStandaloneWorkflowClarification(message: string): string | null {
     return 'Who should pay through the payment link?';
   }
 
+  // Meta / onboarding asks ("what should you ask before…") are not bare-send intents.
+  if (
+    /\b(?:what should you ask|before doing anything|i am new|what do you need(?:\s+from me)?|what information do you need)\b/i.test(
+      trimmed,
+    )
+  ) {
+    return null;
+  }
+
   if (
     !hasExplicitAmount &&
     /\b(?:pay|send|transfer)\b/i.test(trimmed) &&
     !/\b(?:every|weekly|monthly|daily)\b/i.test(trimmed) &&
     !/\b(?:payment link|pay link|qr|scan to pay|scan\b.*pay)\b/i.test(trimmed)
   ) {
+    // Avoid matching the infinitive in "want to send" / "need to pay" as recipient "send".
+    const looksLikeInfinitiveToVerb =
+      /\b(?:want|need|going|have|like|trying|about)\s+to\s+(?:send|pay|transfer|shoot)\b/i.test(
+        trimmed,
+      );
     const handleMatch =
-      trimmed.match(/\bto\s+([a-z0-9_.-]+(?:\.arc)?)\b/i) ??
-      trimmed.match(/\b(?:pay|send|transfer)\s+([a-z0-9_.-]+(?:\.arc)?)\b/i);
+      trimmed.match(
+        /\b(?:pay|send|transfer|shoot)\s+(?:(?:\d+(?:\.\d+)?)\s*(?:usdc|usd|dollars)?\s+)?(?:to\s+)?([a-z0-9_.-]+(?:\.arc)?)\b/i,
+      ) ??
+      (looksLikeInfinitiveToVerb
+        ? null
+        : trimmed.match(/\bto\s+([a-z0-9_.-]+(?:\.arc)?)\b/i));
     const recipient = handleMatch?.[1];
-    if (recipient && !/^(?:me|myself|them|him|her|it|that)$/i.test(recipient)) {
+    const reservedRecipient =
+      !!recipient &&
+      /^(?:me|myself|them|him|her|it|that|send|pay|transfer|shoot|money|funds|usdc|usd|dollars|friend|another|country|someone|somebody|anyone|anybody|here|there|want|need|please)$/i.test(
+        recipient,
+      );
+    if (recipient && !reservedRecipient) {
       return `How much do you want to send to ${recipient}?`;
     }
   }
